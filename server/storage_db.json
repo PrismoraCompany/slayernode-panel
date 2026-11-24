@@ -149,12 +149,12 @@
     {
       "id": 1795504528889,
       "uuid": "4ff5853b-a8ab-4556-89e7-c8ff39eb75cd",
-      "name": "nod-3 test",
-      "description": "External VPS Daemon at node3.slayernode.xyz",
+      "name": "VDS-Node-01 (91.201.203.93)",
+      "description": "Dedicated IPv4 VDS SlayerWings Engine",
       "location_id": 1,
       "location_name": "Custom VPS Provider",
-      "fqdn": "node3.slayernode.xyz",
-      "scheme": "https",
+      "fqdn": "91.201.203.93",
+      "scheme": "http",
       "behind_proxy": false,
       "maintenance_mode": false,
       "allow_auto_allocation": true,
@@ -167,7 +167,7 @@
       "daemon_sftp": 2202,
       "daemon_base": "/var/lib/slayerwings/volumes",
       "servers_count": 0,
-      "allocations_count": 0,
+      "allocations_count": 5,
       "is_online": true,
       "daemon_version": "v1.0.0-slayerwings"
     }
@@ -208,6 +208,51 @@
       "alias": "play.local",
       "server_id": null,
       "is_default": false
+    },
+    {
+      "id": 1795516170645,
+      "node_id": 1795504528889,
+      "ip": "91.201.203.93",
+      "alias": null,
+      "port": 25565,
+      "assigned": false,
+      "server_id": null
+    },
+    {
+      "id": 1795516170646,
+      "node_id": 1795504528889,
+      "ip": "91.201.203.93",
+      "alias": null,
+      "port": 25566,
+      "assigned": false,
+      "server_id": null
+    },
+    {
+      "id": 1795516170647,
+      "node_id": 1795504528889,
+      "ip": "91.201.203.93",
+      "alias": null,
+      "port": 25567,
+      "assigned": false,
+      "server_id": null
+    },
+    {
+      "id": 1795516170648,
+      "node_id": 1795504528889,
+      "ip": "91.201.203.93",
+      "alias": null,
+      "port": 25568,
+      "assigned": false,
+      "server_id": null
+    },
+    {
+      "id": 1795516170649,
+      "node_id": 1795504528889,
+      "ip": "91.201.203.93",
+      "alias": null,
+      "port": 25569,
+      "assigned": false,
+      "server_id": null
     }
   ],
   "nests": [

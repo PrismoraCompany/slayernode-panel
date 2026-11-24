@@ -358,7 +358,7 @@ async function probeNode(n) {
 
   try {
     const probeRes = await fetch(daemonUrl, {
-      signal: AbortSignal.timeout(1200)
+      signal: AbortSignal.timeout(4000)
     });
     if (probeRes.ok) {
       const sysInfo = await probeRes.json();
