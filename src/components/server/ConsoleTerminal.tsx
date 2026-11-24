@@ -23,6 +23,35 @@ import { GlassButton } from '../ui/GlassButton';
 import { GlassBadge } from '../ui/GlassBadge';
 import { StatGraph } from '../ui/StatGraph';
 
+function cleanAnsi(str: string): string {
+  return str.replace(/[\u001b\x1b]\[[0-9;]*[a-zA-Z]/g, '');
+}
+
+function renderTerminalLine(raw: string) {
+  const line = cleanAnsi(raw).trim();
+  if (!line) return null;
+
+  if (line.startsWith('>')) {
+    return (
+      <span className="flex items-center gap-1.5 font-bold text-sky-400">
+        <span>&gt;</span>
+        <span className="text-white">{line.slice(1).trim()}</span>
+      </span>
+    );
+  }
+
+  if (line.includes('[WARN]') || line.includes('WARN]:')) {
+    return <span className="text-amber-300/90">{line}</span>;
+  }
+  if (line.includes('[ERROR]') || line.includes('ERROR]:') || line.includes('Exception')) {
+    return <span className="text-rose-400 font-semibold">{line}</span>;
+  }
+  if (line.includes('[INFO]') || line.includes('INFO]:')) {
+    return <span className="text-slate-300">{line}</span>;
+  }
+  return <span className="text-slate-400">{line}</span>;
+}
+
 export const ConsoleTerminal: React.FC = () => {
   const {
     activeServer,
@@ -322,7 +351,7 @@ export const ConsoleTerminal: React.FC = () => {
         <div className="h-96 w-full overflow-y-auto bg-slate-950/80 rounded-xl p-4 font-mono text-xs border border-white/5 shadow-inner">
           {filteredLogs.map((log, idx) => (
             <div key={idx} className="terminal-line py-0.5 hover:bg-white/5 transition-colors">
-              {log}
+              {renderTerminalLine(log)}
             </div>
           ))}
           <div ref={terminalEndRef} />

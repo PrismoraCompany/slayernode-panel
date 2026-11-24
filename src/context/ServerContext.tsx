@@ -266,7 +266,7 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Echo operator command in console immediately (0ms user feedback)
     setConsoleLogs(prev => [
       ...prev,
-      `\x1b[38;2;0;210;255m>\x1b[0m ${cmd}`,
+      `> ${cmd}`,
     ]);
 
     // Send via live WebSocket to daemon process stdin
