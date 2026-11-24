@@ -891,7 +891,7 @@ app.post('/api/admin/mail/test', async (req, res) => {
 // 7. Client Servers & Wings Daemon Signal API
 // ==========================================
 
-app.get('/api/client', (req, res) => {
+app.get(['/api/client', '/api/client/servers'], (req, res) => {
   const user = getRequestUser(req);
   const filtered = user.root_admin
     ? db.servers
