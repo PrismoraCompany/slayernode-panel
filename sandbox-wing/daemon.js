@@ -339,9 +339,11 @@ const server = http.createServer((req, res) => {
         let child;
         let isMinecraft = false;
 
-        const javaBin = fs.existsSync('/usr/bin/java')
-          ? '/usr/bin/java'
-          : (fs.existsSync('/usr/lib/jvm/default/bin/java') ? '/usr/lib/jvm/default/bin/java' : null);
+        const javaBin = fs.existsSync('/usr/lib/jvm/java-25-openjdk-amd64/bin/java')
+          ? '/usr/lib/jvm/java-25-openjdk-amd64/bin/java'
+          : (fs.existsSync('/usr/bin/java')
+            ? '/usr/bin/java'
+            : (fs.existsSync('/usr/lib/jvm/default/bin/java') ? '/usr/lib/jvm/default/bin/java' : null));
 
         if (mcJar && fs.existsSync(mcJar) && javaBin) {
           isMinecraft = true;
@@ -356,7 +358,7 @@ const server = http.createServer((req, res) => {
             '--nogui'
           ];
           console.log(`[SlayerWings Daemon] Booting REAL Java Minecraft Server (PID starting): ${javaBin} ${javaArgs.join(' ')}`);
-          broadcastConsoleOutput(serverUuid, `\x1b[38;2;16;185;129m[SlayerWings Engine]\x1b[0m Booting OpenJDK 21 Minecraft runtime (${javaBin}) with ${mem}MB RAM...\n`);
+          broadcastConsoleOutput(serverUuid, `\x1b[38;2;16;185;129m[SlayerWings Engine]\x1b[0m Booting OpenJDK 25 Minecraft runtime (${javaBin}) with ${mem}MB RAM...\n`);
 
           child = spawn(javaBin, javaArgs, {
             cwd: serverDir,

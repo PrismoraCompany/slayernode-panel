@@ -93,6 +93,89 @@ install_node() {
   log_success "Node.js $(node -v) and npm $(npm -v) are ready."
 }
 
+install_java() {
+  log_info "Verifying OpenJDK 25 runtime environment for modern Minecraft..."
+  local need_install=0
+
+  if ! command -v java &>/dev/null; then
+    need_install=1
+  else
+    local jver
+    jver=$(java -version 2>&1 | head -n 1)
+    if ! echo "$jver" | grep -qE "25|21"; then
+      log_warn "Active Java is older than Java 21. Upgrading to OpenJDK 25..."
+      need_install=1
+    fi
+  fi
+
+  if [ "$need_install" -eq 1 ]; then
+    log_info "Installing OpenJDK 25 (with fallback to 21)..."
+    apt-get update -y
+    apt-get install -y openjdk-25-jre-headless openjdk-25-jdk-headless 2>/dev/null || apt-get install -y openjdk-21-jre-headless
+    if [ -f /usr/lib/jvm/java-25-openjdk-amd64/bin/java ]; then
+      update-alternatives --set java /usr/lib/jvm/java-25-openjdk-amd64/bin/java 2>/dev/null || true
+    fi
+  fi
+
+  if command -v java &>/dev/null; then
+    log_success "Java runtime ready: $(java -version 2>&1 | head -n 1)"
+  else
+    log_warn "Java could not be installed automatically. Minecraft servers can still run via Docker yolks."
+  fi
+}
+
+update_panel_and_wings() {
+  check_root
+  print_banner
+  echo -e "${C_BOLD_RED}>>> 5. UPDATE SLAYERNODE PANEL & SLAYERWINGS DAEMON${C_RESET}"
+  echo ""
+
+  local target_dir="$INSTALL_DIR"
+  if [ ! -d "$target_dir" ] && [ -d "/var/www/slayerpanel" ]; then
+    target_dir="/var/www/slayerpanel"
+  fi
+
+  if [ ! -d "$target_dir/.git" ]; then
+    log_error "Installation directory $target_dir is not a valid git repository."
+    exit 1
+  fi
+
+  log_info "Fetching latest production release from $REPO_URL..."
+  cd "$target_dir"
+  git fetch origin
+  git reset --hard origin/main
+
+  log_info "Installing package updates and dependencies..."
+  install_node
+  install_java
+  npm install
+
+  log_info "Compiling high-performance production frontend bundle..."
+  npm run build
+
+  install_java
+
+  if [ -d /run/systemd/system ]; then
+    log_info "Reloading systemd and restarting services..."
+    systemctl daemon-reload
+    systemctl restart slayerpanel 2>/dev/null || true
+    systemctl restart slayerwings 2>/dev/null || true
+    systemctl restart nginx 2>/dev/null || true
+    log_success "Services restarted successfully:"
+    systemctl status slayerpanel --no-pager -n 3 || true
+    systemctl status slayerwings --no-pager -n 3 || true
+  else
+    log_info "Restarting background services..."
+    pkill -9 -f "server/index.js" 2>/dev/null || true
+    pkill -9 -f "sandbox-wing/daemon.js" 2>/dev/null || true
+    nohup node server/index.js > /var/log/slayerpanel.log 2>&1 &
+    nohup node sandbox-wing/daemon.js > /var/log/slayerwings.log 2>&1 &
+  fi
+
+  echo ""
+  log_success "✔ SlayerNode Panel & SlayerWings Daemon updated successfully to the latest release!"
+}
+
 install_panel() {
   check_root
   print_banner
@@ -111,6 +194,7 @@ install_panel() {
   apt-get update -y
   apt-get install -y curl git tar unzip nginx psmisc certbot python3-certbot-nginx ufw
   install_node
+  install_java
 
   # 2. Setup directory
   log_info "Setting up SlayerNode Panel in $INSTALL_DIR..."
@@ -248,6 +332,7 @@ install_wings() {
   log_success "Docker Engine $(docker --version) active."
 
   install_node
+  install_java
 
   log_info "Creating SlayerWings system paths..."
   mkdir -p /etc/slayerwings
@@ -356,6 +441,7 @@ launch_local() {
 
   cd "$target_dir"
   install_node
+  install_java
 
   log_info "Installing npm packages..."
   npm install
@@ -472,6 +558,7 @@ launch_codespaces() {
 
   cd "$target_dir"
   install_node
+  install_java
 
   log_info "Installing dependencies..."
   npm install
@@ -530,10 +617,11 @@ echo -e "  ${C_BOLD_RED}[1]${C_RESET} Dedicated / Production Linux VPS ${C_GRAY}
 echo -e "  ${C_BOLD_RED}[2]${C_RESET} Local Machine / Desktop ${C_GRAY}(Linux, macOS, WSL2 — Non-systemd, instant local run)${C_RESET}"
 echo -e "  ${C_BOLD_RED}[3]${C_RESET} GitHub Codespaces / Web Sandboxes ${C_GRAY}(Zero systemd, auto-forwarded web ports)${C_RESET}"
 echo -e "  ${C_BOLD_RED}[4]${C_RESET} Cloudflare Zero Trust Tunnel Setup ${C_GRAY}(Ingress routing, WebSocket, & Behind-Proxy)${C_RESET}"
+echo -e "  ${C_BOLD_RED}[5]${C_RESET} Update SlayerNode Panel & SlayerWings Daemon ${C_GRAY}(Pull latest release, rebuild & restart)${C_RESET}"
 echo -e "  ${C_BOLD_RED}[0]${C_RESET} Exit"
 echo ""
 
-read -r -p "Enter choice [1-4, default: $DEFAULT_CHOICE]: " CHOICE
+read -r -p "Enter choice [1-5, default: $DEFAULT_CHOICE]: " CHOICE
 CHOICE=${CHOICE:-$DEFAULT_CHOICE}
 
 case "$CHOICE" in
@@ -560,6 +648,9 @@ case "$CHOICE" in
     ;;
   4)
     setup_cloudflare_tunnel
+    ;;
+  5)
+    update_panel_and_wings
     ;;
   0)
     echo "Exiting."

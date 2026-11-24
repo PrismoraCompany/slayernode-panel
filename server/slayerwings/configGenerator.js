@@ -33,7 +33,7 @@ system:
   sftp:
     bind_port: ${node.daemon_sftp || 2202}
 allowed_mounts: []
-remote: ${options.remoteUrl || 'https://panel.slayernode.xyz'}
+remote: ${options.remoteUrl || 'http://localhost:3000'}
 docker:
   network:
     name: slayernode_nw
