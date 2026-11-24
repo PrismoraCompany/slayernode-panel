@@ -9,6 +9,45 @@
 
 ---
 
+## 🎮 Preconfigured Minecraft Eggs & Dynamic Runtime Engine
+
+SlayerNode comes out-of-the-box with **7 production-grade Minecraft Eggs** pre-configured under the **Minecraft** nest (`ID: 1`), with full variable binding, startup flags, and real-time jar download pipelines:
+
+| Egg Name | Engine | Default Startup Command | Recommended Docker / Java Runtime |
+|---|---|---|---|
+| **Paper (PaperMC)** | High-Performance Spigot Fork | `java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_21` |
+| **Purpur** | Feature-Rich Paper Fork | `java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_21` |
+| **Vanilla Minecraft** | Official Mojang Engine | `java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_21` |
+| **Forge Minecraft** | Modded Server Loader | `java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_21` |
+| **Fabric Minecraft** | Modular Lightweight Modloader | `java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_21` |
+| **Velocity Proxy** | Next-Gen Minecraft Proxy | `java -Xms512M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC -jar {{SERVER_JARFILE}}` | `ghcr.io/pterodactyl/yolks:java_21` |
+| **BungeeCord** | Multi-Server Network Proxy | `java -Xms512M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}` | `ghcr.io/pterodactyl/yolks:java_21` |
+
+### ⚡ Real-Time `server.jar` Dynamic Fetching
+When starting a server instance on a SlayerWings node:
+1. **Dynamic Download**: If `server.jar` does not exist on disk, SlayerWings automatically fetches the official release jar directly from PaperMC API, Purpur API, or Mojang official releases.
+2. **Live Console Telemetry**: Emits live byte-stream progress over the interactive WebSocket terminal (`Downloading server.jar: 15.2MB / 45.8MB (33%)`).
+3. **Engine Caching**: Downloaded binaries are verified and cached in `~/.slayerwings/cache` so future instances on that node boot instantly in < 1 second.
+4. **Automated EULA & Properties**: Automatically creates `eula.txt` (`eula=true`) and binds `server.properties` with the container's allocated port and host IP.
+5. **Real OpenJDK 21 Process**: Executes `/usr/bin/java` with piped interactive standard I/O (type `help`, `list`, `say`, or op commands in the terminal).
+
+### 📤 Custom Egg JSON Import
+You can add any custom game egg by importing a standard Pterodactyl v1 / v2 `.json` file:
+1. Navigate to **Admin Area > Nests**.
+2. Click **Import Egg**.
+3. Choose your target Nest category (e.g. Minecraft, Steam Games, Voice).
+4. Drop or browse for your `.json` file. The panel automatically previews egg attributes, maps container environment variables, and commits it into the database.
+
+### 🛡️ Strict Server Provisioning Validation
+To eliminate silent deployment failures or corrupted containers, the panel strictly validates server provisioning:
+- **Server Name**: Required non-empty string.
+- **Server Owner**: Must map to a valid user account.
+- **Target Node**: Node must exist, be online, and have available port allocations.
+- **Nest & Egg**: Validates that the selected Nest has at least one active Egg configured. If no eggs exist, server creation is blocked with explicit instructions on how to import one.
+- **Resource Limits**: Validates RAM ($\ge$ 128 MiB), Disk ($\ge$ 512 MiB), and CPU ($>$ 0%).
+
+---
+
 ## ⚡ 1-Command Automated Installer (VPS, Local & Containers)
 
 Modeled after `pterodactyl-installer.se`, you can install SlayerNode Panel, the SlayerWings Daemon, or both with a single interactive CLI command that automatically detects and adapts to your environment:

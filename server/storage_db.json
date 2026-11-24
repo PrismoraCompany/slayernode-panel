@@ -262,7 +262,7 @@
       "author": "admin@slayernode.xyz",
       "name": "Minecraft",
       "description": "Minecraft server runtime with support for Vanilla, Spigot, Paper, Forge, and proxies.",
-      "eggs_count": 5,
+      "eggs_count": 7,
       "servers_count": 2,
       "created_at": "2026-11-01"
     },
@@ -314,10 +314,10 @@
       "nest_id": 1,
       "nest_name": "Minecraft",
       "author": "admin@slayernode.xyz",
-      "name": "Paper",
-      "description": "High performance Spigot fork that aims to fix gameplay and mechanics inconsistencies with optimal tick efficiency.",
-      "docker_images": "ghcr.io/slayernode/yolks:java_21\nghcr.io/slayernode/yolks:java_17",
-      "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui",
+      "name": "Paper (PaperMC)",
+      "description": "High performance Spigot-compatible Minecraft server that fixes gameplay and mechanics inconsistencies with optimal tick efficiency and multithreading.",
+      "docker_images": "ghcr.io/pterodactyl/yolks:java_21\nghcr.io/pterodactyl/yolks:java_17\nghcr.io/pterodactyl/yolks:java_8",
+      "startup": "java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui",
       "force_outgoing_ip": false,
       "features": "eula, java_version",
       "config": {
@@ -326,29 +326,89 @@
         "logs": "{\"custom\":false,\"location\":\"logs/latest.log\"}",
         "startup": "{\"done\":\")! For help, type \"}"
       },
-      "servers_count": 2,
-      "created_at": "2026-11-01"
+      "variables": [
+        {
+          "name": "Server Jar File",
+          "env_variable": "SERVER_JARFILE",
+          "default_value": "server.jar",
+          "server_value": "server.jar",
+          "is_editable": true,
+          "rules": "required|string"
+        },
+        {
+          "name": "Minecraft Version",
+          "env_variable": "MINECRAFT_VERSION",
+          "default_value": "latest",
+          "server_value": "1.20.4",
+          "is_editable": true,
+          "rules": "required|string"
+        },
+        {
+          "name": "Build Number",
+          "env_variable": "BUILD_NUMBER",
+          "default_value": "latest",
+          "server_value": "latest",
+          "is_editable": true,
+          "rules": "required|string"
+        },
+        {
+          "name": "Download Path",
+          "env_variable": "DL_PATH",
+          "default_value": "",
+          "server_value": "",
+          "is_editable": true,
+          "rules": "nullable|string"
+        }
+      ],
+      "servers_count": 0,
+      "created_at": "2026-11-24"
     },
     {
       "id": 2,
-      "uuid": "egg-forge-mc",
+      "uuid": "egg-purpur-mc",
       "nest_id": 1,
       "nest_name": "Minecraft",
       "author": "admin@slayernode.xyz",
-      "name": "Forge Minecraft",
-      "description": "Minecraft Forge Server for running custom Forge mods and modpacks.",
-      "docker_images": "ghcr.io/slayernode/yolks:java_21",
-      "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui",
+      "name": "Purpur",
+      "description": "Drop-in replacement for Paper servers designed for high configurability, extreme performance optimizations, and customizable mob mechanics.",
+      "docker_images": "ghcr.io/pterodactyl/yolks:java_21\nghcr.io/pterodactyl/yolks:java_17",
+      "startup": "java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui",
       "force_outgoing_ip": false,
       "features": "eula, java_version",
       "config": {
-        "files": "{\"server.properties\":{\"server-port\":\"{{SERVER_PORT}}\"}}",
+        "files": "{\"server.properties\":{\"server-port\":\"{{SERVER_PORT}}\",\"server-ip\":\"0.0.0.0\"}}",
         "stop": "stop",
-        "logs": "{}",
-        "startup": "{}"
+        "logs": "{\"custom\":false,\"location\":\"logs/latest.log\"}",
+        "startup": "{\"done\":\")! For help, type \"}"
       },
-      "servers_count": 1,
-      "created_at": "2026-11-01"
+      "variables": [
+        {
+          "name": "Server Jar File",
+          "env_variable": "SERVER_JARFILE",
+          "default_value": "server.jar",
+          "server_value": "server.jar",
+          "is_editable": true,
+          "rules": "required|string"
+        },
+        {
+          "name": "Minecraft Version",
+          "env_variable": "MINECRAFT_VERSION",
+          "default_value": "latest",
+          "server_value": "1.20.4",
+          "is_editable": true,
+          "rules": "required|string"
+        },
+        {
+          "name": "Build Number",
+          "env_variable": "BUILD_NUMBER",
+          "default_value": "latest",
+          "server_value": "latest",
+          "is_editable": true,
+          "rules": "required|string"
+        }
+      ],
+      "servers_count": 0,
+      "created_at": "2026-11-24"
     },
     {
       "id": 3,
@@ -357,29 +417,180 @@
       "nest_name": "Minecraft",
       "author": "admin@slayernode.xyz",
       "name": "Vanilla Minecraft",
-      "description": "Official Mojang Vanilla server jar providing standard unmodded survival and creative worlds.",
-      "docker_images": "ghcr.io/slayernode/yolks:java_21",
-      "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar --nogui",
+      "description": "Official Mojang Vanilla server software without mods or third-party patches. Pure unadulterated Minecraft experience.",
+      "docker_images": "ghcr.io/pterodactyl/yolks:java_21\nghcr.io/pterodactyl/yolks:java_17",
+      "startup": "java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui",
       "force_outgoing_ip": false,
       "features": "eula",
       "config": {
-        "files": "{\"server.properties\":{\"server-port\":\"{{SERVER_PORT}}\"}}",
+        "files": "{\"server.properties\":{\"server-port\":\"{{SERVER_PORT}}\",\"server-ip\":\"0.0.0.0\"}}",
         "stop": "stop",
-        "logs": "{}",
-        "startup": "{}"
+        "logs": "{\"custom\":false,\"location\":\"logs/latest.log\"}",
+        "startup": "{\"done\":\")! For help, type \"}"
       },
-      "servers_count": 1,
-      "created_at": "2026-11-01"
+      "variables": [
+        {
+          "name": "Server Jar File",
+          "env_variable": "SERVER_JARFILE",
+          "default_value": "server.jar",
+          "server_value": "server.jar",
+          "is_editable": true,
+          "rules": "required|string"
+        },
+        {
+          "name": "Vanilla Version",
+          "env_variable": "VANILLA_VERSION",
+          "default_value": "latest",
+          "server_value": "1.20.4",
+          "is_editable": true,
+          "rules": "required|string"
+        }
+      ],
+      "servers_count": 0,
+      "created_at": "2026-11-24"
     },
     {
       "id": 4,
+      "uuid": "egg-forge-mc",
+      "nest_id": 1,
+      "nest_name": "Minecraft",
+      "author": "admin@slayernode.xyz",
+      "name": "Forge Minecraft",
+      "description": "Minecraft Forge mod loader engine enabling players and server administrators to run custom modpacks and community mods.",
+      "docker_images": "ghcr.io/pterodactyl/yolks:java_21\nghcr.io/pterodactyl/yolks:java_17\nghcr.io/pterodactyl/yolks:java_8",
+      "startup": "java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui",
+      "force_outgoing_ip": false,
+      "features": "eula, java_version",
+      "config": {
+        "files": "{\"server.properties\":{\"server-port\":\"{{SERVER_PORT}}\",\"server-ip\":\"0.0.0.0\"}}",
+        "stop": "stop",
+        "logs": "{}",
+        "startup": "{\"done\":\")! For help, type \"}"
+      },
+      "variables": [
+        {
+          "name": "Server Jar File",
+          "env_variable": "SERVER_JARFILE",
+          "default_value": "forge-run.jar",
+          "server_value": "forge-run.jar",
+          "is_editable": true,
+          "rules": "required|string"
+        },
+        {
+          "name": "MC Version",
+          "env_variable": "MC_VERSION",
+          "default_value": "1.20.4",
+          "server_value": "1.20.4",
+          "is_editable": true,
+          "rules": "required|string"
+        },
+        {
+          "name": "Forge Version",
+          "env_variable": "FORGE_VERSION",
+          "default_value": "latest",
+          "server_value": "latest",
+          "is_editable": true,
+          "rules": "required|string"
+        }
+      ],
+      "servers_count": 0,
+      "created_at": "2026-11-24"
+    },
+    {
+      "id": 5,
+      "uuid": "egg-fabric-mc",
+      "nest_id": 1,
+      "nest_name": "Minecraft",
+      "author": "admin@slayernode.xyz",
+      "name": "Fabric Minecraft",
+      "description": "Fabric is a lightweight, experimental, and modern modding toolchain for Minecraft with exceptional server optimization mods (Lithium, FerriteCore).",
+      "docker_images": "ghcr.io/pterodactyl/yolks:java_21\nghcr.io/pterodactyl/yolks:java_17",
+      "startup": "java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui",
+      "force_outgoing_ip": false,
+      "features": "eula, java_version",
+      "config": {
+        "files": "{\"server.properties\":{\"server-port\":\"{{SERVER_PORT}}\",\"server-ip\":\"0.0.0.0\"}}",
+        "stop": "stop",
+        "logs": "{}",
+        "startup": "{\"done\":\")! For help, type \"}"
+      },
+      "variables": [
+        {
+          "name": "Server Jar File",
+          "env_variable": "SERVER_JARFILE",
+          "default_value": "fabric-server-launch.jar",
+          "server_value": "fabric-server-launch.jar",
+          "is_editable": true,
+          "rules": "required|string"
+        },
+        {
+          "name": "Minecraft Version",
+          "env_variable": "MINECRAFT_VERSION",
+          "default_value": "latest",
+          "server_value": "1.20.4",
+          "is_editable": true,
+          "rules": "required|string"
+        },
+        {
+          "name": "Loader Version",
+          "env_variable": "LOADER_VERSION",
+          "default_value": "latest",
+          "server_value": "latest",
+          "is_editable": true,
+          "rules": "required|string"
+        }
+      ],
+      "servers_count": 0,
+      "created_at": "2026-11-24"
+    },
+    {
+      "id": 6,
+      "uuid": "egg-velocity-mc",
+      "nest_id": 1,
+      "nest_name": "Minecraft",
+      "author": "admin@slayernode.xyz",
+      "name": "Velocity Proxy",
+      "description": "Next-generation high performance proxy for Minecraft servers with modern packet handling, fast player transfers, and advanced DDoS mitigations.",
+      "docker_images": "ghcr.io/pterodactyl/yolks:java_21\nghcr.io/pterodactyl/yolks:java_17",
+      "startup": "java -Xms512M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC -jar {{SERVER_JARFILE}}",
+      "force_outgoing_ip": false,
+      "features": "",
+      "config": {
+        "files": "{\"velocity.toml\":{\"bind\":\"0.0.0.0:{{SERVER_PORT}}\"}}",
+        "stop": "end",
+        "logs": "{}",
+        "startup": "{\"done\":\"Booting Velocity\"}"
+      },
+      "variables": [
+        {
+          "name": "Server Jar File",
+          "env_variable": "SERVER_JARFILE",
+          "default_value": "velocity.jar",
+          "server_value": "velocity.jar",
+          "is_editable": true,
+          "rules": "required|string"
+        },
+        {
+          "name": "Velocity Version",
+          "env_variable": "VELOCITY_VERSION",
+          "default_value": "latest",
+          "server_value": "latest",
+          "is_editable": true,
+          "rules": "required|string"
+        }
+      ],
+      "servers_count": 0,
+      "created_at": "2026-11-24"
+    },
+    {
+      "id": 7,
       "uuid": "egg-bungeecord-mc",
       "nest_id": 1,
       "nest_name": "Minecraft",
       "author": "admin@slayernode.xyz",
-      "name": "Bungeecord",
-      "description": "High performance proxy server connecting multiple backend Minecraft server instances into a unified network.",
-      "docker_images": "ghcr.io/slayernode/yolks:java_21",
+      "name": "BungeeCord",
+      "description": "Classic multi-server proxy network engine connecting various Minecraft worlds into a single player network.",
+      "docker_images": "ghcr.io/pterodactyl/yolks:java_21\nghcr.io/pterodactyl/yolks:java_17",
       "startup": "java -Xms512M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}",
       "force_outgoing_ip": false,
       "features": "",
@@ -387,31 +598,20 @@
         "files": "{\"config.yml\":{\"host\":\"0.0.0.0:{{SERVER_PORT}}\"}}",
         "stop": "end",
         "logs": "{}",
-        "startup": "{}"
+        "startup": "{\"done\":\"Listening on\"}"
       },
+      "variables": [
+        {
+          "name": "Server Jar File",
+          "env_variable": "SERVER_JARFILE",
+          "default_value": "bungeecord.jar",
+          "server_value": "bungeecord.jar",
+          "is_editable": true,
+          "rules": "required|string"
+        }
+      ],
       "servers_count": 0,
-      "created_at": "2026-11-01"
-    },
-    {
-      "id": 5,
-      "uuid": "egg-sponge-mc",
-      "nest_id": 1,
-      "nest_name": "Minecraft",
-      "author": "admin@slayernode.xyz",
-      "name": "Sponge (SpongeVanilla)",
-      "description": "SpongeAPI implementation for Vanilla Minecraft providing extensive plugin support.",
-      "docker_images": "ghcr.io/slayernode/yolks:java_21",
-      "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui",
-      "force_outgoing_ip": false,
-      "features": "eula",
-      "config": {
-        "files": "{}",
-        "stop": "stop",
-        "logs": "{}",
-        "startup": "{}"
-      },
-      "servers_count": 0,
-      "created_at": "2026-11-01"
+      "created_at": "2026-11-24"
     },
     {
       "id": 6,

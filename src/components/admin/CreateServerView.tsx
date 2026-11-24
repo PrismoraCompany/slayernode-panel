@@ -174,15 +174,39 @@ export const CreateServerView: React.FC<CreateServerViewProps> = ({ onBack, onSe
     setErrorMsg(null);
 
     if (!serverName.trim()) {
-      setErrorMsg('Server Name is required.');
-      return;
-    }
-    if (!selectedNodeId) {
-      setErrorMsg('A valid infrastructure node must be selected.');
+      setErrorMsg('Validation Error: "Server Name" is required. Please specify a recognizable name for this game server.');
       return;
     }
     if (!selectedOwnerId) {
-      setErrorMsg('A server owner must be selected.');
+      setErrorMsg('Validation Error: "Server Owner" is required. Please choose a user to assign server ownership.');
+      return;
+    }
+    if (!selectedNodeId) {
+      setErrorMsg('Validation Error: "Target Infrastructure Node" is required. Please select an active node.');
+      return;
+    }
+    if (!selectedNestId) {
+      setErrorMsg('Validation Error: "Nest / Game Category" is required. Please select a game nest.');
+      return;
+    }
+    if (eggs.length === 0) {
+      setErrorMsg('Validation Error: The selected Nest has 0 configured eggs. You cannot deploy without an Egg. Please import or create an Egg under Admin > Nests first.');
+      return;
+    }
+    if (!selectedEggId) {
+      setErrorMsg('Validation Error: "Game Egg" is required. Please select an active Egg from the dropdown.');
+      return;
+    }
+    if (parseInt(memoryLimit) < 128) {
+      setErrorMsg('Validation Error: "RAM Limit" must be at least 128 MiB.');
+      return;
+    }
+    if (parseInt(diskLimit) < 512) {
+      setErrorMsg('Validation Error: "Disk Limit" must be at least 512 MiB.');
+      return;
+    }
+    if (parseInt(cpuLimit) <= 0) {
+      setErrorMsg('Validation Error: "CPU Limit" must be greater than 0%.');
       return;
     }
 
@@ -652,13 +676,20 @@ export const CreateServerView: React.FC<CreateServerViewProps> = ({ onBack, onSe
                 <select
                   value={selectedEggId}
                   onChange={e => setSelectedEggId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white focus:outline-none focus:border-cyan-400/80 transition-colors text-sm"
+                  disabled={eggs.length === 0}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white focus:outline-none focus:border-cyan-400/80 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {eggs.map(eg => (
-                    <option key={eg.id} value={eg.id} className="bg-slate-900 text-white">
-                      {eg.name}
+                  {eggs.length === 0 ? (
+                    <option value="" disabled className="bg-slate-900 text-red-400">
+                      ⚠ No eggs available in this Nest. Please import/create an Egg first.
                     </option>
-                  ))}
+                  ) : (
+                    eggs.map(eg => (
+                      <option key={eg.id} value={eg.id} className="bg-slate-900 text-white">
+                        {eg.name}
+                      </option>
+                    ))
+                  )}
                 </select>
                 <p className="mt-1 text-[11px] text-white/40">Select the Egg that will define how this server should operate.</p>
               </div>

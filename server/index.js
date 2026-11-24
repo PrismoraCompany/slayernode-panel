@@ -80,17 +80,18 @@ const DEFAULT_DB = {
   eggs: [
     {
       id: 1,
-      uuid: 'egg-purpur-mc',
+      uuid: 'egg-paper-mc',
       nest_id: 1,
       nest_name: 'Minecraft',
       author: 'admin@slayernode.xyz',
-      name: 'Purpur / Paper Minecraft',
-      description: 'High performance fork with Folia/Aikar flags and JLine ANSI terminal support.',
+      name: 'Paper (PaperMC)',
+      description: 'High performance Spigot-compatible Minecraft server that fixes gameplay and mechanics inconsistencies with optimal tick efficiency.',
       docker_images: {
-        'Java 21 (Default)': 'ghcr.io/slayernode/yolks:java_21',
-        'Java 17 (Legacy)': 'ghcr.io/slayernode/yolks:java_17',
+        'Java 21 (Recommended)': 'ghcr.io/pterodactyl/yolks:java_21',
+        'Java 17 (Legacy)': 'ghcr.io/pterodactyl/yolks:java_17',
+        'Java 8 (Legacy)': 'ghcr.io/pterodactyl/yolks:java_8',
       },
-      startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}}',
+      startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui',
       config: {
         files: {
           'server.properties': { parser: 'properties', find: { 'server-ip': '0.0.0.0', 'server-port': '{{server.build.default.port}}' } },
@@ -99,20 +100,127 @@ const DEFAULT_DB = {
         stop: 'stop',
       },
       variables: [
-        { name: 'Server Jar File', description: 'Executable jar', env_variable: 'SERVER_JARFILE', default_value: 'purpur.jar', server_value: 'purpur-1.21.4.jar', is_editable: true, rules: 'required|string' },
-        { name: 'Build Number', description: 'Purpur build version', env_variable: 'BUILD_NUMBER', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
+        { name: 'Server Jar File', description: 'Executable jar file', env_variable: 'SERVER_JARFILE', default_value: 'server.jar', server_value: 'server.jar', is_editable: true, rules: 'required|string' },
+        { name: 'Minecraft Version', description: 'Minecraft release version', env_variable: 'MINECRAFT_VERSION', default_value: 'latest', server_value: '1.20.4', is_editable: true, rules: 'required|string' },
+        { name: 'Build Number', description: 'Paper release build', env_variable: 'BUILD_NUMBER', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
+        { name: 'Download Path', description: 'Optional custom URL download path', env_variable: 'DL_PATH', default_value: '', server_value: '', is_editable: true, rules: 'nullable|string' },
       ],
     },
     {
       id: 2,
+      uuid: 'egg-purpur-mc',
+      nest_id: 1,
+      nest_name: 'Minecraft',
+      author: 'admin@slayernode.xyz',
+      name: 'Purpur',
+      description: 'Drop-in replacement for Paper servers designed for high configurability, extreme performance optimizations, and customizable mob mechanics.',
+      docker_images: {
+        'Java 21 (Default)': 'ghcr.io/pterodactyl/yolks:java_21',
+        'Java 17 (Legacy)': 'ghcr.io/pterodactyl/yolks:java_17',
+      },
+      startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui',
+      config: {
+        files: {
+          'server.properties': { parser: 'properties', find: { 'server-ip': '0.0.0.0', 'server-port': '{{server.build.default.port}}' } },
+        },
+        startup: { done: ')! For help, type ' },
+        stop: 'stop',
+      },
+      variables: [
+        { name: 'Server Jar File', description: 'Executable jar', env_variable: 'SERVER_JARFILE', default_value: 'server.jar', server_value: 'server.jar', is_editable: true, rules: 'required|string' },
+        { name: 'Minecraft Version', description: 'Minecraft release version', env_variable: 'MINECRAFT_VERSION', default_value: 'latest', server_value: '1.20.4', is_editable: true, rules: 'required|string' },
+        { name: 'Build Number', description: 'Purpur build version', env_variable: 'BUILD_NUMBER', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
+      ],
+    },
+    {
+      id: 3,
+      uuid: 'egg-vanilla-mc',
+      nest_id: 1,
+      nest_name: 'Minecraft',
+      author: 'admin@slayernode.xyz',
+      name: 'Vanilla Minecraft',
+      description: 'Official Mojang Vanilla server software without mods or third-party patches. Pure unadulterated Minecraft experience.',
+      docker_images: {
+        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
+        'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
+      },
+      startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui',
+      config: {
+        files: {
+          'server.properties': { parser: 'properties', find: { 'server-ip': '0.0.0.0', 'server-port': '{{server.build.default.port}}' } },
+        },
+        startup: { done: ')! For help, type ' },
+        stop: 'stop',
+      },
+      variables: [
+        { name: 'Server Jar File', description: 'Executable jar', env_variable: 'SERVER_JARFILE', default_value: 'server.jar', server_value: 'server.jar', is_editable: true, rules: 'required|string' },
+        { name: 'Vanilla Version', description: 'Vanilla version release', env_variable: 'VANILLA_VERSION', default_value: 'latest', server_value: '1.20.4', is_editable: true, rules: 'required|string' },
+      ],
+    },
+    {
+      id: 4,
+      uuid: 'egg-forge-mc',
+      nest_id: 1,
+      nest_name: 'Minecraft',
+      author: 'admin@slayernode.xyz',
+      name: 'Forge Minecraft',
+      description: 'Minecraft Forge mod loader engine enabling players and server administrators to run custom modpacks and community mods.',
+      docker_images: {
+        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
+        'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
+        'Java 8': 'ghcr.io/pterodactyl/yolks:java_8',
+      },
+      startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui',
+      config: {
+        files: {
+          'server.properties': { parser: 'properties', find: { 'server-ip': '0.0.0.0', 'server-port': '{{server.build.default.port}}' } },
+        },
+        startup: { done: ')! For help, type ' },
+        stop: 'stop',
+      },
+      variables: [
+        { name: 'Server Jar File', description: 'Forge executable jar', env_variable: 'SERVER_JARFILE', default_value: 'forge-run.jar', server_value: 'forge-run.jar', is_editable: true, rules: 'required|string' },
+        { name: 'MC Version', description: 'Minecraft release version', env_variable: 'MC_VERSION', default_value: '1.20.4', server_value: '1.20.4', is_editable: true, rules: 'required|string' },
+        { name: 'Forge Version', description: 'Forge build version', env_variable: 'FORGE_VERSION', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
+      ],
+    },
+    {
+      id: 5,
+      uuid: 'egg-fabric-mc',
+      nest_id: 1,
+      nest_name: 'Minecraft',
+      author: 'admin@slayernode.xyz',
+      name: 'Fabric Minecraft',
+      description: 'Fabric is a lightweight, experimental, and modern modding toolchain for Minecraft with exceptional server optimization mods.',
+      docker_images: {
+        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
+        'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
+      },
+      startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui',
+      config: {
+        files: {
+          'server.properties': { parser: 'properties', find: { 'server-ip': '0.0.0.0', 'server-port': '{{server.build.default.port}}' } },
+        },
+        startup: { done: ')! For help, type ' },
+        stop: 'stop',
+      },
+      variables: [
+        { name: 'Server Jar File', description: 'Fabric loader jar', env_variable: 'SERVER_JARFILE', default_value: 'fabric-server-launch.jar', server_value: 'fabric-server-launch.jar', is_editable: true, rules: 'required|string' },
+        { name: 'Minecraft Version', description: 'Minecraft release version', env_variable: 'MINECRAFT_VERSION', default_value: 'latest', server_value: '1.20.4', is_editable: true, rules: 'required|string' },
+        { name: 'Loader Version', description: 'Fabric loader version', env_variable: 'LOADER_VERSION', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
+      ],
+    },
+    {
+      id: 6,
       uuid: 'egg-velocity-proxy',
       nest_id: 1,
       nest_name: 'Minecraft',
       author: 'admin@slayernode.xyz',
       name: 'Velocity Proxy',
-      description: 'Next-generation Minecraft proxy with high packet throughput and modern DDoS mitigations.',
+      description: 'Next-generation Minecraft proxy with high packet throughput, modern DDoS mitigations, and velocity forward support.',
       docker_images: {
-        'Java 21': 'ghcr.io/slayernode/yolks:java_21',
+        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
+        'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
       },
       startup: 'java -Xms512M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC -jar {{SERVER_JARFILE}}',
       config: {
@@ -125,7 +233,29 @@ const DEFAULT_DB = {
       ],
     },
     {
-      id: 3,
+      id: 7,
+      uuid: 'egg-bungeecord-mc',
+      nest_id: 1,
+      nest_name: 'Minecraft',
+      author: 'admin@slayernode.xyz',
+      name: 'BungeeCord',
+      description: 'Classic multi-server proxy network engine connecting various Minecraft worlds into a single player network.',
+      docker_images: {
+        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
+        'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
+      },
+      startup: 'java -Xms512M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}',
+      config: {
+        files: {},
+        startup: { done: 'Listening on' },
+        stop: 'end',
+      },
+      variables: [
+        { name: 'Server Jar File', description: 'Proxy jar file', env_variable: 'SERVER_JARFILE', default_value: 'bungeecord.jar', server_value: 'bungeecord.jar', is_editable: true, rules: 'required|string' },
+      ],
+    },
+    {
+      id: 8,
       uuid: 'egg-rust-dedicated',
       nest_id: 2,
       nest_name: 'Steam Dedicated Games',
@@ -662,15 +792,72 @@ app.post('/api/application/servers', requireRootAdmin, (req, res) => {
     io = 500,
   } = req.body;
 
-  if (!name || !owner_id || !node_id) {
-    return res.status(400).json({ error: 'Server name, owner, and node are required.' });
+  // Strict Validation Guards
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Validation Error: "Server Name" is required. Please specify a recognizable name for this game server instance.' });
+  }
+
+  if (!owner_id) {
+    return res.status(400).json({ error: 'Validation Error: "Server Owner" is required. Please assign an account to own this server.' });
+  }
+
+  const owner = db.users.find(u => String(u.id) === String(owner_id));
+  if (!owner) {
+    return res.status(400).json({ error: 'Validation Error: The specified server owner does not exist. Please select a valid user from the user accounts list.' });
+  }
+
+  if (!node_id) {
+    return res.status(400).json({ error: 'Validation Error: "Target Infrastructure Node" is required. Please select an active node.' });
   }
 
   const node = db.nodes.find(n => String(n.id) === String(node_id));
-  if (!node) return res.status(400).json({ error: 'Target node does not exist.' });
+  if (!node) {
+    return res.status(400).json({ error: 'Validation Error: Target node does not exist. Please select an active infrastructure node.' });
+  }
 
-  const owner = db.users.find(u => String(u.id) === String(owner_id));
-  if (!owner) return res.status(400).json({ error: 'Specified owner does not exist.' });
+  if (!nest_id) {
+    return res.status(400).json({ error: 'Validation Error: "Nest / Game Category" is required. Please select a game nest.' });
+  }
+
+  const nest = db.nests.find(n => String(n.id) === String(nest_id));
+  if (!nest) {
+    return res.status(400).json({ error: 'Validation Error: Selected Nest category does not exist. Please choose a valid Nest.' });
+  }
+
+  const nestEggs = db.eggs.filter(e => String(e.nest_id) === String(nest_id));
+  if (nestEggs.length === 0) {
+    return res.status(400).json({
+      error: `Validation Error: The selected nest "${nest.name}" has 0 configured eggs. You cannot deploy a server without an Egg. Please import or create an Egg in Admin > Nests first.`
+    });
+  }
+
+  if (!egg_id) {
+    return res.status(400).json({
+      error: 'Validation Error: "Game Egg" is required. Please select an active Egg to define game startup flags and container images.'
+    });
+  }
+
+  const egg = nestEggs.find(e => String(e.id) === String(egg_id));
+  if (!egg) {
+    return res.status(400).json({
+      error: `Validation Error: Selected Egg (ID ${egg_id}) does not exist in Nest "${nest.name}". Please select an available Egg from the dropdown.`
+    });
+  }
+
+  const numMemory = parseInt(memory, 10);
+  if (isNaN(numMemory) || numMemory < 128) {
+    return res.status(400).json({ error: 'Validation Error: "RAM Limit" must be at least 128 MiB.' });
+  }
+
+  const numDisk = parseInt(disk, 10);
+  if (isNaN(numDisk) || numDisk < 512) {
+    return res.status(400).json({ error: 'Validation Error: "Disk Limit" must be at least 512 MiB.' });
+  }
+
+  const numCpu = parseInt(cpu, 10);
+  if (isNaN(numCpu) || numCpu <= 0) {
+    return res.status(400).json({ error: 'Validation Error: "CPU Limit" must be greater than 0%.' });
+  }
 
   // Find or pick allocation
   let alloc = db.allocations.find(a => String(a.id) === String(allocation_id));
@@ -678,17 +865,9 @@ app.post('/api/application/servers', requireRootAdmin, (req, res) => {
     alloc = db.allocations.find(a => String(a.node_id) === String(node_id) && !a.server_id);
   }
   if (!alloc) {
-    // Auto-create an allocation on this node
-    alloc = {
-      id: Date.now() + Math.floor(Math.random() * 1000),
-      node_id: node.id,
-      ip: node.fqdn,
-      port: 25565 + db.servers.length,
-      alias: '',
-      server_id: null,
-      is_default: true,
-    };
-    db.allocations.push(alloc);
+    return res.status(400).json({
+      error: `Validation Error: Node "${node.name}" has no free network port allocations available. Please add port allocations under Admin > Nodes > Allocations before deploying.`
+    });
   }
 
   const serverId = String(db.servers.length + 1);
@@ -848,6 +1027,11 @@ app.post('/api/blueprint/upload', requireRootAdmin, (req, res) => {
 // ==========================================
 
 app.get('/api/application/nests', (req, res) => {
+  // Sync server counts and egg counts
+  db.nests.forEach(n => {
+    n.eggs_count = db.eggs.filter(e => String(e.nest_id) === String(n.id)).length;
+    n.servers_count = db.servers.filter(s => String(s.nest_id) === String(n.id)).length;
+  });
   res.json({
     object: 'list',
     data: db.nests.map(n => ({
@@ -857,6 +1041,72 @@ app.get('/api/application/nests', (req, res) => {
   });
 });
 
+app.get('/api/application/nests/:id', (req, res) => {
+  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
+  if (!nest) return res.status(404).json({ error: 'Nest not found' });
+  const eggs = db.eggs.filter(e => String(e.nest_id) === String(req.params.id));
+  res.json({
+    object: 'nest',
+    attributes: {
+      ...nest,
+      eggs: eggs,
+      eggs_count: eggs.length,
+      servers_count: db.servers.filter(s => String(s.nest_id) === String(nest.id)).length,
+    },
+  });
+});
+
+app.post('/api/application/nests', requireRootAdmin, (req, res) => {
+  const { name, description } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Nest name is required.' });
+  }
+
+  const newNest = {
+    id: Date.now(),
+    uuid: crypto.randomUUID(),
+    author: req.user?.email || 'admin@slayernode.xyz',
+    name: name.trim(),
+    description: description ? description.trim() : '',
+    eggs_count: 0,
+    servers_count: 0,
+    created_at: new Date().toISOString(),
+  };
+
+  db.nests.push(newNest);
+  saveState(db);
+  res.status(201).json({ object: 'nest', attributes: newNest });
+});
+
+app.patch('/api/application/nests/:id', requireRootAdmin, (req, res) => {
+  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
+  if (!nest) return res.status(404).json({ error: 'Nest not found' });
+
+  if (req.body.name) nest.name = req.body.name.trim();
+  if (req.body.description !== undefined) nest.description = req.body.description.trim();
+
+  saveState(db);
+  res.json({ object: 'nest', attributes: nest });
+});
+
+app.delete('/api/application/nests/:id', requireRootAdmin, (req, res) => {
+  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
+  if (!nest) return res.status(404).json({ error: 'Nest not found' });
+
+  const activeServers = db.servers.filter(s => String(s.nest_id) === String(req.params.id));
+  if (activeServers.length > 0) {
+    return res.status(400).json({
+      error: `Cannot delete nest: It currently has ${activeServers.length} active servers assigned to it.`
+    });
+  }
+
+  db.nests = db.nests.filter(n => String(n.id) !== String(req.params.id));
+  db.eggs = db.eggs.filter(e => String(e.nest_id) !== String(req.params.id));
+  saveState(db);
+  res.status(204).send();
+});
+
+// Eggs Sub-API
 app.get('/api/application/nests/:id/eggs', (req, res) => {
   const eggs = db.eggs.filter(e => String(e.nest_id) === String(req.params.id));
   res.json({
@@ -866,6 +1116,188 @@ app.get('/api/application/nests/:id/eggs', (req, res) => {
       attributes: e,
     })),
   });
+});
+
+app.get('/api/application/nests/:id/eggs/:eggId', (req, res) => {
+  const egg = db.eggs.find(e => String(e.id) === String(req.params.eggId) && String(e.nest_id) === String(req.params.id));
+  if (!egg) return res.status(404).json({ error: 'Egg not found in this nest.' });
+  res.json({ object: 'egg', attributes: egg });
+});
+
+app.post('/api/application/nests/:id/eggs', requireRootAdmin, (req, res) => {
+  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
+  if (!nest) return res.status(404).json({ error: 'Target nest not found.' });
+
+  const data = req.body;
+  if (!data.name || !data.name.trim()) {
+    return res.status(400).json({ error: 'Egg name is required.' });
+  }
+
+  const newEgg = {
+    id: Date.now(),
+    uuid: crypto.randomUUID(),
+    nest_id: nest.id,
+    nest_name: nest.name,
+    author: req.user?.email || 'admin@slayernode.xyz',
+    name: data.name.trim(),
+    description: data.description ? data.description.trim() : '',
+    docker_images: data.docker_images || 'ghcr.io/pterodactyl/yolks:java_21',
+    startup: data.startup || 'java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui',
+    force_outgoing_ip: !!data.force_outgoing_ip,
+    features: data.features || '',
+    config: {
+      files: data.config_files || data.config?.files || '{"server.properties":{"server-port":"{{SERVER_PORT}}","server-ip":"0.0.0.0"}}',
+      stop: data.stop_cmd || data.config?.stop || 'stop',
+      logs: data.log_config || data.config?.logs || '{}',
+      startup: data.start_config || data.config?.startup || '{}',
+    },
+    variables: Array.isArray(data.variables) ? data.variables : [
+      { name: 'Server Jar File', env_variable: 'SERVER_JARFILE', default_value: 'server.jar', server_value: 'server.jar', is_editable: true, rules: 'required|string' },
+      { name: 'Minecraft Version', env_variable: 'MINECRAFT_VERSION', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
+    ],
+    servers_count: 0,
+    created_at: new Date().toISOString(),
+  };
+
+  db.eggs.push(newEgg);
+  nest.eggs_count = db.eggs.filter(e => String(e.nest_id) === String(nest.id)).length;
+  saveState(db);
+  res.status(201).json({ object: 'egg', attributes: newEgg });
+});
+
+app.patch('/api/application/nests/:id/eggs/:eggId', requireRootAdmin, (req, res) => {
+  const egg = db.eggs.find(e => String(e.id) === String(req.params.eggId) && String(e.nest_id) === String(req.params.id));
+  if (!egg) return res.status(404).json({ error: 'Egg not found in this nest.' });
+
+  const data = req.body;
+  if (data.name) egg.name = data.name.trim();
+  if (data.description !== undefined) egg.description = data.description.trim();
+  if (data.docker_images !== undefined) egg.docker_images = data.docker_images;
+  if (data.startup !== undefined) egg.startup = data.startup;
+  if (data.force_outgoing_ip !== undefined) egg.force_outgoing_ip = !!data.force_outgoing_ip;
+  if (data.features !== undefined) egg.features = data.features;
+  if (data.config_files !== undefined || data.stop_cmd !== undefined) {
+    egg.config = {
+      ...egg.config,
+      files: data.config_files !== undefined ? data.config_files : egg.config?.files,
+      stop: data.stop_cmd !== undefined ? data.stop_cmd : egg.config?.stop,
+      logs: data.log_config !== undefined ? data.log_config : egg.config?.logs,
+      startup: data.start_config !== undefined ? data.start_config : egg.config?.startup,
+    };
+  }
+
+  saveState(db);
+  res.json({ object: 'egg', attributes: egg });
+});
+
+app.delete('/api/application/nests/:id/eggs/:eggId', requireRootAdmin, (req, res) => {
+  const egg = db.eggs.find(e => String(e.id) === String(req.params.eggId) && String(e.nest_id) === String(req.params.id));
+  if (!egg) return res.status(404).json({ error: 'Egg not found.' });
+
+  const activeServers = db.servers.filter(s => String(s.egg_id) === String(req.params.eggId));
+  if (activeServers.length > 0) {
+    return res.status(400).json({
+      error: `Cannot delete Egg: It is currently assigned to ${activeServers.length} active server instances.`
+    });
+  }
+
+  db.eggs = db.eggs.filter(e => !(String(e.id) === String(req.params.eggId) && String(e.nest_id) === String(req.params.id)));
+  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
+  if (nest) {
+    nest.eggs_count = db.eggs.filter(e => String(e.nest_id) === String(nest.id)).length;
+  }
+
+  saveState(db);
+  res.status(204).send();
+});
+
+// Import Pterodactyl-Standard Egg JSON
+app.post('/api/application/nests/:id/eggs/import', requireRootAdmin, (req, res) => {
+  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
+  if (!nest) return res.status(404).json({ error: 'Target nest not found.' });
+
+  let raw = req.body;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return res.status(400).json({ error: 'Invalid JSON format in uploaded Egg file.' });
+    }
+  }
+
+  if (!raw || (!raw.name && !raw.exported_at)) {
+    return res.status(400).json({ error: 'The uploaded file does not match a valid Pterodactyl or SlayerNode Egg schema.' });
+  }
+
+  // Handle docker_images mapping (can be object, string, or array in Pterodactyl eggs)
+  let dockerImagesStr = 'ghcr.io/pterodactyl/yolks:java_21';
+  if (typeof raw.docker_images === 'string') {
+    dockerImagesStr = raw.docker_images;
+  } else if (raw.docker_images && typeof raw.docker_images === 'object') {
+    dockerImagesStr = Object.entries(raw.docker_images)
+      .map(([k, v]) => `${v}`)
+      .join('\n');
+  }
+
+  const importedEgg = {
+    id: Date.now(),
+    uuid: raw.uuid || crypto.randomUUID(),
+    nest_id: nest.id,
+    nest_name: nest.name,
+    author: raw.author || req.user?.email || 'admin@slayernode.xyz',
+    name: (raw.name || 'Imported Custom Egg').trim(),
+    description: (raw.description || 'Custom imported game egg configuration.').trim(),
+    docker_images: dockerImagesStr,
+    startup: raw.startup || 'java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui',
+    force_outgoing_ip: !!raw.force_outgoing_ip,
+    features: Array.isArray(raw.features) ? raw.features.join(', ') : (raw.features || ''),
+    config: {
+      files: typeof raw.config?.files === 'object' ? JSON.stringify(raw.config.files) : (raw.config?.files || '{}'),
+      stop: raw.config?.stop || 'stop',
+      logs: typeof raw.config?.logs === 'object' ? JSON.stringify(raw.config.logs) : (raw.config?.logs || '{}'),
+      startup: typeof raw.config?.startup === 'object' ? JSON.stringify(raw.config.startup) : (raw.config?.startup || '{}'),
+    },
+    variables: Array.isArray(raw.variables) ? raw.variables : [
+      { name: 'Server Jar File', env_variable: 'SERVER_JARFILE', default_value: 'server.jar', server_value: 'server.jar', is_editable: true, rules: 'required|string' },
+      { name: 'Minecraft Version', env_variable: 'MINECRAFT_VERSION', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
+    ],
+    scripts: raw.scripts || {},
+    servers_count: 0,
+    created_at: new Date().toISOString(),
+  };
+
+  db.eggs.push(importedEgg);
+  nest.eggs_count = db.eggs.filter(e => String(e.nest_id) === String(nest.id)).length;
+  saveState(db);
+
+  console.log(`[Eggs Manager] Successfully imported Egg "${importedEgg.name}" (${importedEgg.uuid}) into nest "${nest.name}"`);
+  res.status(201).json({ object: 'egg', attributes: importedEgg });
+});
+
+app.get('/api/application/nests/:id/eggs/:eggId/export', (req, res) => {
+  const egg = db.eggs.find(e => String(e.id) === String(req.params.eggId) && String(e.nest_id) === String(req.params.id));
+  if (!egg) return res.status(404).json({ error: 'Egg not found.' });
+
+  const exported = {
+    _comment: 'DO NOT EDIT THIS FILE. IT WAS EXPORTED BY SLAYERNODE PANEL.',
+    meta: {
+      version: 'PTDL_v2',
+      update_url: null,
+    },
+    exported_at: new Date().toISOString(),
+    name: egg.name,
+    author: egg.author,
+    description: egg.description,
+    features: egg.features ? egg.features.split(',').map(s => s.trim()) : null,
+    docker_images: egg.docker_images,
+    startup: egg.startup,
+    config: egg.config,
+    variables: egg.variables,
+  };
+
+  res.setHeader('Content-Disposition', `attachment; filename="egg-${egg.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.json"`);
+  res.setHeader('Content-Type', 'application/json');
+  res.send(JSON.stringify(exported, null, 2));
 });
 
 // ==========================================

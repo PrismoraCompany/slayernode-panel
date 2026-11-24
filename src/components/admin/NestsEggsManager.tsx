@@ -36,6 +36,9 @@ export const NestsEggsManager: React.FC = () => {
   const [newNestName, setNewNestName] = useState('');
   const [newNestDesc, setNewNestDesc] = useState('');
   const [importJsonText, setImportJsonText] = useState('');
+  const [importNestId, setImportNestId] = useState('1');
+  const [importFileName, setImportFileName] = useState('');
+  const [parsedEggPreview, setParsedEggPreview] = useState<any>(null);
 
   // Nest Edit Form
   const [nestName, setNestName] = useState('');
@@ -750,42 +753,149 @@ export const NestsEggsManager: React.FC = () => {
       {/* IMPORT EGG MODAL */}
       <GlassModal
         isOpen={showImportEggModal}
-        onClose={() => setShowImportEggModal(false)}
-        title="Import Egg Configuration"
-        description="Paste raw Egg JSON representation to import."
+        onClose={() => {
+          setShowImportEggModal(false);
+          setImportJsonText('');
+          setImportFileName('');
+          setParsedEggPreview(null);
+        }}
+        title="Import Custom Game Egg"
+        description="Upload a Pterodactyl-standard egg JSON file or paste the raw configuration."
       >
         <div className="flex flex-col gap-4 py-2 text-xs">
           <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-1">Egg JSON Data</label>
+            <label className="text-xs font-semibold text-slate-300 block mb-1">Target Nest Category</label>
+            <select
+              value={importNestId}
+              onChange={e => setImportNestId(e.target.value)}
+              className="w-full px-3 py-2 bg-[#121318] border border-white/10 rounded text-white text-xs focus:outline-none focus:border-red-500"
+            >
+              {nests.map(n => (
+                <option key={n.id} value={n.id} className="bg-slate-900 text-white">
+                  {n.name} (ID: {n.id})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-300 block mb-1">Upload Egg File (.json)</label>
+            <div className="border border-dashed border-white/20 rounded-lg p-4 bg-black/20 text-center hover:border-red-500/60 transition-colors">
+              <input
+                type="file"
+                accept=".json,application/json"
+                id="egg-file-input"
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setImportFileName(file.name);
+                  const reader = new FileReader();
+                  reader.onload = evt => {
+                    const content = String(evt.target?.result || '');
+                    setImportJsonText(content);
+                    try {
+                      const parsed = JSON.parse(content);
+                      setParsedEggPreview({
+                        name: parsed.name || file.name.replace('.json', ''),
+                        author: parsed.author || 'Custom Author',
+                        description: parsed.description || 'No description provided.',
+                      });
+                    } catch {
+                      setParsedEggPreview(null);
+                    }
+                  };
+                  reader.readAsText(file);
+                }}
+              />
+              <label
+                htmlFor="egg-file-input"
+                className="cursor-pointer flex flex-col items-center justify-center gap-2"
+              >
+                <Upload className="w-6 h-6 text-emerald-400" />
+                <span className="font-semibold text-white">
+                  {importFileName ? importFileName : 'Click to browse or drop an Egg JSON file'}
+                </span>
+                <span className="text-[11px] text-slate-400">Standard Pterodactyl v1 / v2 JSON format supported</span>
+              </label>
+            </div>
+          </div>
+
+          {parsedEggPreview && (
+            <div className="p-3 rounded bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs">
+              <div className="font-bold flex items-center gap-1.5">
+                <Check className="w-3.5 h-3.5 text-emerald-400" /> Detected Egg: {parsedEggPreview.name}
+              </div>
+              <div className="text-[11px] text-slate-300 mt-1">Author: {parsedEggPreview.author}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">{parsedEggPreview.description}</div>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-semibold text-slate-300 block mb-1">Raw JSON Data (Optional / Manual)</label>
             <textarea
               value={importJsonText}
-              onChange={e => setImportJsonText(e.target.value)}
-              rows={8}
-              className="glass-input w-full px-3 py-2 bg-[#121318] text-white font-mono rounded"
+              onChange={e => {
+                setImportJsonText(e.target.value);
+                try {
+                  const parsed = JSON.parse(e.target.value);
+                  setParsedEggPreview({
+                    name: parsed.name || 'Custom Egg',
+                    author: parsed.author || 'Custom',
+                    description: parsed.description || '',
+                  });
+                } catch {
+                  setParsedEggPreview(null);
+                }
+              }}
+              rows={5}
+              className="glass-input w-full px-3 py-2 bg-[#121318] text-white font-mono text-[11px] rounded"
               placeholder='{"name": "Custom Paper", ...}'
             />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <GlassButton variant="secondary" size="sm" onClick={() => setShowImportEggModal(false)}>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+            <GlassButton
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setShowImportEggModal(false);
+                setImportJsonText('');
+                setImportFileName('');
+                setParsedEggPreview(null);
+              }}
+            >
               Cancel
             </GlassButton>
             <GlassButton
               variant="accent"
               size="sm"
+              disabled={!importJsonText.trim()}
               onClick={async () => {
                 try {
-                  const parsed = JSON.parse(importJsonText);
-                  await fetch(`/api/application/nests/${nests[0]?.id || 1}/eggs`, {
+                  const targetNest = importNestId || selectedNest?.id || nests[0]?.id || 1;
+                  const res = await fetch(`/api/application/nests/${targetNest}/eggs/import`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(parsed),
+                    body: importJsonText,
                   });
+
+                  if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Failed to import Egg.');
+                  }
+
                   setShowImportEggModal(false);
                   setImportJsonText('');
-                  showNotification('Egg imported successfully.');
+                  setImportFileName('');
+                  setParsedEggPreview(null);
+                  showNotification('Egg imported successfully!');
                   fetchNests();
-                } catch {
-                  setError('Invalid Egg JSON string.');
+                  if (selectedNest) {
+                    fetchNestDetails(selectedNest.id);
+                  }
+                } catch (err: any) {
+                  setError(err.message || 'Invalid Egg JSON format.');
                 }
               }}
             >
