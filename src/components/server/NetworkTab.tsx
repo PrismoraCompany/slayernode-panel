@@ -8,7 +8,15 @@ import { Allocation } from '../../types';
 
 export const NetworkTab: React.FC = () => {
   const { activeServer } = useServer();
-  const [allocations, setAllocations] = useState<Allocation[]>(activeServer?.allocations || []);
+  const [allocations, setAllocations] = useState<Allocation[]>(() => 
+    activeServer?.allocations || (activeServer?.allocation ? [activeServer.allocation] : [])
+  );
+
+  React.useEffect(() => {
+    if (activeServer) {
+      setAllocations(activeServer.allocations || (activeServer.allocation ? [activeServer.allocation] : []));
+    }
+  }, [activeServer]);
 
   const setPrimary = (port: number) => {
     setAllocations(prev =>

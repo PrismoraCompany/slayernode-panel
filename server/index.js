@@ -116,7 +116,8 @@ const DEFAULT_DB = {
       name: 'Purpur',
       description: 'Drop-in replacement for Paper servers designed for high configurability, extreme performance optimizations, and customizable mob mechanics.',
       docker_images: {
-        'Java 21 (Default)': 'ghcr.io/pterodactyl/yolks:java_21',
+        'Java 25 (Recommended - Default)': 'ghcr.io/pterodactyl/yolks:java_25',
+        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
         'Java 17 (Legacy)': 'ghcr.io/pterodactyl/yolks:java_17',
       },
       startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui',
@@ -142,6 +143,7 @@ const DEFAULT_DB = {
       name: 'Vanilla Minecraft',
       description: 'Official Mojang Vanilla server software without mods or third-party patches. Pure unadulterated Minecraft experience.',
       docker_images: {
+        'Java 25 (Recommended - Default)': 'ghcr.io/pterodactyl/yolks:java_25',
         'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
         'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
       },
@@ -167,6 +169,7 @@ const DEFAULT_DB = {
       name: 'Forge Minecraft',
       description: 'Minecraft Forge mod loader engine enabling players and server administrators to run custom modpacks and community mods.',
       docker_images: {
+        'Java 25 (Recommended - Default)': 'ghcr.io/pterodactyl/yolks:java_25',
         'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
         'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
         'Java 8': 'ghcr.io/pterodactyl/yolks:java_8',
@@ -194,6 +197,7 @@ const DEFAULT_DB = {
       name: 'Fabric Minecraft',
       description: 'Fabric is a lightweight, experimental, and modern modding toolchain for Minecraft with exceptional server optimization mods.',
       docker_images: {
+        'Java 25 (Recommended - Default)': 'ghcr.io/pterodactyl/yolks:java_25',
         'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
         'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
       },
@@ -220,6 +224,7 @@ const DEFAULT_DB = {
       name: 'Velocity Proxy',
       description: 'Next-generation Minecraft proxy with high packet throughput, modern DDoS mitigations, and velocity forward support.',
       docker_images: {
+        'Java 25 (Recommended - Default)': 'ghcr.io/pterodactyl/yolks:java_25',
         'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
         'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
       },
@@ -242,6 +247,7 @@ const DEFAULT_DB = {
       name: 'BungeeCord',
       description: 'Classic multi-server proxy network engine connecting various Minecraft worlds into a single player network.',
       docker_images: {
+        'Java 25 (Recommended - Default)': 'ghcr.io/pterodactyl/yolks:java_25',
         'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
         'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
       },
@@ -1206,7 +1212,7 @@ app.post('/api/application/nests/:id/eggs', requireRootAdmin, (req, res) => {
     author: req.user?.email || 'admin@slayernode.xyz',
     name: data.name.trim(),
     description: data.description ? data.description.trim() : '',
-    docker_images: data.docker_images || 'ghcr.io/pterodactyl/yolks:java_21',
+    docker_images: data.docker_images || 'ghcr.io/pterodactyl/yolks:java_25',
     startup: data.startup || 'java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui',
     force_outgoing_ip: !!data.force_outgoing_ip,
     features: data.features || '',
@@ -1295,7 +1301,7 @@ app.post('/api/application/nests/:id/eggs/import', requireRootAdmin, (req, res) 
   }
 
   // Handle docker_images mapping (can be object, string, or array in Pterodactyl eggs)
-  let dockerImagesStr = 'ghcr.io/pterodactyl/yolks:java_21';
+  let dockerImagesStr = 'ghcr.io/pterodactyl/yolks:java_25';
   if (typeof raw.docker_images === 'string') {
     dockerImagesStr = raw.docker_images;
   } else if (raw.docker_images && typeof raw.docker_images === 'object') {
@@ -1748,6 +1754,73 @@ app.get('/api/client/servers/:uuid/logs', verifyServerOwnership, async (req, res
   res.json({ data: [] });
 });
 
+// Startup Parameters API (Pterodactyl Parity)
+app.get('/api/client/servers/:uuid/startup', verifyServerOwnership, (req, res) => {
+  const egg = (db.eggs || []).find(e => String(e.id) === String(req.targetServer.egg_id));
+  res.json({
+    startup: req.targetServer.startup || egg?.startup || 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}',
+    docker_image: req.targetServer.docker_image || req.targetServer.image || egg?.docker_image || 'ghcr.io/pterodactyl/yolks:java_25',
+    variables: req.targetServer.environment || egg?.variables || [],
+  });
+});
+
+app.put('/api/client/servers/:uuid/startup', verifyServerOwnership, (req, res) => {
+  const { startup, docker_image, variables } = req.body;
+  if (startup) req.targetServer.startup = startup;
+  if (docker_image) {
+    req.targetServer.docker_image = docker_image;
+    req.targetServer.image = docker_image;
+  }
+  if (variables) {
+    req.targetServer.environment = { ...(req.targetServer.environment || {}), ...variables };
+  }
+  saveState(db);
+  res.json({ success: true, message: 'Startup parameters updated successfully.' });
+});
+
+// File Manager Proxy Routes (Pterodactyl Parity)
+app.all('/api/client/servers/:uuid/files*', verifyServerOwnership, async (req, res) => {
+  try {
+    const node = db.nodes.find(n => n.id === req.targetServer.node_id) || db.nodes[0];
+    if (!node) {
+      return res.status(502).json({ error: 'Node unavailable for file operations.' });
+    }
+    const subpath = req.path.replace(`/api/client/servers/${req.params.uuid}/files`, '');
+    const queryPart = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    const daemonUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.params.uuid}/files${subpath}${queryPart}`;
+
+    const headers = {
+      'Content-Type': req.headers['content-type'] || 'application/json',
+      'Authorization': `Bearer ${node.daemon_token || 'sn_sandbox_token_secret'}`
+    };
+
+    const fetchOptions = {
+      method: req.method,
+      headers,
+    };
+
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      fetchOptions.body = JSON.stringify(req.body);
+    }
+
+    const daemonRes = await fetch(daemonUrl, fetchOptions);
+    const contentType = daemonRes.headers.get('content-type') || 'application/json';
+    res.status(daemonRes.status);
+    res.setHeader('Content-Type', contentType);
+
+    if (contentType.includes('application/json')) {
+      const data = await daemonRes.json();
+      return res.json(data);
+    } else {
+      const text = await daemonRes.text();
+      return res.send(text);
+    }
+  } catch (err) {
+    console.error('[File Proxy Error]', err.message);
+    res.status(500).json({ error: 'Failed to proxy file operation to daemon: ' + err.message });
+  }
+});
+
 app.get('/api/client/servers/:uuid/websocket', verifyServerOwnership, (req, res) => {
   const ephemeralToken = `jwt_slayernode_${Date.now()}`;
   res.json({
@@ -1808,20 +1881,35 @@ wss.on('connection', (clientWs, req) => {
 
   // Establish upstream WebSocket bridge to SlayerWings Daemon on port 8443
   let daemonWs = null;
+  const pendingQueue = [];
   try {
     daemonWs = new WebSocket('ws://127.0.0.1:8443');
+    daemonWs.on('open', () => {
+      // If client requested specific server, immediately request backlogs
+      if (serverUuid) {
+        daemonWs.send(JSON.stringify({ event: 'auth', args: [`jwt_slayernode_${Date.now()}`], server: serverUuid }));
+      }
+      while (pendingQueue.length > 0) {
+        const item = pendingQueue.shift();
+        if (daemonWs.readyState === WebSocket.OPEN) daemonWs.send(item);
+      }
+    });
     daemonWs.on('message', data => {
       if (clientWs.readyState === WebSocket.OPEN) {
         clientWs.send(data);
       }
     });
-    daemonWs.on('error', () => {});
+    daemonWs.on('error', err => {
+      console.warn('[Daemon WS Bridge Notice]', err.message);
+    });
   } catch (e) {}
 
   clientWs.on('message', message => {
     try {
       if (daemonWs && daemonWs.readyState === WebSocket.OPEN) {
         daemonWs.send(message);
+      } else {
+        pendingQueue.push(message);
       }
     } catch (e) {}
   });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Folder,
@@ -19,6 +19,9 @@ import {
   Copy,
   Check,
   Shield,
+  RefreshCw,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { useServer } from '../../context/ServerContext';
 import { useAuth } from '../../context/AuthContext';
@@ -28,88 +31,21 @@ import { GlassInput } from '../ui/GlassInput';
 import { GlassModal } from '../ui/GlassModal';
 import { FileObject } from '../../types';
 
-const INITIAL_FILES: FileObject[] = [
-  { name: 'plugins', created: '2026-11-10', modified: '2026-11-23 14:10', mode: 'drwxr-xr-x', mode_bits: '0755', size: 4096, directory: true, file: false, symlink: false, mime: 'inode/directory' },
-  { name: 'world', created: '2026-11-10', modified: '2026-11-23 14:22', mode: 'drwxr-xr-x', mode_bits: '0755', size: 12288, directory: true, file: false, symlink: false, mime: 'inode/directory' },
-  { name: 'world_nether', created: '2026-11-10', modified: '2026-11-23 14:15', mode: 'drwxr-xr-x', mode_bits: '0755', size: 4096, directory: true, file: false, symlink: false, mime: 'inode/directory' },
-  { name: 'world_the_end', created: '2026-11-10', modified: '2026-11-23 14:15', mode: 'drwxr-xr-x', mode_bits: '0755', size: 4096, directory: true, file: false, symlink: false, mime: 'inode/directory' },
-  { name: 'logs', created: '2026-11-10', modified: '2026-11-23 14:22', mode: 'drwxr-xr-x', mode_bits: '0755', size: 4096, directory: true, file: false, symlink: false, mime: 'inode/directory' },
-  { name: 'config', created: '2026-11-10', modified: '2026-11-23 13:40', mode: 'drwxr-xr-x', mode_bits: '0755', size: 4096, directory: true, file: false, symlink: false, mime: 'inode/directory' },
-  { name: 'server.properties', created: '2026-11-10', modified: '2026-11-23 14:02', mode: '-rw-r--r--', mode_bits: '0644', size: 1840, directory: false, file: true, symlink: false, mime: 'text/plain' },
-  { name: 'purpur.yml', created: '2026-11-10', modified: '2026-11-23 13:50', mode: '-rw-r--r--', mode_bits: '0644', size: 34120, directory: false, file: true, symlink: false, mime: 'text/yaml' },
-  { name: 'paper-global.yml', created: '2026-11-10', modified: '2026-11-23 13:51', mode: '-rw-r--r--', mode_bits: '0644', size: 15420, directory: false, file: true, symlink: false, mime: 'text/yaml' },
-  { name: 'eula.txt', created: '2026-11-10', modified: '2026-11-10 12:00', mode: '-rw-r--r--', mode_bits: '0644', size: 180, directory: false, file: true, symlink: false, mime: 'text/plain' },
-  { name: 'ops.json', created: '2026-11-10', modified: '2026-11-23 12:15', mode: '-rw-r--r--', mode_bits: '0644', size: 420, directory: false, file: true, symlink: false, mime: 'application/json' },
-  { name: 'whitelist.json', created: '2026-11-10', modified: '2026-11-23 12:15', mode: '-rw-r--r--', mode_bits: '0644', size: 1200, directory: false, file: true, symlink: false, mime: 'application/json' },
-  { name: 'server.jar', created: '2026-11-10', modified: '2026-11-23 12:00', mode: '-rw-r--r--', mode_bits: '0755', size: 68157440, directory: false, file: true, symlink: false, mime: 'application/java-archive' },
-];
-
-const SAMPLE_SERVER_PROPERTIES = `# Minecraft server properties
-# Mon Nov 23 14:02:00 UTC 2026
-enable-jmx-monitoring=false
-rcon.port=25575
-level-seed=
-gamemode=survival
-enable-command-block=true
-enable-query=true
-generator-settings={}
-enforce-secure-profile=false
-level-name=world
-motd=\\u00A7b\\u00A7lSlayerCraft \\u00A78\\u00A7l| \\u00A7fNext-Gen Survival \\u00A77[1.21.4]
-query.port=25565
-pvp=true
-generate-structures=true
-difficulty=hard
-network-compression-threshold=256
-require-resource-pack=false
-max-tick-time=60000
-use-native-transport=true
-max-players=100
-online-mode=true
-enable-status=true
-allow-flight=false
-broadcast-rcon-to-ops=true
-view-distance=10
-server-ip=0.0.0.0
-resource-pack-prompt=
-allow-nether=true
-server-port=25565
-sync-chunk-writes=true
-enable-rcon=true
-op-permission-level=4
-prevent-proxy-connections=false
-hide-online-players=false
-entity-broadcast-range-percentage=100
-simulation-distance=10
-rcon.password=SecureSlayerPass99
-player-idle-timeout=0
-force-gamemode=false
-rate-limit=0
-hardcore=false
-white-list=false
-broadcast-console-to-ops=true
-spawn-npcs=true
-spawn-animals=true
-snooper-enabled=false
-function-permission-level=2
-level-type=minecraft\\:normal
-spawn-monsters=true
-enforce-whitelist=false
-spawn-protection=0
-max-world-size=29999984
-`;
-
 export const FileManager: React.FC = () => {
   const { activeServer } = useServer();
   const { user } = useAuth();
   const [currentPath, setCurrentPath] = useState<string[]>([]);
-  const [files, setFiles] = useState<FileObject[]>(INITIAL_FILES);
+  const [files, setFiles] = useState<FileObject[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
 
   // Editor modal state
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
+  const [loadingContent, setLoadingContent] = useState<boolean>(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [savingFile, setSavingFile] = useState(false);
 
   // SFTP modal state
   const [showSftpModal, setShowSftpModal] = useState(false);
@@ -118,6 +54,41 @@ export const FileManager: React.FC = () => {
   // New folder / file modal
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [creatingFolder, setCreatingFolder] = useState(false);
+
+  // File upload hidden ref
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Load directory entries from node daemon
+  const fetchFiles = async () => {
+    if (!activeServer) return;
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      const dirParam = encodeURIComponent('/' + currentPath.join('/'));
+      const res = await fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/files/list?directory=${dirParam}`);
+      if (!res.ok) {
+        throw new Error(`Failed to load directory (${res.status})`);
+      }
+      const data = await res.json();
+      if (Array.isArray(data.data)) {
+        setFiles(data.data);
+      } else {
+        setFiles([]);
+      }
+    } catch (err: any) {
+      console.error('[FileManager] Error fetching files:', err.message);
+      setErrorMsg(err.message || 'Error loading directory contents.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setSelectedFiles(new Set());
+    fetchFiles();
+  }, [activeServer?.uuid, activeServer?.id, currentPath.join('/')]);
 
   const toggleSelectFile = (name: string) => {
     const next = new Set(selectedFiles);
@@ -134,48 +105,125 @@ export const FileManager: React.FC = () => {
     }
   };
 
-  const openFile = (file: FileObject) => {
+  const openFile = async (file: FileObject) => {
     if (file.directory) {
       setCurrentPath(prev => [...prev, file.name]);
     } else {
       setEditingFile(file.name);
-      if (file.name === 'server.properties') {
-        setFileContent(SAMPLE_SERVER_PROPERTIES);
-      } else if (file.name.endsWith('.yml')) {
-        setFileContent(`# Configuration for ${file.name}\nverbose: false\nchunk-loading:\n  threads: 4\n  optimize: true\n`);
-      } else {
-        setFileContent(`// Content of ${file.name}\n// Loaded directly from server container storage\n`);
+      setLoadingContent(true);
+      try {
+        const filePath = encodeURIComponent('/' + [...currentPath, file.name].join('/'));
+        const res = await fetch(`/api/client/servers/${activeServer?.uuid || activeServer?.id}/files/contents?file=${filePath}`);
+        if (!res.ok) {
+          throw new Error('Could not read file contents.');
+        }
+        const text = await res.text();
+        setFileContent(text);
+      } catch (err: any) {
+        setFileContent(`// Error reading file: ${err.message}\n`);
+      } finally {
+        setLoadingContent(false);
       }
     }
   };
 
-  const handleSaveEditor = () => {
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
+  const handleSaveEditor = async () => {
+    if (!editingFile || !activeServer) return;
+    setSavingFile(true);
+    try {
+      const targetPath = '/' + [...currentPath, editingFile].join('/');
+      const res = await fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/files/write`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file: targetPath,
+          content: fileContent,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to save file to container volume.');
+
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2000);
+      fetchFiles();
+    } catch (err: any) {
+      alert('Save failed: ' + err.message);
+    } finally {
+      setSavingFile(false);
+    }
   };
 
-  const handleDeleteSelected = () => {
-    setFiles(prev => prev.filter(f => !selectedFiles.has(f.name)));
-    setSelectedFiles(new Set());
+  const handleDeleteSelected = async () => {
+    if (selectedFiles.size === 0 || !activeServer) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedFiles.size} item(s)?`)) return;
+
+    try {
+      const filePaths = Array.from(selectedFiles).map(name => '/' + [...currentPath, name].join('/'));
+      const res = await fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/files/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: filePaths }),
+      });
+
+      if (!res.ok) throw new Error('Deletion failed.');
+      setSelectedFiles(new Set());
+      fetchFiles();
+    } catch (err: any) {
+      alert('Error deleting files: ' + err.message);
+    }
   };
 
-  const handleCreateFolder = () => {
-    if (!newFolderName.trim()) return;
-    const newDir: FileObject = {
-      name: newFolderName.trim(),
-      created: 'Just now',
-      modified: 'Just now',
-      mode: 'drwxr-xr-x',
-      mode_bits: '0755',
-      size: 4096,
-      directory: true,
-      file: false,
-      symlink: false,
-      mime: 'inode/directory',
-    };
-    setFiles(prev => [newDir, ...prev]);
-    setNewFolderName('');
-    setShowNewFolderModal(false);
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim() || !activeServer) return;
+    setCreatingFolder(true);
+    try {
+      const res = await fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/files/create-folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          root: '/' + currentPath.join('/'),
+          name: newFolderName.trim(),
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to create folder.');
+      setNewFolderName('');
+      setShowNewFolderModal(false);
+      fetchFiles();
+    } catch (err: any) {
+      alert('Folder creation failed: ' + err.message);
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploadedFiles = e.target.files;
+    if (!uploadedFiles || uploadedFiles.length === 0 || !activeServer) return;
+
+    setUploading(true);
+    try {
+      for (let i = 0; i < uploadedFiles.length; i++) {
+        const f = uploadedFiles[i];
+        const content = await f.text();
+        const targetPath = '/' + [...currentPath, f.name].join('/');
+
+        await fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/files/write`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            file: targetPath,
+            content,
+          }),
+        });
+      }
+      fetchFiles();
+    } catch (err: any) {
+      alert('Upload failed: ' + err.message);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const copyToClipboard = (text: string, field: string) => {
@@ -185,12 +233,16 @@ export const FileManager: React.FC = () => {
   };
 
   const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 B';
+    if (!bytes || bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
   };
+
+  const sftpHost = activeServer?.allocation?.ip || window.location.hostname || '127.0.0.1';
+  const sftpPort = 2202;
+  const sftpUser = `${user?.username || 'admin'}.${activeServer?.identifier || activeServer?.uuid?.slice(0, 8) || 'srv'}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -222,6 +274,16 @@ export const FileManager: React.FC = () => {
           <GlassButton
             size="sm"
             variant="glass"
+            onClick={fetchFiles}
+            disabled={loading}
+            leftIcon={<RefreshCw className={`w-3.5 h-3.5 text-slate-300 ${loading ? 'animate-spin' : ''}`} />}
+          >
+            Refresh
+          </GlassButton>
+
+          <GlassButton
+            size="sm"
+            variant="glass"
             onClick={() => setShowSftpModal(true)}
             leftIcon={<Key className="w-3.5 h-3.5 text-amber-400" />}
           >
@@ -241,11 +303,18 @@ export const FileManager: React.FC = () => {
             <GlassButton
               size="sm"
               variant="accent"
+              disabled={uploading}
               leftIcon={<UploadCloud className="w-3.5 h-3.5" />}
             >
-              Upload File
+              {uploading ? 'Uploading...' : 'Upload File'}
             </GlassButton>
-            <input type="file" multiple className="hidden" />
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handleFileUpload}
+              className="hidden"
+            />
           </label>
 
           {selectedFiles.size > 0 && (
@@ -260,6 +329,13 @@ export const FileManager: React.FC = () => {
           )}
         </div>
       </div>
+
+      {errorMsg && (
+        <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
 
       {/* Files Table Glass Card */}
       <GlassCard className="overflow-hidden">
@@ -281,48 +357,65 @@ export const FileManager: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {files.map(file => {
-              const isSelected = selectedFiles.has(file.name);
-              return (
-                <tr
-                  key={file.name}
-                  onClick={() => openFile(file)}
-                  className={`hover:bg-white/5 transition-colors cursor-pointer select-none ${
-                    isSelected ? 'bg-sky-500/10' : ''
-                  }`}
-                >
-                  <td className="p-3.5 text-center" onClick={e => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelectFile(file.name)}
-                      className="rounded border-white/20 bg-slate-900 text-sky-500 focus:ring-0 cursor-pointer"
-                    />
-                  </td>
-                  <td className="p-3.5 font-medium text-slate-200 flex items-center gap-3">
-                    {file.directory ? (
-                      <Folder className="w-4 h-4 text-sky-400 fill-sky-400/20" />
-                    ) : file.name.endsWith('.jar') || file.name.endsWith('.zip') ? (
-                      <FileArchive className="w-4 h-4 text-amber-400" />
-                    ) : file.name.endsWith('.yml') || file.name.endsWith('.json') || file.name.endsWith('.properties') ? (
-                      <FileCode className="w-4 h-4 text-emerald-400" />
-                    ) : (
-                      <FileText className="w-4 h-4 text-slate-400" />
-                    )}
-                    <span className="font-mono text-xs">{file.name}</span>
-                  </td>
-                  <td className="p-3.5 text-slate-400 font-mono hidden md:table-cell">
-                    {file.directory ? '—' : formatBytes(file.size)}
-                  </td>
-                  <td className="p-3.5 text-slate-500 font-mono text-[11px] hidden lg:table-cell">
-                    {file.mode}
-                  </td>
-                  <td className="p-3.5 text-slate-400 text-[11px] hidden sm:table-cell">
-                    {file.modified}
-                  </td>
-                </tr>
-              );
-            })}
+            {loading && files.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="p-8 text-center text-slate-400">
+                  <div className="flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+                    <span>Loading server volume files from Wings daemon...</span>
+                  </div>
+                </td>
+              </tr>
+            ) : files.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="p-8 text-center text-slate-400">
+                  This directory is empty.
+                </td>
+              </tr>
+            ) : (
+              files.map(file => {
+                const isSelected = selectedFiles.has(file.name);
+                return (
+                  <tr
+                    key={file.name}
+                    onClick={() => openFile(file)}
+                    className={`hover:bg-white/5 transition-colors cursor-pointer select-none ${
+                      isSelected ? 'bg-sky-500/10' : ''
+                    }`}
+                  >
+                    <td className="p-3.5 text-center" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelectFile(file.name)}
+                        className="rounded border-white/20 bg-slate-900 text-sky-500 focus:ring-0 cursor-pointer"
+                      />
+                    </td>
+                    <td className="p-3.5 font-medium text-slate-200 flex items-center gap-3">
+                      {file.directory ? (
+                        <Folder className="w-4 h-4 text-sky-400 fill-sky-400/20" />
+                      ) : file.name.endsWith('.jar') || file.name.endsWith('.zip') ? (
+                        <FileArchive className="w-4 h-4 text-amber-400" />
+                      ) : file.name.endsWith('.yml') || file.name.endsWith('.yaml') || file.name.endsWith('.json') || file.name.endsWith('.properties') ? (
+                        <FileCode className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <FileText className="w-4 h-4 text-slate-400" />
+                      )}
+                      <span className="font-mono text-xs">{file.name}</span>
+                    </td>
+                    <td className="p-3.5 text-slate-400 font-mono hidden md:table-cell">
+                      {file.directory ? '—' : formatBytes(file.size)}
+                    </td>
+                    <td className="p-3.5 text-slate-500 font-mono text-[11px] hidden lg:table-cell">
+                      {file.mode || '-rw-r--r--'}
+                    </td>
+                    <td className="p-3.5 text-slate-400 text-[11px] hidden sm:table-cell">
+                      {file.modified}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </GlassCard>
@@ -332,7 +425,7 @@ export const FileManager: React.FC = () => {
         isOpen={!!editingFile}
         onClose={() => setEditingFile(null)}
         title={`Editing: ${editingFile}`}
-        description="Liquid Glass integrated code editor with container sync"
+        description="Liquid Glass live code editor synced with container volume"
         maxWidth="4xl"
       >
         <div className="flex flex-col gap-3">
@@ -341,23 +434,30 @@ export const FileManager: React.FC = () => {
               <span>{editingFile}</span>
               <span>UTF-8 • UNIX (LF)</span>
             </div>
-            <textarea
-              value={fileContent}
-              onChange={e => setFileContent(e.target.value)}
-              rows={22}
-              className="w-full bg-transparent p-4 text-slate-100 font-mono text-xs leading-relaxed focus:outline-none resize-none selection:bg-sky-500/30"
-              spellCheck={false}
-            />
+            {loadingContent ? (
+              <div className="p-12 text-center text-slate-400 flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+                <span>Reading file from Wings volume...</span>
+              </div>
+            ) : (
+              <textarea
+                value={fileContent}
+                onChange={e => setFileContent(e.target.value)}
+                rows={22}
+                className="w-full bg-transparent p-4 text-slate-100 font-mono text-xs leading-relaxed focus:outline-none resize-none selection:bg-sky-500/30"
+                spellCheck={false}
+              />
+            )}
           </div>
 
           <div className="flex items-center justify-between pt-2">
             <span className="text-xs text-slate-400">
               {isSaved ? (
                 <span className="text-emerald-400 flex items-center gap-1 font-semibold">
-                  <Check className="w-3.5 h-3.5" /> File saved to container!
+                  <Check className="w-3.5 h-3.5" /> File saved to container volume!
                 </span>
               ) : (
-                'Press Ctrl+S or click Save to apply changes.'
+                'Press Save Changes to apply updates directly to container.'
               )}
             </span>
             <div className="flex items-center gap-2">
@@ -368,9 +468,10 @@ export const FileManager: React.FC = () => {
                 variant="accent"
                 size="sm"
                 onClick={handleSaveEditor}
-                leftIcon={<Save className="w-3.5 h-3.5" />}
+                disabled={savingFile || loadingContent}
+                leftIcon={savingFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
               >
-                Save Changes
+                {savingFile ? 'Saving...' : 'Save Changes'}
               </GlassButton>
             </div>
           </div>
@@ -388,7 +489,7 @@ export const FileManager: React.FC = () => {
         <div className="flex flex-col gap-4 py-2">
           <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-400/20 text-amber-200 text-xs flex items-center gap-2.5">
             <Shield className="w-4 h-4 shrink-0 text-amber-400" />
-            <span>SFTP traffic is encrypted and handled directly by Wings daemon.</span>
+            <span>SFTP traffic is encrypted and handled directly by SlayerWings SFTP subsystem.</span>
           </div>
 
           <div className="flex flex-col gap-3 text-xs">
@@ -396,11 +497,11 @@ export const FileManager: React.FC = () => {
             <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-white/10">
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Server Host</span>
-                <span className="font-mono text-slate-200 font-semibold">{activeServer?.allocation.ip}</span>
+                <span className="font-mono text-slate-200 font-semibold">{sftpHost}</span>
               </div>
               <button
-                onClick={() => copyToClipboard(activeServer?.allocation.ip || '', 'host')}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300"
+                onClick={() => copyToClipboard(sftpHost, 'host')}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 cursor-pointer"
               >
                 {copiedField === 'host' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
               </button>
@@ -410,11 +511,11 @@ export const FileManager: React.FC = () => {
             <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-white/10">
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">SFTP Port</span>
-                <span className="font-mono text-slate-200 font-semibold">2022</span>
+                <span className="font-mono text-slate-200 font-semibold">{sftpPort}</span>
               </div>
               <button
-                onClick={() => copyToClipboard('2022', 'port')}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300"
+                onClick={() => copyToClipboard(String(sftpPort), 'port')}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 cursor-pointer"
               >
                 {copiedField === 'port' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
               </button>
@@ -424,11 +525,11 @@ export const FileManager: React.FC = () => {
             <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-white/10">
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">SFTP Username</span>
-                <span className="font-mono text-slate-200 font-semibold">{user?.username || 'admin'}.{activeServer?.identifier}</span>
+                <span className="font-mono text-slate-200 font-semibold">{sftpUser}</span>
               </div>
               <button
-                onClick={() => copyToClipboard(`${user?.username || 'admin'}.${activeServer?.identifier}`, 'user')}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300"
+                onClick={() => copyToClipboard(sftpUser, 'user')}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 cursor-pointer"
               >
                 {copiedField === 'user' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
               </button>
@@ -438,13 +539,13 @@ export const FileManager: React.FC = () => {
             <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-white/10">
               <div className="min-w-0 pr-2">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">1-Click SFTP URI</span>
-                <span className="font-mono text-[11px] text-red-500 truncate block">
-                  sftp://{user?.username || 'admin'}.{activeServer?.identifier}@{activeServer?.allocation.ip}:2022
+                <span className="font-mono text-[11px] text-sky-400 truncate block">
+                  sftp://{sftpUser}@{sftpHost}:{sftpPort}
                 </span>
               </div>
               <button
-                onClick={() => copyToClipboard(`sftp://${user?.username || 'admin'}.${activeServer?.identifier}@${activeServer?.allocation.ip}:2022`, 'uri')}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 shrink-0"
+                onClick={() => copyToClipboard(`sftp://${sftpUser}@${sftpHost}:${sftpPort}`, 'uri')}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 shrink-0 cursor-pointer"
               >
                 {copiedField === 'uri' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
               </button>
@@ -477,8 +578,8 @@ export const FileManager: React.FC = () => {
             <GlassButton variant="ghost" size="sm" onClick={() => setShowNewFolderModal(false)}>
               Cancel
             </GlassButton>
-            <GlassButton variant="accent" size="sm" onClick={handleCreateFolder}>
-              Create Directory
+            <GlassButton variant="accent" size="sm" onClick={handleCreateFolder} disabled={creatingFolder}>
+              {creatingFolder ? 'Creating...' : 'Create Directory'}
             </GlassButton>
           </div>
         </div>

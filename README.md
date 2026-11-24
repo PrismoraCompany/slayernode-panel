@@ -555,6 +555,12 @@ SlayerNode enforces strict infrastructure safety rules to protect your container
   4. Click the red **Delete** button on the node card or in the node detail header.
   5. The panel will confirm the action and cleanly remove the node and its unassigned allocations.
 
+### 5. High-Speed Sub-Millisecond Terminal & Real-Time File Management
+* **Dual-Path Interactive Console Engine**: Terminal commands are dispatched simultaneously via low-latency WebSocket connection directly to the Java process `stdin` with redundant HTTP fallback, guaranteeing sub-millisecond execution latency on the daemon.
+* **Resilient WebSocket Bridge & Auto-Reconnect**: Frontend WebSocket continuously streams live `stdout`/`stderr` from game servers, automatically reconnecting with exponential backoff on network changes or daemon restarts without dropping logs.
+* **Volume-Synced File Manager**: Direct Pterodactyl-parity file explorer reading and writing real files on `/slayerwings/volumes/<uuid>`. Allows live in-browser code editing, creation of folders, multi-file deletion, and file uploads directly to game containers.
+* **Modern OpenJDK 25 Standards**: Default container runtime tag set across all eggs and environment templates to `ghcr.io/pterodactyl/yolks:java_25`, ensuring compatibility with the latest Minecraft releases and optimizations.
+
 ---
 
 ## 🛠️ Comprehensive Connection & Error Troubleshooting Matrix

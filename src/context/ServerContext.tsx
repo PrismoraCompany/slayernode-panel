@@ -89,16 +89,21 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
   const wsRef = React.useRef<WebSocket | null>(null);
 
-  // Connect to real Wings Daemon WebSocket on port 8443
+  // Connect to real Wings Daemon WebSocket on port 8443 or panel websocket bridge
   useEffect(() => {
     if (!activeServer) return;
+
+    let isSubscribed = true;
+    let reconnectTimeout: any = null;
+    let socket: WebSocket | null = null;
 
     // 1. Fetch persistent log buffer from daemon
     fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/logs`)
       .then(res => res.json())
       .then(data => {
+        if (!isSubscribed) return;
         if (data && Array.isArray(data.data) && data.data.length > 0) {
-          const lines = data.data.map((l: string) => l.endsWith('\n') ? l.slice(0, -1) : l);
+          const lines = data.data.map((l: string) => (typeof l === 'string' && l.endsWith('\n') ? l.slice(0, -1) : String(l)));
           setConsoleLogs(lines);
         } else {
           setConsoleLogs([]);
@@ -106,76 +111,104 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       })
       .catch(() => {});
 
-    // 2. Establish live WebSocket connection to daemon telemetry & stdout bridge
-    const isSecure = window.location.protocol === 'https:';
-    const wsProto = isSecure ? 'wss:' : 'ws:';
-    const host = window.location.hostname || 'localhost';
+    // 2. Establish live WebSocket connection with auto-reconnect
+    const connectWs = () => {
+      if (!isSubscribed) return;
 
-    // When running in local dev on 3000/3001, connect directly to daemon on 8443.
-    // When running behind Cloudflare Zero Trust tunnel or Nginx reverse proxy, connect via websocket bridge.
-    let wsUrl: string;
-    if (window.location.port === '3000' || window.location.port === '3001') {
-      wsUrl = `${wsProto}//${host}:8443`;
-    } else {
-      const portPart = window.location.port ? `:${window.location.port}` : '';
-      wsUrl = `${wsProto}//${host}${portPart}/api/client/servers/${activeServer.uuid || activeServer.id}/ws`;
-    }
+      const isSecure = window.location.protocol === 'https:';
+      const wsProto = isSecure ? 'wss:' : 'ws:';
+      const host = window.location.hostname || 'localhost';
 
-    let socket: WebSocket;
+      let wsUrl: string;
+      if (window.location.port === '3000' || window.location.port === '3001') {
+        wsUrl = `${wsProto}//${host}:8443`;
+      } else {
+        const portPart = window.location.port ? `:${window.location.port}` : '';
+        wsUrl = `${wsProto}//${host}${portPart}/api/client/servers/${activeServer.uuid || activeServer.id}/ws`;
+      }
 
-    try {
-      socket = new WebSocket(wsUrl);
-      wsRef.current = socket;
+      try {
+        socket = new WebSocket(wsUrl);
+        wsRef.current = socket;
 
-      socket.onopen = () => {
-        console.log('[SlayerWings] Connected to live daemon WebSocket telemetry bridge');
-      };
+        socket.onopen = () => {
+          console.log('[SlayerWings] Live telemetry and stdin bridge connected');
+          socket?.send(JSON.stringify({
+            event: 'auth',
+            args: [`jwt_slayernode_${Date.now()}`],
+            server: activeServer.uuid || activeServer.id,
+          }));
+        };
 
-      socket.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.event === 'console_output') {
-            if (!msg.server || msg.server === activeServer.uuid || msg.server === activeServer.id) {
-              const cleanLine = msg.line.endsWith('\n') ? msg.line.slice(0, -1) : msg.line;
-              setConsoleLogs(prev => [...prev.slice(-300), cleanLine]);
-            }
-          } else if (msg.event === 'stats' && msg.data) {
-            setStats(prev => ({
-              ...prev,
-              cpu_absolute: msg.data.cpu_absolute ?? prev.cpu_absolute,
-              memory_bytes: msg.data.memory_bytes ?? prev.memory_bytes,
-              memory_limit_bytes: msg.data.memory_limit_bytes ?? prev.memory_limit_bytes,
-              network: msg.data.network ?? prev.network,
-              state: msg.data.state || (activeServer.status as any),
-            }));
+        socket.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.event === 'console_output') {
+              const target = msg.server;
+              const matches = !target || target === 'all' ||
+                target === activeServer.uuid ||
+                target === activeServer.id ||
+                (activeServer.uuid && target.startsWith(activeServer.uuid.slice(0, 8))) ||
+                (activeServer.identifier && target.startsWith(activeServer.identifier));
 
-            // Add real point to history graph
-            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            setHistoryStats(prev => [
-              ...prev.slice(-20),
-              {
-                time: timeStr,
-                cpu: msg.data.cpu_absolute || 0,
-                ram: Math.round((msg.data.memory_bytes || 0) / 1024 / 1024),
-                disk: 17.1,
-                netRx: Math.round(((msg.data.network?.rx_bytes || 0) % 1000000) / 1024),
-                netTx: Math.round(((msg.data.network?.tx_bytes || 0) % 1000000) / 1024),
+              if (matches) {
+                const line = msg.line || msg.data || msg.args?.[0] || '';
+                const cleanLine = typeof line === 'string' && line.endsWith('\n') ? line.slice(0, -1) : String(line);
+                if (cleanLine) {
+                  setConsoleLogs(prev => [...prev.slice(-300), cleanLine]);
+                }
               }
-            ]);
-          }
-        } catch {}
-      };
+            } else if (msg.event === 'stats' && msg.data) {
+              setStats(prev => ({
+                ...prev,
+                cpu_absolute: msg.data.cpu_absolute ?? prev.cpu_absolute,
+                memory_bytes: msg.data.memory_bytes ?? prev.memory_bytes,
+                memory_limit_bytes: msg.data.memory_limit_bytes ?? prev.memory_limit_bytes,
+                network: msg.data.network ?? prev.network,
+                state: msg.data.state || (activeServer.status as any),
+              }));
 
-      socket.onerror = () => {
-        console.log('[SlayerWings] WebSocket connection to daemon currently dormant');
-      };
-    } catch {}
+              const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+              setHistoryStats(prev => [
+                ...prev.slice(-20),
+                {
+                  time: timeStr,
+                  cpu: msg.data.cpu_absolute || 0,
+                  ram: Math.round((msg.data.memory_bytes || 0) / 1024 / 1024),
+                  disk: 17.1,
+                  netRx: Math.round(((msg.data.network?.rx_bytes || 0) % 1000000) / 1024),
+                  netTx: Math.round(((msg.data.network?.tx_bytes || 0) % 1000000) / 1024),
+                }
+              ]);
+            }
+          } catch {}
+        };
+
+        socket.onclose = () => {
+          if (isSubscribed) {
+            reconnectTimeout = setTimeout(connectWs, 1500);
+          }
+        };
+
+        socket.onerror = () => {
+          try { socket?.close(); } catch {}
+        };
+      } catch (err) {
+        if (isSubscribed) {
+          reconnectTimeout = setTimeout(connectWs, 2000);
+        }
+      }
+    };
+
+    connectWs();
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
+      isSubscribed = false;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (socket) {
+        try { socket.close(); } catch {}
       }
+      wsRef.current = null;
     };
   }, [activeServer?.uuid, activeServer?.id]);
 
@@ -229,27 +262,28 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const sendCommand = (cmd: string) => {
     if (!cmd.trim() || !activeServer) return;
 
-    // Echo operator command in console
+    // Echo operator command in console immediately (0ms user feedback)
     setConsoleLogs(prev => [
       ...prev,
       `\x1b[38;2;0;210;255m>\x1b[0m ${cmd}`,
     ]);
 
-    // Send via REST endpoint
+    // Send via live WebSocket to daemon process stdin with both Pterodactyl event signatures
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        event: 'send command',
+        args: [cmd],
+        command: cmd,
+        server: activeServer.uuid || activeServer.id,
+      }));
+    }
+
+    // Send via REST endpoint for guaranteed delivery
     fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/command`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command: cmd }),
     }).catch(() => {});
-
-    // Send via live WebSocket to daemon process stdin
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        event: 'send_command',
-        args: [cmd],
-        server: activeServer.uuid || activeServer.id,
-      }));
-    }
   };
 
   const togglePinServer = (id: string) => {

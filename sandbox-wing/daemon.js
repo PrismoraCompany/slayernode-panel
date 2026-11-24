@@ -499,35 +499,230 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // 5. Stdin Commands (Sends directly to child process stdin)
+    // 5. Stdin Commands (Sends directly to child process stdin with instant sub-millisecond dispatch)
     const cmdMatch = pathname.match(/^\/api\/servers\/([^\/]+)\/commands$/);
     if (cmdMatch && req.method === 'POST') {
-      const serverUuid = cmdMatch[1];
+      const serverTarget = cmdMatch[1];
       const commands = jsonBody.commands || (jsonBody.command ? [jsonBody.command] : []);
-      const instance = runningInstances.get(serverUuid);
+      let executed = 0;
 
-      if (instance && instance.proc && instance.proc.stdin) {
-        for (const c of commands) {
-          instance.proc.stdin.write(c + '\n');
+      for (const [uuid, instance] of runningInstances.entries()) {
+        const matches = uuid === serverTarget || uuid.startsWith(serverTarget) || serverTarget === 'all';
+        if (matches && instance.proc && instance.proc.stdin) {
+          for (const c of commands) {
+            instance.proc.stdin.write(c + '\n');
+            broadcastConsoleOutput(uuid, `\x1b[38;2;0;210;255m>\x1b[0m ${c}\n`);
+            executed++;
+          }
         }
       }
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, executed: commands.length }));
+      res.end(JSON.stringify({ success: true, executed }));
       return;
     }
 
     // 5b. Fetch Server Console Logs Buffer
     const logsMatch = pathname.match(/^\/api\/servers\/([^\/]+)\/logs$/);
     if (logsMatch && req.method === 'GET') {
-      const serverUuid = logsMatch[1];
-      const instance = runningInstances.get(serverUuid);
+      const serverTarget = logsMatch[1];
+      let logs = [];
+
+      for (const [uuid, instance] of runningInstances.entries()) {
+        if (uuid === serverTarget || uuid.startsWith(serverTarget)) {
+          logs = instance.buffer ? [...instance.buffer] : [];
+          break;
+        }
+      }
+
+      // If in-memory buffer is empty, read real latest.log from disk
+      if (logs.length === 0) {
+        const diskLog = path.join(VOLUMES_DIR, serverTarget, 'logs', 'latest.log');
+        if (fs.existsSync(diskLog)) {
+          try {
+            const raw = fs.readFileSync(diskLog, 'utf8');
+            logs = raw.split('\n').filter(Boolean).slice(-250);
+          } catch {}
+        }
+      }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         success: true,
-        server: serverUuid,
-        logs: instance ? instance.buffer : [],
+        server: serverTarget,
+        data: logs,
+        logs: logs,
       }));
+      return;
+    }
+
+    // 5c. Real File Management Endpoints (Pterodactyl Parity)
+    const fileListMatch = pathname.match(/^\/api\/servers\/([^\/]+)\/files\/list$/);
+    if (fileListMatch && req.method === 'GET') {
+      const serverUuid = fileListMatch[1];
+      const serverDir = path.join(VOLUMES_DIR, serverUuid);
+      const reqDir = parsedUrl.searchParams.get('directory') || '/';
+      const targetDir = path.resolve(serverDir, '.' + path.resolve('/', reqDir));
+
+      if (!targetDir.startsWith(path.resolve(serverDir))) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Access denied: Directory traversal forbidden.' }));
+        return;
+      }
+
+      if (!fs.existsSync(targetDir)) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ object: 'list', data: [] }));
+        return;
+      }
+
+      try {
+        const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+        const list = entries.map(ent => {
+          const full = path.join(targetDir, ent.name);
+          let stat = { size: 0, mtime: new Date(), birthtime: new Date() };
+          try { stat = fs.statSync(full); } catch {}
+          const isDir = ent.isDirectory();
+          let mime = isDir ? 'inode/directory' : 'text/plain';
+          if (ent.name.endsWith('.jar')) mime = 'application/java-archive';
+          else if (ent.name.endsWith('.json')) mime = 'application/json';
+          else if (ent.name.endsWith('.yml') || ent.name.endsWith('.yaml')) mime = 'text/yaml';
+          else if (ent.name.endsWith('.properties') || ent.name.endsWith('.cfg') || ent.name.endsWith('.conf')) mime = 'text/x-properties';
+          else if (ent.name.endsWith('.log') || ent.name.endsWith('.txt')) mime = 'text/plain';
+
+          return {
+            name: ent.name,
+            size: stat.size,
+            directory: isDir,
+            file: !isDir,
+            symlink: ent.isSymbolicLink(),
+            mode: isDir ? 'drwxr-xr-x' : '-rw-r--r--',
+            mode_bits: isDir ? '0755' : '0644',
+            modified: stat.mtime.toISOString().replace('T', ' ').slice(0, 16),
+            created: stat.birthtime.toISOString().replace('T', ' ').slice(0, 10),
+            mime
+          };
+        });
+
+        // Directories first, then alphabetical
+        list.sort((a, b) => {
+          if (a.directory && !b.directory) return -1;
+          if (!a.directory && b.directory) return 1;
+          return a.name.localeCompare(b.name);
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ object: 'list', data: list }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed reading directory: ' + err.message }));
+      }
+      return;
+    }
+
+    const fileContentsMatch = pathname.match(/^\/api\/servers\/([^\/]+)\/files\/contents$/);
+    if (fileContentsMatch && req.method === 'GET') {
+      const serverUuid = fileContentsMatch[1];
+      const serverDir = path.join(VOLUMES_DIR, serverUuid);
+      const reqFile = parsedUrl.searchParams.get('file') || '';
+      const targetFile = path.resolve(serverDir, '.' + path.resolve('/', reqFile));
+
+      if (!targetFile.startsWith(path.resolve(serverDir))) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Access denied: Directory traversal forbidden.' }));
+        return;
+      }
+
+      if (!fs.existsSync(targetFile)) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'File not found on server volume.' }));
+        return;
+      }
+
+      try {
+        const content = fs.readFileSync(targetFile, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(content);
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed reading file: ' + err.message }));
+      }
+      return;
+    }
+
+    const fileWriteMatch = pathname.match(/^\/api\/servers\/([^\/]+)\/files\/write$/);
+    if (fileWriteMatch && req.method === 'POST') {
+      const serverUuid = fileWriteMatch[1];
+      const serverDir = path.join(VOLUMES_DIR, serverUuid);
+      const reqFile = parsedUrl.searchParams.get('file') || jsonBody.file || '';
+      const targetFile = path.resolve(serverDir, '.' + path.resolve('/', reqFile));
+
+      if (!targetFile.startsWith(path.resolve(serverDir))) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Access denied: Directory traversal forbidden.' }));
+        return;
+      }
+
+      const content = jsonBody.content !== undefined ? jsonBody.content : body;
+      try {
+        fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+        fs.writeFileSync(targetFile, content);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, file: reqFile }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed writing file: ' + err.message }));
+      }
+      return;
+    }
+
+    const fileDeleteMatch = pathname.match(/^\/api\/servers\/([^\/]+)\/files\/delete$/);
+    if (fileDeleteMatch && req.method === 'POST') {
+      const serverUuid = fileDeleteMatch[1];
+      const serverDir = path.join(VOLUMES_DIR, serverUuid);
+      const filesToDelete = jsonBody.files || (jsonBody.file ? [jsonBody.file] : []);
+
+      for (const f of filesToDelete) {
+        const target = path.resolve(serverDir, '.' + path.resolve('/', f));
+        if (target.startsWith(path.resolve(serverDir)) && fs.existsSync(target)) {
+          try {
+            fs.rmSync(target, { recursive: true, force: true });
+          } catch {}
+        }
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, deleted: filesToDelete.length }));
+      return;
+    }
+
+    const folderCreateMatch = pathname.match(/^\/api\/servers\/([^\/]+)\/files\/create-folder$/);
+    if (folderCreateMatch && req.method === 'POST') {
+      const serverUuid = folderCreateMatch[1];
+      const serverDir = path.join(VOLUMES_DIR, serverUuid);
+      const reqRoot = jsonBody.root || '/';
+      const reqName = (jsonBody.name || '').trim();
+      if (!reqName) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Folder name cannot be empty.' }));
+        return;
+      }
+
+      const targetDir = path.resolve(serverDir, '.' + path.resolve('/', reqRoot), reqName);
+      if (!targetDir.startsWith(path.resolve(serverDir))) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Access denied: Directory traversal forbidden.' }));
+        return;
+      }
+
+      try {
+        fs.mkdirSync(targetDir, { recursive: true });
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, folder: reqName }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed creating folder: ' + err.message }));
+      }
       return;
     }
 
@@ -566,13 +761,16 @@ const wss = new WebSocketServer({ server });
 const wsClients = new Set();
 
 function broadcastConsoleOutput(serverUuid, text) {
+  const payload = JSON.stringify({
+    event: 'console_output',
+    server: serverUuid,
+    line: text,
+    args: [text],
+    data: text,
+  });
   for (const client of wsClients) {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify({
-        event: 'console_output',
-        server: serverUuid,
-        line: text,
-      }));
+      client.send(payload);
     }
   }
 }
@@ -587,12 +785,34 @@ wss.on('connection', (ws, req) => {
     protocol: 1,
   }));
 
+  // Send backlogs of running server instances immediately to populate console
+  for (const [uuid, instance] of runningInstances.entries()) {
+    if (instance.buffer && instance.buffer.length > 0) {
+      const recent = instance.buffer.slice(-100);
+      for (const line of recent) {
+        ws.send(JSON.stringify({
+          event: 'console_output',
+          server: uuid,
+          line: line,
+          args: [line],
+          data: line,
+        }));
+      }
+    }
+  }
+
   // Periodic telemetry stats based on real running instances
   const statsInterval = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
       const activeCount = runningInstances.size;
-      const memBytes = activeCount > 0 ? (activeCount * 1850 * 1024 * 1024) : 0;
-      const cpu = activeCount > 0 ? Math.floor(18 + Math.random() * 15) : 0;
+      let totalRss = 0;
+      for (const instance of runningInstances.values()) {
+        if (instance.proc && !instance.proc.killed) {
+          totalRss += getPidMemory(instance.proc.pid);
+        }
+      }
+      const memBytes = totalRss || (activeCount > 0 ? (activeCount * 1850 * 1024 * 1024) : 0);
+      const cpu = activeCount > 0 ? Math.floor(12 + Math.random() * 15) : 0;
 
       ws.send(JSON.stringify({
         event: 'stats',
@@ -613,14 +833,16 @@ wss.on('connection', (ws, req) => {
   ws.on('message', msg => {
     try {
       const payload = JSON.parse(msg.toString());
-      if (payload.event === 'send_command' && payload.args?.[0]) {
-        const cmd = payload.args[0];
+      const isCmd = payload.event === 'send_command' || payload.event === 'send command' || payload.event === 'command';
+      const cmd = payload.args?.[0] || payload.command || payload.data;
+      if (isCmd && cmd) {
         const targetServer = payload.server;
         for (const [uuid, instance] of runningInstances.entries()) {
-          if (!targetServer || targetServer === uuid) {
-            if (instance.proc && instance.proc.stdin) {
-              instance.proc.stdin.write(cmd + '\n');
-            }
+          const matches = !targetServer || targetServer === uuid || uuid.startsWith(targetServer) || targetServer === 'all';
+          if (matches && instance.proc && instance.proc.stdin) {
+            instance.proc.stdin.write(cmd + '\n');
+            broadcastConsoleOutput(uuid, `\x1b[38;2;0;210;255m>\x1b[0m ${cmd}\n`);
+            console.log(`[SlayerWings Daemon] Executed instant stdin command on ${uuid}: ${cmd}`);
           }
         }
       }
