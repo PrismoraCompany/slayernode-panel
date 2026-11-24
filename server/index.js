@@ -284,6 +284,50 @@ const DEFAULT_DB = {
         { name: 'Max Players', description: 'Player slots', env_variable: 'MAX_PLAYERS', default_value: '200', server_value: '200', is_editable: true, rules: 'numeric' },
       ],
     },
+    {
+      id: 9,
+      uuid: 'egg-nodejs-generic',
+      nest_id: 3,
+      nest_name: 'Voice & Discord Bots',
+      author: 'admin@slayernode.xyz',
+      name: 'Node.js Web Server & App',
+      description: 'Modern Node.js 22 runtime for Express, Fastify, Next, and Discord bots.',
+      docker_images: {
+        'Node.js 22 (Default)': 'ghcr.io/pterodactyl/yolks:nodejs_22',
+        'Node.js 20': 'ghcr.io/pterodactyl/yolks:nodejs_20',
+      },
+      startup: 'node index.js',
+      config: {
+        files: {},
+        startup: { done: 'listening on' },
+        stop: '^C',
+      },
+      variables: [
+        { name: 'Main File', description: 'Main entrypoint file', env_variable: 'MAIN_FILE', default_value: 'index.js', server_value: 'index.js', is_editable: true, rules: 'required|string' },
+      ],
+    },
+    {
+      id: 10,
+      uuid: 'egg-python-generic',
+      nest_id: 3,
+      nest_name: 'Voice & Discord Bots',
+      author: 'admin@slayernode.xyz',
+      name: 'Python Application & Bot',
+      description: 'Python 3.12 modern runtime for FastAPI, Flask, Django, and generic automation.',
+      docker_images: {
+        'Python 3.12 (Default)': 'ghcr.io/pterodactyl/yolks:python_3.12',
+        'Python 3.11': 'ghcr.io/pterodactyl/yolks:python_3.11',
+      },
+      startup: 'python3 app.py',
+      config: {
+        files: {},
+        startup: { done: 'Running' },
+        stop: '^C',
+      },
+      variables: [
+        { name: 'App File', description: 'Main script file', env_variable: 'APP_FILE', default_value: 'app.py', server_value: 'app.py', is_editable: true, rules: 'required|string' },
+      ],
+    },
   ],
   servers: [],
   blueprint_extensions: [
@@ -350,15 +394,29 @@ function loadState() {
   try {
     if (fs.existsSync(DB_PATH)) {
       const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
-      // Merge with defaults to ensure all models are present
+      
+      const mergedEggs = Array.isArray(data.eggs) ? [...data.eggs] : [...DEFAULT_DB.eggs];
+      for (const defEgg of DEFAULT_DB.eggs) {
+        if (!mergedEggs.some(e => String(e.id) === String(defEgg.id))) {
+          mergedEggs.push(defEgg);
+        }
+      }
+
+      const mergedNests = Array.isArray(data.nests) ? [...data.nests] : [...DEFAULT_DB.nests];
+      for (const defNest of DEFAULT_DB.nests) {
+        if (!mergedNests.some(n => String(n.id) === String(defNest.id))) {
+          mergedNests.push(defNest);
+        }
+      }
+
       return {
         ...DEFAULT_DB,
         ...data,
         locations: data.locations || DEFAULT_DB.locations,
         nodes: data.nodes || DEFAULT_DB.nodes,
         allocations: data.allocations || DEFAULT_DB.allocations,
-        nests: data.nests || DEFAULT_DB.nests,
-        eggs: data.eggs || DEFAULT_DB.eggs,
+        nests: mergedNests,
+        eggs: mergedEggs,
         blueprint_extensions: data.blueprint_extensions || DEFAULT_DB.blueprint_extensions,
       };
     }
@@ -1054,6 +1112,112 @@ app.delete('/api/application/servers/:id', requireRootAdmin, (req, res) => {
   res.status(204).send();
 });
 
+app.get('/api/application/servers/:id', requireRootAdmin, (req, res) => {
+  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  res.json({ object: 'server', attributes: server });
+});
+
+app.patch('/api/application/servers/:id/details', requireRootAdmin, (req, res) => {
+  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const { name, owner_id, description, external_id } = req.body;
+  if (name) server.name = name.trim();
+  if (description !== undefined) server.description = description;
+  if (external_id !== undefined) server.external_id = external_id;
+  if (owner_id) {
+    const owner = db.users.find(u => String(u.id) === String(owner_id));
+    if (owner) {
+      server.owner_id = owner.id;
+      server.owner_username = owner.username;
+    }
+  }
+  saveState(db);
+  res.json({ object: 'server', attributes: server });
+});
+
+app.patch('/api/application/servers/:id/build', requireRootAdmin, (req, res) => {
+  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const { allocation_id, memory, swap, disk, io, cpu, feature_limits } = req.body;
+  if (memory) server.limits.memory = parseInt(memory, 10);
+  if (swap !== undefined) server.limits.swap = parseInt(swap, 10);
+  if (disk) server.limits.disk = parseInt(disk, 10);
+  if (io) server.limits.io = parseInt(io, 10);
+  if (cpu) server.limits.cpu = parseInt(cpu, 10);
+  if (feature_limits) {
+    server.feature_limits = {
+      ...(server.feature_limits || {}),
+      ...feature_limits,
+    };
+  }
+  saveState(db);
+  res.json({ object: 'server', attributes: server });
+});
+
+app.patch('/api/application/servers/:id/startup', requireRootAdmin, (req, res) => {
+  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const { startup, egg_id, nest_id, docker_image, environment } = req.body;
+  if (startup) server.startup = startup;
+  if (egg_id) server.egg_id = egg_id;
+  if (nest_id) server.nest_id = nest_id;
+  if (docker_image) server.docker_image = docker_image;
+  if (environment) server.environment = { ...(server.environment || {}), ...environment };
+  saveState(db);
+  res.json({ object: 'server', attributes: server });
+});
+
+app.post(['/api/application/servers/:id/manage', '/api/application/servers/:id/manage/:action'], requireRootAdmin, (req, res) => {
+  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  const action = req.params.action || req.body.action;
+  if (action === 'suspend') {
+    server.is_suspended = true;
+    server.status = 'offline';
+  } else if (action === 'unsuspend') {
+    server.is_suspended = false;
+  } else if (action === 'toggle-install') {
+    server.status = server.status === 'installing' ? 'offline' : 'installing';
+  } else if (action === 'reinstall') {
+    server.status = 'installing';
+    setTimeout(() => {
+      server.status = 'offline';
+      saveState(db);
+    }, 2000);
+  }
+  saveState(db);
+  res.json({ success: true, action, server });
+});
+
+app.post('/api/application/servers/:id/databases', requireRootAdmin, (req, res) => {
+  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  if (!server.databases) server.databases = [];
+  const { database, connections, max_connections } = req.body;
+  const newDb = {
+    id: server.databases.length + 1,
+    database: database || `s${server.id}_db`,
+    username: `u${server.id}_${Math.random().toString(36).substring(2, 7)}`,
+    connections_from: connections || '%',
+    max_connections: parseInt(max_connections, 10) || 0,
+    host: '127.0.0.1:3306',
+  };
+  server.databases.push(newDb);
+  saveState(db);
+  res.status(201).json({ success: true, database: newDb });
+});
+
+app.delete('/api/application/servers/:id/databases/:dbId', requireRootAdmin, (req, res) => {
+  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
+  if (!server) return res.status(404).json({ error: 'Server not found' });
+  if (server.databases) {
+    server.databases = server.databases.filter(d => String(d.id) !== String(req.params.dbId));
+    saveState(db);
+  }
+  res.json({ success: true });
+});
+
 // ==========================================
 // 4. Blueprint Framework & Extensions API
 // ==========================================
@@ -1716,7 +1880,7 @@ app.post('/api/client/servers/:uuid/power', verifyServerOwnership, (req, res) =>
     if (node) {
       const egg = (db.eggs || []).find(e => String(e.id) === String(req.targetServer.egg_id));
       const eggName = egg ? egg.name : 'Paper';
-      const daemonPowerUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.params.uuid}/power`;
+      const daemonPowerUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.targetServer.uuid}/power`;
       fetch(daemonPowerUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1740,7 +1904,7 @@ app.post('/api/client/servers/:uuid/command', verifyServerOwnership, (req, res) 
   try {
     const node = db.nodes.find(n => n.id === req.targetServer.node_id) || db.nodes[0];
     if (node) {
-      const daemonCmdUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.params.uuid}/commands`;
+      const daemonCmdUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.targetServer.uuid}/commands`;
       fetch(daemonCmdUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1756,7 +1920,7 @@ app.get('/api/client/servers/:uuid/logs', verifyServerOwnership, async (req, res
   try {
     const node = db.nodes.find(n => n.id === req.targetServer.node_id) || db.nodes[0];
     if (node) {
-      const daemonLogsUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.params.uuid}/logs`;
+      const daemonLogsUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.targetServer.uuid}/logs`;
       const response = await fetch(daemonLogsUrl, { signal: AbortSignal.timeout(1500) });
       if (response.ok) {
         const data = await response.json();
@@ -1798,7 +1962,7 @@ app.use('/api/client/servers/:uuid/files', verifyServerOwnership, async (req, re
     if (!node) {
       return res.status(502).json({ error: 'Node unavailable for file operations.' });
     }
-    const daemonUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.params.uuid}/files${req.url}`;
+    const daemonUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.targetServer.uuid}/files${req.url}`;
 
     const headers = {
       'Content-Type': req.headers['content-type'] || 'application/json',
@@ -1837,7 +2001,7 @@ app.get('/api/client/servers/:uuid/websocket', verifyServerOwnership, (req, res)
   res.json({
     data: {
       token: ephemeralToken,
-      socket: `ws://${req.headers.host}/api/client/servers/${req.params.uuid}/ws`,
+      socket: `ws://${req.headers.host}/api/client/servers/${req.targetServer.uuid}/ws`,
     },
   });
 });

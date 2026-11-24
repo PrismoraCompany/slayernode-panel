@@ -85,6 +85,13 @@ export const FileManager: React.FC = () => {
     }
   };
 
+  // Reset navigation when switching between different servers
+  useEffect(() => {
+    setCurrentPath([]);
+    setEditingFile(null);
+    setSelectedFiles(new Set());
+  }, [activeServer?.uuid, activeServer?.id]);
+
   useEffect(() => {
     setSelectedFiles(new Set());
     fetchFiles();

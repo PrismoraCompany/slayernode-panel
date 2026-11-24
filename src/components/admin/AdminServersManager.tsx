@@ -105,6 +105,22 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
   }, []);
 
   useEffect(() => {
+    if (!selectedNestId) return;
+    fetch(`/api/application/nests/${selectedNestId}/eggs`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.data)) {
+          const loadedEggs = data.data.map((x: any) => x.attributes || x);
+          setEggs(loadedEggs);
+          if (loadedEggs.length > 0) {
+            setSelectedEggId(String(loadedEggs[0].id));
+          }
+        }
+      })
+      .catch(() => {});
+  }, [selectedNestId]);
+
+  useEffect(() => {
     if (nodes.length > 0 && !nodes.some(n => String(n.id) === String(selectedNodeId))) {
       setSelectedNodeId(String(nodes[0].id));
     }
@@ -388,7 +404,7 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
           />
 
           {/* Section 2: Node & Host Infrastructure */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-white/10">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-white/10">
             <div>
               <label className="text-xs font-semibold text-slate-300 block mb-1">Target Infrastructure Node</label>
               <select
@@ -409,16 +425,36 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
             </div>
 
             <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">Nest Category</label>
+              <select
+                value={String(selectedNestId)}
+                onChange={e => setSelectedNestId(e.target.value)}
+                className="glass-input w-full px-3 py-2 text-xs bg-slate-900 text-white cursor-pointer"
+              >
+                {nests.map(n => (
+                  <option key={n.id} value={String(n.id)}>
+                    {n.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
               <label className="text-xs font-semibold text-slate-300 block mb-1">Game Engine / Egg</label>
               <select
-                value={selectedEggId}
+                value={String(selectedEggId)}
                 onChange={e => setSelectedEggId(e.target.value)}
                 className="glass-input w-full px-3 py-2 text-xs bg-slate-900 text-white cursor-pointer"
               >
-                <option value="1">Minecraft: Purpur / Paper (Java 21)</option>
-                <option value="2">Minecraft: Velocity Modern Proxy</option>
-                <option value="3">Steam: Rust Dedicated Server</option>
-                <option value="4">Discord: Node.js 22 Bot Worker</option>
+                {eggs.length === 0 ? (
+                  <option value="1">Minecraft: Paper / Purpur</option>
+                ) : (
+                  eggs.map(e => (
+                    <option key={e.id} value={String(e.id)}>
+                      {e.name}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>

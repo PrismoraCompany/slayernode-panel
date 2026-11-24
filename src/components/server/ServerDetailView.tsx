@@ -73,59 +73,62 @@ export const ServerDetailView: React.FC<ServerDetailViewProps> = ({ onBackToDash
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Back button & Server Bar */}
-      <div className="flex items-center justify-between">
-        <button
-          onClick={onBackToDashboard}
-          className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white transition-colors cursor-pointer group"
-        >
-          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-          <span>Back to All Servers</span>
-        </button>
+      {/* Sticky Top Header: Back navigation, server status, and Workspace Tabs */}
+      <div className="sticky top-0 z-30 flex flex-col gap-3 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 bg-[#111216]/95 backdrop-blur-md border-b border-white/10 shadow-xl transition-all">
+        {/* Back button & Server Bar */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={onBackToDashboard}
+            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer group"
+          >
+            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+            <span>Back to All Servers</span>
+          </button>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400 font-mono hidden sm:inline">
-            UUID: {activeServer?.identifier}
-          </span>
-          <GlassBadge status={activeServer?.status}>
-            {activeServer?.status.toUpperCase()}
-          </GlassBadge>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-300 font-mono hidden sm:inline">
+              {activeServer?.name} ({activeServer?.identifier || activeServer?.uuid?.slice(0, 8)})
+            </span>
+            <GlassBadge status={activeServer?.status}>
+              {activeServer?.status?.toUpperCase() || 'OFFLINE'}
+            </GlassBadge>
+          </div>
         </div>
-      </div>
 
-      {/* Tabs Navbar */}
-      <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-slate-900/80 border border-white/10 overflow-x-auto text-xs shadow-lg">
-        {coreTabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl font-semibold transition-all shrink-0 cursor-pointer ${
-              activeTab === tab.id
-                ? 'bg-sky-500/20 text-white border border-sky-400/30 shadow-xs'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            {tab.icon}
-            <span>{tab.label}</span>
-          </button>
-        ))}
+        {/* Tabs Navbar */}
+        <div className="flex items-center gap-1.5 p-1.5 rounded-xl bg-[#181A20] border border-white/10 overflow-x-auto text-xs shadow-md">
+          {coreTabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                activeTab === tab.id
+                  ? 'bg-sky-500/25 text-white border border-sky-400/40 shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
+          ))}
 
-        {addonTabs.length > 0 && <div className="h-5 w-[1px] bg-white/10 mx-1 shrink-0" />}
+          {addonTabs.length > 0 && <div className="h-5 w-[1px] bg-white/10 mx-1 shrink-0" />}
 
-        {addonTabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl font-semibold transition-all shrink-0 cursor-pointer ${
-              activeTab === tab.id
-                ? 'bg-sky-500/20 text-white border border-sky-400/30 shadow-xs'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            {tab.icon}
-            <span>{tab.label}</span>
-          </button>
-        ))}
+          {addonTabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+                activeTab === tab.id
+                  ? 'bg-sky-500/25 text-white border border-sky-400/40 shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tab Content Display */}

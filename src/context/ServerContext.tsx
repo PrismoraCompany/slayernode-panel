@@ -54,7 +54,9 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return s.owner_id === user?.id;
   });
 
-  const activeServer = visibleServers.find(s => s.id === activeServerId) || visibleServers[0] || null;
+  const activeServer = visibleServers.find(s =>
+    (activeServerId && (s.uuid === activeServerId || String(s.id) === String(activeServerId) || s.identifier === activeServerId))
+  ) || visibleServers[0] || null;
 
   const [stats, setStats] = useState<ServerStats>({
     memory_bytes: 0,
@@ -92,6 +94,9 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Connect to real Wings Daemon WebSocket on port 8443 or panel websocket bridge
   useEffect(() => {
     if (!activeServer) return;
+
+    // Immediately flush previous logs on server switch
+    setConsoleLogs([]);
 
     let isSubscribed = true;
     let reconnectTimeout: any = null;
@@ -215,7 +220,7 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Tenant Boundary URL validation
   const selectServer = (id: string): boolean => {
-    const target = servers.find(s => s.id === id || s.identifier === id || s.uuid === id);
+    const target = servers.find(s => String(s.id) === String(id) || s.identifier === id || s.uuid === id);
     if (!target) {
       setAccessDeniedError('Server container not found.');
       return false;
@@ -228,7 +233,7 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     setAccessDeniedError(null);
-    setActiveServerId(target.id);
+    setActiveServerId(target.uuid || target.id);
     return true;
   };
 

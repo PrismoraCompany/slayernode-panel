@@ -314,6 +314,15 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
     { id: 'delete', label: 'Delete', danger: true },
   ];
 
+  if (isLoading || !server) {
+    return (
+      <div className="flex flex-col items-center justify-center p-16 text-slate-400 gap-3">
+        <RefreshCw className="w-8 h-8 animate-spin text-red-500" />
+        <p className="text-sm font-medium">Loading server configuration...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5">
       {/* Top Header & Breadcrumbs */}
