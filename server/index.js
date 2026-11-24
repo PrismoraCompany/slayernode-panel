@@ -968,7 +968,11 @@ app.post('/api/application/servers', requireRootAdmin, (req, res) => {
 
   // Forward volume creation and auto-boot to daemon on node host
   try {
+    const egg = (db.eggs || []).find(e => String(e.id) === String(newServer.egg_id));
+    const eggName = egg ? egg.name : 'Paper';
+    const dlPath = req.body.environment?.DL_PATH || '';
     const daemonUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers`;
+
     fetch(daemonUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -977,13 +981,24 @@ app.post('/api/application/servers', requireRootAdmin, (req, res) => {
         name: newServer.name,
         memory: newServer.limits.memory,
         disk: newServer.limits.disk,
+        port: alloc.port,
+        egg_name: eggName,
+        dl_path: dlPath,
+        startup: req.body.startup || egg?.startup,
+        environment: req.body.environment || {},
       })
     }).then(async () => {
       if (startOnDeploy) {
         await fetch(`${daemonUrl}/${newServer.uuid}/power`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'start' })
+          body: JSON.stringify({
+            action: 'start',
+            egg_name: eggName,
+            dl_path: dlPath,
+            port: alloc.port,
+            startup: req.body.startup || egg?.startup,
+          })
         }).catch(() => {});
       }
     }).catch(err => {
@@ -1680,11 +1695,17 @@ app.post('/api/client/servers/:uuid/power', verifyServerOwnership, (req, res) =>
   try {
     const node = db.nodes.find(n => n.id === req.targetServer.node_id) || db.nodes[0];
     if (node) {
+      const egg = (db.eggs || []).find(e => String(e.id) === String(req.targetServer.egg_id));
+      const eggName = egg ? egg.name : 'Paper';
       const daemonPowerUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.params.uuid}/power`;
       fetch(daemonPowerUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: signal })
+        body: JSON.stringify({
+          action: signal,
+          egg_name: eggName,
+          port: req.targetServer.allocation?.port || 25565,
+        })
       }).catch(err => console.log('[Wings Daemon Forward Notice]', err.message));
     }
   } catch (err) {}

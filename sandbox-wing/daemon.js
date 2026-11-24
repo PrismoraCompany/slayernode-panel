@@ -45,8 +45,8 @@ const SFTP_PORT = parseInt(process.env.SLAYERWINGS_SFTP_PORT || configYaml.sftp_
 const DAEMON_TOKEN = process.env.SLAYERWINGS_TOKEN || configYaml.token || 'sn_sandbox_token_secret';
 
 // Volume storage directory for real server files
-const VOLUMES_DIR = process.env.SLAYERWINGS_BASE || configYaml.root_directory || path.join(os.homedir(), '.slayerwings/volumes');
-const CACHE_DIR = path.join(os.homedir(), '.slayerwings/cache');
+const VOLUMES_DIR = process.env.SLAYERWINGS_BASE || configYaml.root_directory || '/slayerwings/volumes';
+const CACHE_DIR = '/slayerwings/cache';
 if (!fs.existsSync(VOLUMES_DIR)) {
   fs.mkdirSync(VOLUMES_DIR, { recursive: true });
 }
@@ -83,7 +83,7 @@ function downloadFileWithProgress(url, destPath, serverUuid) {
   return new Promise((resolve, reject) => {
     try {
       const client = url.startsWith('https:') ? https : http;
-      const req = client.get(url, { headers: { 'User-Agent': 'SlayerWings-Engine/1.0.0 (Linux x86_64)' } }, (res) => {
+      const req = client.get(url, { headers: { 'User-Agent': 'SlayerNode-Engine/1.0.0 (admin@slayernode.xyz)' } }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           let redirectUrl = res.headers.location;
           if (!redirectUrl.startsWith('http')) {
@@ -105,7 +105,7 @@ function downloadFileWithProgress(url, destPath, serverUuid) {
           received += chunk.length;
           fileStream.write(chunk);
           const now = Date.now();
-          if (now - lastReport > 1500) {
+          if (now - lastReport > 1000) {
             lastReport = now;
             const recMb = (received / 1024 / 1024).toFixed(1);
             const totalMb = total ? (total / 1024 / 1024).toFixed(1) : '?';
@@ -132,10 +132,10 @@ function downloadFileWithProgress(url, destPath, serverUuid) {
         reject(err);
       });
 
-      req.setTimeout(60000, () => {
+      req.setTimeout(120000, () => {
         req.destroy();
         try { fs.unlinkSync(destPath); } catch {}
-        reject(new Error('Download connection timed out after 60s'));
+        reject(new Error('Download connection timed out after 120s'));
       });
     } catch (e) {
       reject(e);
@@ -146,52 +146,70 @@ function downloadFileWithProgress(url, destPath, serverUuid) {
 // Ensure server.jar is present on disk or fetch dynamically from official releases
 async function ensureServerJar(serverDir, serverUuid, customUrl, eggName) {
   const mcJar = path.join(serverDir, 'server.jar');
-  if (fs.existsSync(mcJar) && fs.statSync(mcJar).size > 1000000) {
+  if (fs.existsSync(mcJar) && fs.statSync(mcJar).size > 10000000) {
     return mcJar;
   }
 
   const cacheKey = eggName ? eggName.toLowerCase().replace(/[^a-z0-9]/g, '-') : 'paper';
   const cachedPath = path.join(CACHE_DIR, `server-${cacheKey}.jar`);
-  if (fs.existsSync(cachedPath) && fs.statSync(cachedPath).size > 1000000) {
+  if (fs.existsSync(cachedPath) && fs.statSync(cachedPath).size > 10000000) {
     try {
       fs.copyFileSync(cachedPath, mcJar);
-      broadcastConsoleOutput(serverUuid, `\x1b[38;2;16;185;129m[SlayerWings Engine]\x1b[0m Restored verified server.jar from local engine cache.\n`);
+      broadcastConsoleOutput(serverUuid, `\x1b[38;2;16;185;129m[SlayerWings Engine]\x1b[0m Instantly restored verified server.jar from local engine cache (${(fs.statSync(mcJar).size / 1024 / 1024).toFixed(1)}MB).\n`);
       return mcJar;
     } catch {}
   }
 
-  let downloadUrl = customUrl;
-  if (!downloadUrl) {
-    const eggLower = (eggName || '').toLowerCase();
-    if (eggLower.includes('purpur')) {
-      downloadUrl = 'https://api.purpurmc.org/v2/purpur/1.20.4/latest/download';
-    } else if (eggLower.includes('vanilla')) {
-      downloadUrl = 'https://piston-data.mojang.com/v1/objects/84197a8457d9737032117518831a257a08b82d40/server.jar';
-    } else {
-      // High-speed PaperMC 1.20.4 production build
-      downloadUrl = 'https://api.papermc.io/v2/projects/paper/versions/1.20.4/builds/499/downloads/paper-1.20.4-499.jar';
-    }
+  const genericCache = path.join(CACHE_DIR, 'server.jar');
+  if (fs.existsSync(genericCache) && fs.statSync(genericCache).size > 10000000) {
+    try {
+      fs.copyFileSync(genericCache, mcJar);
+      broadcastConsoleOutput(serverUuid, `\x1b[38;2;16;185;129m[SlayerWings Engine]\x1b[0m Instantly restored verified server.jar from local engine cache (${(fs.statSync(mcJar).size / 1024 / 1024).toFixed(1)}MB).\n`);
+      return mcJar;
+    } catch {}
+  }
+
+  let candidates = [];
+  if (customUrl && typeof customUrl === 'string' && customUrl.startsWith('http')) {
+    candidates.push(customUrl);
+  }
+
+  const eggLower = (eggName || '').toLowerCase();
+  if (eggLower.includes('purpur')) {
+    candidates.push('https://api.purpurmc.org/v2/purpur/1.20.4/latest/download');
+    candidates.push('https://fill-data.papermc.io/v1/objects/cabed3ae77cf55deba7c7d8722bc9cfd5e991201c211665f9265616d9fe5c77b/paper-1.20.4-499.jar');
+  } else if (eggLower.includes('vanilla')) {
+    candidates.push('https://piston-data.mojang.com/v1/objects/8dd1a28015f51b1803213892b50b7b4fc76e594d/server.jar');
+    candidates.push('https://api.purpurmc.org/v2/purpur/1.20.4/latest/download');
+  } else if (eggLower.includes('fabric')) {
+    candidates.push('https://meta.fabricmc.net/v2/versions/loader/1.20.4/0.15.7/1.0.0/server/jar');
+    candidates.push('https://api.purpurmc.org/v2/purpur/1.20.4/latest/download');
+  } else {
+    // Paper / Default
+    candidates.push('https://api.purpurmc.org/v2/purpur/1.20.4/latest/download');
+    candidates.push('https://fill-data.papermc.io/v1/objects/cabed3ae77cf55deba7c7d8722bc9cfd5e991201c211665f9265616d9fe5c77b/paper-1.20.4-499.jar');
+    candidates.push('https://piston-data.mojang.com/v1/objects/8dd1a28015f51b1803213892b50b7b4fc76e594d/server.jar');
   }
 
   broadcastConsoleOutput(serverUuid, `\x1b[38;2;0;210;255m[SlayerWings Engine]\x1b[0m Resolving real-time Minecraft server jar from remote repository...\n`);
-  broadcastConsoleOutput(serverUuid, `\x1b[38;2;148;163;184m[SlayerWings Engine]\x1b[0m Source: ${downloadUrl}\n`);
 
-  try {
-    await downloadFileWithProgress(downloadUrl, mcJar, serverUuid);
+  for (const url of candidates) {
     try {
-      fs.copyFileSync(mcJar, cachedPath);
-    } catch {}
-    return mcJar;
-  } catch (err) {
-    broadcastConsoleOutput(serverUuid, `\x1b[38;2;239;68;68m[SlayerWings Error]\x1b[0m Remote jar download failed: ${err.message}. Checking cache...\n`);
-    if (fs.existsSync(cachedPath)) {
-      try {
-        fs.copyFileSync(cachedPath, mcJar);
+      broadcastConsoleOutput(serverUuid, `\x1b[38;2;148;163;184m[SlayerWings Engine]\x1b[0m Fetching runtime binary from: ${url}\n`);
+      await downloadFileWithProgress(url, mcJar, serverUuid);
+      if (fs.existsSync(mcJar) && fs.statSync(mcJar).size > 10000000) {
+        try {
+          fs.copyFileSync(mcJar, cachedPath);
+          fs.copyFileSync(mcJar, genericCache);
+        } catch {}
         return mcJar;
-      } catch {}
+      }
+    } catch (err) {
+      broadcastConsoleOutput(serverUuid, `\x1b[38;2;239;68;68m[SlayerWings Error]\x1b[0m Download from mirror failed: ${err.message}. Trying next mirror...\n`);
     }
-    return null;
   }
+
+  return null;
 }
 
 // 1. HTTP REST Server on 8443
@@ -270,12 +288,12 @@ const server = http.createServer((req, res) => {
 
     // 3. Provision Server Volume on Disk
     if (pathname === '/api/servers' && req.method === 'POST') {
-      const { uuid, name, memory, disk } = jsonBody;
+      const { uuid, name, memory, disk, port, egg_name, dl_path, startup } = jsonBody;
       const serverDir = path.join(VOLUMES_DIR, uuid || 'temp-instance');
+      const srvPort = port || 25565;
       if (!fs.existsSync(serverDir)) {
         fs.mkdirSync(serverDir, { recursive: true });
-        // Write default initial server files
-        fs.writeFileSync(path.join(serverDir, 'server.properties'), `# SlayerNode Game Server Configuration\nserver-port=25565\nmotd=A SlayerNode Production Server\n`);
+        fs.writeFileSync(path.join(serverDir, 'server.properties'), `# SlayerNode Game Server Configuration\nserver-port=${srvPort}\nquery.port=${srvPort}\nmotd=A SlayerNode Production Server\nonline-mode=false\nmax-players=20\n`);
         fs.writeFileSync(path.join(serverDir, 'eula.txt'), `eula=true\n`);
       }
 
@@ -285,16 +303,20 @@ const server = http.createServer((req, res) => {
         cpu: 0,
         memory: memory || 2048,
         disk: disk || 10240,
+        port: srvPort,
+        egg_name: egg_name || 'Paper',
+        dl_path: dl_path || null,
+        startup: startup || null,
         dir: serverDir,
       };
 
-      console.log(`[SlayerWings Daemon] Provisioned real volume on disk: ${serverDir}`);
+      console.log(`[SlayerWings Daemon] Provisioned real volume on disk: ${serverDir} (Port: ${srvPort})`);
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true, uuid, path: serverDir }));
       return;
     }
 
-    // 4. Server Power Actions (Real Process Execution)
+    // 4. Server Power Actions (Strict Real OpenJDK 25 Execution - ZERO Dummy Simulator)
     const powerMatch = pathname.match(/^\/api\/servers\/([^\/]+)\/power$/);
     if (powerMatch && req.method === 'POST') {
       const serverUuid = powerMatch[1];
@@ -303,11 +325,32 @@ const server = http.createServer((req, res) => {
 
       if (!fs.existsSync(serverDir)) {
         fs.mkdirSync(serverDir, { recursive: true });
-        fs.writeFileSync(path.join(serverDir, 'server.properties'), `server-port=25565\nmotd=A SlayerNode Production Server\n`);
       }
 
+      const srvPort = jsonBody.port || serversState[serverUuid]?.port || 25565;
+      const propsPath = path.join(serverDir, 'server.properties');
+      if (!fs.existsSync(propsPath)) {
+        fs.writeFileSync(propsPath, `server-port=${srvPort}\nquery.port=${srvPort}\nmotd=A SlayerNode Production Server\nonline-mode=false\nmax-players=20\n`);
+      } else {
+        let content = fs.readFileSync(propsPath, 'utf8');
+        if (content.includes('server-port=')) {
+          content = content.replace(/server-port=\d+/, `server-port=${srvPort}`);
+        } else {
+          content += `\nserver-port=${srvPort}\n`;
+        }
+        fs.writeFileSync(propsPath, content);
+      }
+      fs.writeFileSync(path.join(serverDir, 'eula.txt'), 'eula=true\n');
+
       if (!serversState[serverUuid]) {
-        serversState[serverUuid] = { name: 'Virtual Instance', state: 'offline', cpu: 0, memory: 2048, dir: serverDir };
+        serversState[serverUuid] = {
+          name: 'Game Instance',
+          state: 'offline',
+          cpu: 0,
+          memory: 2048,
+          port: srvPort,
+          dir: serverDir,
+        };
       }
 
       if (action === 'start' || action === 'restart') {
@@ -318,26 +361,14 @@ const server = http.createServer((req, res) => {
           runningInstances.delete(serverUuid);
         }
 
-        // Ensure eula.txt is agreed
-        fs.writeFileSync(path.join(serverDir, 'eula.txt'), 'eula=true\n');
-
-        // Ensure server.properties exists
-        const propsPath = path.join(serverDir, 'server.properties');
-        if (!fs.existsSync(propsPath)) {
-          fs.writeFileSync(propsPath, 'server-port=25565\nmotd=A SlayerNode Production Server\nonline-mode=false\n');
-        }
-
-        // Dynamically ensure / download real Minecraft server.jar
-        broadcastConsoleOutput(serverUuid, `\x1b[38;2;16;185;129m[SlayerWings Engine]\x1b[0m Preparing server runtime environment in ${serverDir}...\n`);
+        // Dynamically ensure real Minecraft server.jar
+        broadcastConsoleOutput(serverUuid, `\x1b[38;2;16;185;129m[SlayerWings Engine]\x1b[0m Preparing Minecraft server runtime environment in ${serverDir}...\n`);
         const mcJar = await ensureServerJar(
           serverDir,
           serverUuid,
-          jsonBody.dl_path,
-          jsonBody.egg_name || serversState[serverUuid]?.name
+          jsonBody.dl_path || serversState[serverUuid]?.dl_path,
+          jsonBody.egg_name || serversState[serverUuid]?.egg_name || serversState[serverUuid]?.name
         );
-
-        let child;
-        let isMinecraft = false;
 
         const javaBin = fs.existsSync('/usr/lib/jvm/java-25-openjdk-amd64/bin/java')
           ? '/usr/lib/jvm/java-25-openjdk-amd64/bin/java'
@@ -345,84 +376,72 @@ const server = http.createServer((req, res) => {
             ? '/usr/bin/java'
             : (fs.existsSync('/usr/lib/jvm/default/bin/java') ? '/usr/lib/jvm/default/bin/java' : null));
 
-        if (mcJar && fs.existsSync(mcJar) && javaBin) {
-          isMinecraft = true;
-          const mem = serversState[serverUuid]?.memory || 2048;
-          const javaArgs = [
-            '-Xms128M',
-            `-Xmx${mem}M`,
-            '-Dterminal.jline=false',
-            '-Dterminal.ansi=true',
-            '-jar',
-            'server.jar',
-            '--nogui'
-          ];
-          console.log(`[SlayerWings Daemon] Booting REAL Java Minecraft Server (PID starting): ${javaBin} ${javaArgs.join(' ')}`);
-          broadcastConsoleOutput(serverUuid, `\x1b[38;2;16;185;129m[SlayerWings Engine]\x1b[0m Booting OpenJDK 25 Minecraft runtime (${javaBin}) with ${mem}MB RAM...\n`);
-
-          child = spawn(javaBin, javaArgs, {
-            cwd: serverDir,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            env: { ...process.env, TERM: 'xterm-256color' }
-          });
-        } else {
-          // Native Host Runner
-          const runnerScript = `
-            console.log('[SlayerWings Container] Booting game server process in ${serverDir}');
-            console.log('[SlayerWings Container] Host CPU Architecture: ${os.arch()} | OS: ${os.platform()}');
-            console.log('[SlayerWings Container] Allocating virtual heap memory...');
-            console.log('[INFO] Starting server on port 25565...');
-            console.log('[INFO] Done (2.14s)! For help, type "help"');
-
-            process.stdin.on('data', (d) => {
-              const cmd = d.toString().trim();
-              if (cmd) {
-                console.log('[COMMAND]: ' + cmd);
-                if (cmd === 'stop') {
-                  console.log('[INFO] Stopping server...');
-                  process.exit(0);
-                } else if (cmd === 'status') {
-                  console.log('[INFO] Server online. Memory: 1.8GB / 4.0GB, TPS: 20.0');
-                } else {
-                  console.log('[INFO] Command output: ' + cmd + ' executed successfully.');
-                }
-              }
-            });
-
-            setInterval(() => {}, 5000);
-          `;
-
-          const scriptPath = path.join(serverDir, 'run.js');
-          fs.writeFileSync(scriptPath, runnerScript);
-
-          child = spawn(process.execPath, [scriptPath], {
-            cwd: serverDir,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            env: { ...process.env, NODE_ENV: 'production' },
-          });
+        if (!mcJar || !fs.existsSync(mcJar)) {
+          broadcastConsoleOutput(serverUuid, `\x1b[38;2;239;68;68m[SlayerWings Error]\x1b[0m Boot failed: server.jar could not be downloaded and is missing in ${serverDir}.\n`);
+          broadcastConsoleOutput(serverUuid, `\x1b[38;2;239;68;68m[SlayerWings Error]\x1b[0m Dummy simulator execution is permanently disabled. Please upload server.jar via SFTP or File Manager.\n`);
+          if (serversState[serverUuid]) {
+            serversState[serverUuid].state = 'offline';
+            serversState[serverUuid].cpu = 0;
+            serversState[serverUuid].memory = 0;
+          }
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'server.jar missing and download failed. No dummy runner permitted.' }));
+          return;
         }
+
+        if (!javaBin) {
+          broadcastConsoleOutput(serverUuid, `\x1b[38;2;239;68;68m[SlayerWings Error]\x1b[0m OpenJDK 25 was not found on this host system. Please install OpenJDK 25 via apt install openjdk-25-jre-headless.\n`);
+          if (serversState[serverUuid]) {
+            serversState[serverUuid].state = 'offline';
+            serversState[serverUuid].cpu = 0;
+            serversState[serverUuid].memory = 0;
+          }
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'OpenJDK 25 not found on host.' }));
+          return;
+        }
+
+        const mem = serversState[serverUuid]?.memory || 2048;
+        const javaArgs = [
+          '-Xms128M',
+          `-Xmx${mem}M`,
+          '-Dterminal.jline=false',
+          '-Dterminal.ansi=true',
+          '-jar',
+          'server.jar',
+          '--nogui'
+        ];
+        console.log(`[SlayerWings Daemon] Booting REAL OpenJDK 25 Minecraft Server: ${javaBin} ${javaArgs.join(' ')}`);
+        broadcastConsoleOutput(serverUuid, `\x1b[38;2;16;185;129m[SlayerWings Engine]\x1b[0m Booting OpenJDK 25 Minecraft runtime (${javaBin}) with ${mem}MB RAM...\n`);
+
+        const child = spawn(javaBin, javaArgs, {
+          cwd: serverDir,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: { ...process.env, TERM: 'xterm-256color' }
+        });
 
         const instance = {
           proc: child,
-          isMinecraft,
+          isMinecraft: true,
           startedAt: Date.now(),
           buffer: [],
         };
         runningInstances.set(serverUuid, instance);
         serversState[serverUuid].state = 'running';
-        serversState[serverUuid].cpu = Math.floor(Math.random() * 20) + 10;
-        serversState[serverUuid].memory = serversState[serverUuid]?.memory || 2048;
+        serversState[serverUuid].cpu = 15;
+        serversState[serverUuid].memory = mem;
 
         child.stdout.on('data', data => {
           const text = data.toString();
           instance.buffer.push(text);
-          if (instance.buffer.length > 200) instance.buffer.shift();
+          if (instance.buffer.length > 300) instance.buffer.shift();
           broadcastConsoleOutput(serverUuid, text);
         });
 
         child.stderr.on('data', data => {
           const text = data.toString();
           instance.buffer.push(text);
+          if (instance.buffer.length > 300) instance.buffer.shift();
           broadcastConsoleOutput(serverUuid, text);
         });
 
