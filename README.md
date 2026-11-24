@@ -47,7 +47,23 @@
 
 ---
 
-## 🚀 Step-by-Step Installation Guide (From Scratch)
+## ⚡ Quick Start for GitHub Codespaces & Dev Containers
+
+> [!IMPORTANT]
+> **GitHub Codespaces runs inside a Docker container**, which does not run `systemd` and has no public domain for Let's Encrypt certificates. **Do NOT run `systemctl` or Nginx SSL inside a Codespace.**
+>
+> Simply run the 1-command launcher from your repository root:
+> ```bash
+> bash quickstart-codespaces.sh
+> ```
+> Codespaces will automatically forward port **3000** (Web Panel) and **3001** (Backend API). Click the **Open in Browser** notification or open port **3000** in the **Ports** tab!
+>
+> **Default Login**: `admin@slayernode.xyz` / `admin`
+
+---
+
+## 🚀 Dedicated Bare-Metal & VPS Production Guide (From Scratch)
+*Use this guide when deploying on a standalone Linux VPS or dedicated server (Ubuntu 22.04/24.04 or Debian 12) with a real domain name pointed to your server IP.*
 
 ### Part 1: Setting Up the Host & Core Dependencies
 
