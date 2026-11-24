@@ -1,397 +1,797 @@
-import React, { useState } from 'react';
-import { Zap, Plus, Download, Upload, Box, Code, Check, Edit2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import {
+  Zap,
+  Plus,
+  Download,
+  Upload,
+  ArrowLeft,
+  Trash2,
+  Save,
+  Check,
+  AlertTriangle,
+  Info,
+  RefreshCw,
+} from 'lucide-react';
 import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
-import { GlassModal } from '../ui/GlassModal';
 import { GlassInput } from '../ui/GlassInput';
-import { Nest, Egg } from '../../types';
-
-export const INITIAL_NESTS: Nest[] = [
-  {
-    id: 1,
-    uuid: 'nest-minecraft',
-    author: 'engine@slayernode.xyz',
-    name: 'Minecraft',
-    description: 'Minecraft - the sandbox building and exploration block game developed by Mojang Studios.',
-    eggs_count: 8,
-    servers_count: 22,
-    created_at: '2026-11-10',
-  },
-  {
-    id: 2,
-    uuid: 'nest-steam',
-    author: 'engine@slayernode.xyz',
-    name: 'Steam Dedicated Games',
-    description: 'Popular games using SteamCMD runtime such as Rust, ARK, CS2, Palworld, and Team Fortress.',
-    eggs_count: 14,
-    servers_count: 9,
-    created_at: '2026-11-12',
-  },
-  {
-    id: 3,
-    uuid: 'nest-bots',
-    author: 'engine@slayernode.xyz',
-    name: 'Voice & Discord Bots',
-    description: 'Node.js, Python, and Go generic application workers.',
-    eggs_count: 2,
-    servers_count: 0,
-    created_at: '2026-11-15',
-  },
-];
-
-export const INITIAL_EGGS: Egg[] = [
-  {
-    id: 1,
-    uuid: 'egg-purpur-mc',
-    nest_id: 1,
-    nest_name: 'Minecraft',
-    author: 'admin@slayernode.xyz',
-    name: 'Purpur / Paper Minecraft',
-    description: 'High performance fork with Folia/Aikar flags and JLine ANSI terminal support.',
-    docker_images: {
-      'Java 21 (Default)': 'ghcr.io/slayernode/yolks:java_21',
-      'Java 17 (Legacy)': 'ghcr.io/slayernode/yolks:java_17',
-    },
-    startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}}',
-    config: {
-      files: {
-        'server.properties': { parser: 'properties', find: { 'server-ip': '0.0.0.0', 'server-port': '{{server.build.default.port}}' } },
-      },
-      startup: { done: ')! For help, type ' },
-      stop: 'stop',
-    },
-    variables: [
-      { name: 'Server Jar File', description: 'Executable jar', env_variable: 'SERVER_JARFILE', default_value: 'purpur.jar', server_value: 'purpur-1.21.4.jar', is_editable: true, rules: 'required|string' },
-      { name: 'Build Number', description: 'Purpur build version', env_variable: 'BUILD_NUMBER', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
-    ],
-  },
-  {
-    id: 2,
-    uuid: 'egg-velocity-proxy',
-    nest_id: 1,
-    nest_name: 'Minecraft',
-    author: 'admin@slayernode.xyz',
-    name: 'Velocity Proxy',
-    description: 'Next-generation Minecraft proxy with high packet throughput and modern DDoS mitigations.',
-    docker_images: {
-      'Java 21': 'ghcr.io/slayernode/yolks:java_21',
-    },
-    startup: 'java -Xms512M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC -jar {{SERVER_JARFILE}}',
-    config: {
-      files: {},
-      startup: { done: 'Booting Velocity' },
-      stop: 'end',
-    },
-    variables: [
-      { name: 'Server Jar File', description: 'Velocity Jar', env_variable: 'SERVER_JARFILE', default_value: 'velocity.jar', server_value: 'velocity.jar', is_editable: true, rules: 'required|string' },
-    ],
-  },
-  {
-    id: 3,
-    uuid: 'egg-rust-dedicated',
-    nest_id: 2,
-    nest_name: 'Steam Dedicated Games',
-    author: 'admin@slayernode.xyz',
-    name: 'Rust Dedicated',
-    description: 'Facepunch Rust experimental survival multi-threaded server instance.',
-    docker_images: {
-      'Rust Yolks': 'ghcr.io/slayernode/games:rust',
-    },
-    startup: './RustDedicated -batchmode +server.port {{SERVER_PORT}} +server.level "Procedural Map" +server.seed {{MAP_SEED}} +server.worldsize {{WORLD_SIZE}} +server.maxplayers {{MAX_PLAYERS}}',
-    config: {
-      files: {},
-      startup: { done: 'Server startup complete' },
-      stop: 'quit',
-    },
-    variables: [
-      { name: 'Map Seed', description: 'Procedural map seed', env_variable: 'MAP_SEED', default_value: '1337', server_value: '1337', is_editable: true, rules: 'numeric' },
-      { name: 'World Size', description: 'World map size in meters', env_variable: 'WORLD_SIZE', default_value: '4000', server_value: '4000', is_editable: true, rules: 'numeric' },
-      { name: 'Max Players', description: 'Player slots', env_variable: 'MAX_PLAYERS', default_value: '200', server_value: '200', is_editable: true, rules: 'numeric' },
-    ],
-  },
-];
+import { GlassModal } from '../ui/GlassModal';
 
 export const NestsEggsManager: React.FC = () => {
-  const [nests, setNests] = useState<Nest[]>(INITIAL_NESTS);
-  const [eggs, setEggs] = useState<Egg[]>(INITIAL_EGGS);
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [showNewEggModal, setShowNewEggModal] = useState(false);
-  const [importedJsonText, setImportedJsonText] = useState('');
-  const [importSuccess, setImportSuccess] = useState(false);
+  // Navigation: 'nests-list' | 'nest-detail' | 'egg-detail'
+  const [viewMode, setViewMode] = useState<'nests-list' | 'nest-detail' | 'egg-detail'>('nests-list');
 
-  // New Egg State
-  const [newEggName, setNewEggName] = useState('');
-  const [newEggDesc, setNewEggDesc] = useState('');
-  const [newEggNestId, setNewEggNestId] = useState('1');
-  const [newEggStartup, setNewEggStartup] = useState('java -jar server.jar');
-  const [newEggDocker, setNewEggDocker] = useState('ghcr.io/slayernode/yolks:java_21');
+  const [nests, setNests] = useState<any[]>([]);
+  const [selectedNest, setSelectedNest] = useState<any>(null);
+  const [selectedEgg, setSelectedEgg] = useState<any>(null);
+  const [isNewEgg, setIsNewEgg] = useState(false);
 
-  const exportEggJson = (egg: Egg) => {
-    const slayerEgg = {
-      _comment: 'DO NOT EDIT THIS FILE. IT IS MEANT TO BE IMPORTED THROUGH THE SLAYERNODE PANEL.',
-      meta: { version: 'SLAYER_EGG_v1', update_url: null },
-      exported_at: new Date().toISOString(),
-      name: egg.name,
-      author: egg.author,
-      description: egg.description,
-      features: null,
-      docker_images: egg.docker_images,
-      file_denylist: [],
-      startup: egg.startup,
-      config: egg.config,
-      scripts: {
-        installation: {
-          script: '#!/bin/bash\n# Egg installer\ncurl -o {{SERVER_JARFILE}} ...',
-          container: 'ghcr.io/slayernode/installers:debian',
-          entrypoint: 'bash',
-        },
-      },
-      variables: egg.variables,
-    };
+  const [isLoading, setIsLoading] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-    const blob = new Blob([JSON.stringify(slayerEgg, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `egg-${egg.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.json`;
-    a.click();
-    URL.revokeObjectURL(a);
+  // Modals
+  const [showCreateNestModal, setShowCreateNestModal] = useState(false);
+  const [showImportEggModal, setShowImportEggModal] = useState(false);
+  const [newNestName, setNewNestName] = useState('');
+  const [newNestDesc, setNewNestDesc] = useState('');
+  const [importJsonText, setImportJsonText] = useState('');
+
+  // Nest Edit Form
+  const [nestName, setNestName] = useState('');
+  const [nestDesc, setNestDesc] = useState('');
+
+  // Egg Form State
+  const [eggNestId, setEggNestId] = useState('1');
+  const [eggName, setEggName] = useState('');
+  const [eggDesc, setEggDesc] = useState('');
+  const [eggDockerImages, setEggDockerImages] = useState('');
+  const [eggStartup, setEggStartup] = useState('');
+  const [eggForceOutgoingIp, setEggForceOutgoingIp] = useState(false);
+  const [eggFeatures, setEggFeatures] = useState('');
+  const [eggConfigFiles, setEggConfigFiles] = useState('{}');
+  const [eggStopCmd, setEggStopCmd] = useState('stop');
+  const [eggLogConfig, setEggLogConfig] = useState('{}');
+  const [eggStartConfig, setEggStartConfig] = useState('{}');
+
+  const showNotification = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(null), 3500);
   };
 
-  const handleImportEgg = () => {
+  const fetchNests = async () => {
+    setIsLoading(true);
     try {
-      const parsed = JSON.parse(importedJsonText);
-      const newEgg: Egg = {
-        id: Date.now(),
-        uuid: crypto.randomUUID(),
-        nest_id: 1,
-        nest_name: 'Minecraft',
-        author: parsed.author || 'Imported User',
-        name: parsed.name || 'Imported Egg',
-        description: parsed.description || '',
-        docker_images: parsed.docker_images || { 'Default': 'ghcr.io/slayernode/yolks:java_21' },
-        startup: parsed.startup || 'java -jar server.jar',
-        config: parsed.config || { files: {}, startup: { done: 'Done' }, stop: 'stop' },
-        variables: parsed.variables || [],
-      };
-      setEggs(prev => [...prev, newEgg]);
-      setImportSuccess(true);
-      setTimeout(() => {
-        setImportSuccess(false);
-        setShowImportModal(false);
-        setImportedJsonText('');
-      }, 1200);
+      const res = await fetch('/api/application/nests');
+      if (res.ok) {
+        const d = await res.json();
+        setNests((d.data || []).map((x: any) => x.attributes || x));
+      }
     } catch {
-      alert('Invalid SlayerEgg / Game Egg JSON format.');
+      setError('Failed loading nests from server.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleCreateEgg = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newEggName.trim()) return;
+  const fetchNestDetails = async (nestId: number | string) => {
+    try {
+      const res = await fetch(`/api/application/nests/${nestId}`);
+      if (res.ok) {
+        const d = await res.json();
+        const n = d.attributes || d;
+        setSelectedNest(n);
+        setNestName(n.name || '');
+        setNestDesc(n.description || '');
+      }
+    } catch {}
+  };
 
-    const nest = nests.find(n => String(n.id) === String(newEggNestId)) || nests[0];
-    const newEgg: Egg = {
-      id: Date.now(),
-      uuid: crypto.randomUUID(),
-      nest_id: nest.id,
-      nest_name: nest.name,
-      author: 'admin@slayernode.xyz',
-      name: newEggName.trim(),
-      description: newEggDesc.trim() || 'Custom game runtime configuration.',
-      docker_images: { 'Default Tag': newEggDocker.trim() },
-      startup: newEggStartup.trim(),
-      config: { files: {}, startup: { done: 'Startup completed' }, stop: 'stop' },
-      variables: [],
+  useEffect(() => {
+    fetchNests();
+  }, []);
+
+  // Open Nest Detail View
+  const handleOpenNest = (nest: any) => {
+    fetchNestDetails(nest.id);
+    setSelectedNest(nest);
+    setNestName(nest.name);
+    setNestDesc(nest.description || '');
+    setViewMode('nest-detail');
+  };
+
+  // Open Egg Configuration View
+  const handleOpenEgg = (egg: any) => {
+    setSelectedEgg(egg);
+    setIsNewEgg(false);
+    setEggNestId(String(egg.nest_id || selectedNest?.id || '1'));
+    setEggName(egg.name || '');
+    setEggDesc(egg.description || '');
+    setEggDockerImages(typeof egg.docker_images === 'string' ? egg.docker_images : JSON.stringify(egg.docker_images || {}, null, 2));
+    setEggStartup(egg.startup || '');
+    setEggForceOutgoingIp(!!egg.force_outgoing_ip);
+    setEggFeatures(egg.features || '');
+    setEggConfigFiles(typeof egg.config?.files === 'string' ? egg.config.files : JSON.stringify(egg.config?.files || {}, null, 2));
+    setEggStopCmd(egg.config?.stop || 'stop');
+    setEggLogConfig(typeof egg.config?.logs === 'string' ? egg.config.logs : JSON.stringify(egg.config?.logs || {}, null, 2));
+    setEggStartConfig(typeof egg.config?.startup === 'string' ? egg.config.startup : JSON.stringify(egg.config?.startup || {}, null, 2));
+    setViewMode('egg-detail');
+  };
+
+  // Open New Egg View
+  const handleCreateNewEgg = () => {
+    setSelectedEgg(null);
+    setIsNewEgg(true);
+    setEggNestId(String(selectedNest?.id || '1'));
+    setEggName('');
+    setEggDesc('');
+    setEggDockerImages('ghcr.io/slayernode/yolks:java_21\nghcr.io/slayernode/yolks:java_17');
+    setEggStartup('java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui');
+    setEggForceOutgoingIp(false);
+    setEggFeatures('eula, java_version');
+    setEggConfigFiles('{\n  "server.properties": {\n    "server-port": "{{SERVER_PORT}}"\n  }\n}');
+    setEggStopCmd('stop');
+    setEggLogConfig('{}');
+    setEggStartConfig('{}');
+    setViewMode('egg-detail');
+  };
+
+  // Save Nest Name & Description
+  const handleSaveNest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedNest) return;
+    try {
+      const res = await fetch(`/api/application/nests/${selectedNest.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: nestName.trim(), description: nestDesc.trim() }),
+      });
+      if (res.ok) {
+        showNotification('Nest properties saved successfully.');
+        fetchNests();
+        fetchNestDetails(selectedNest.id);
+      }
+    } catch {}
+  };
+
+  // Delete Nest
+  const handleDeleteNest = async () => {
+    if (!selectedNest) return;
+    if (!confirm(`Are you sure you want to delete nest "${selectedNest.name}" and all its eggs?`)) return;
+    try {
+      const res = await fetch(`/api/application/nests/${selectedNest.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showNotification('Nest deleted.');
+        setViewMode('nests-list');
+        fetchNests();
+      }
+    } catch {}
+  };
+
+  // Save or Create Egg
+  const handleSaveEgg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!eggName.trim()) return;
+
+    const payload = {
+      name: eggName.trim(),
+      description: eggDesc.trim(),
+      docker_images: eggDockerImages.trim(),
+      startup: eggStartup.trim(),
+      force_outgoing_ip: eggForceOutgoingIp,
+      features: eggFeatures.trim(),
+      config_files: eggConfigFiles,
+      stop_cmd: eggStopCmd.trim(),
+      log_config: eggLogConfig,
+      start_config: eggStartConfig,
     };
 
-    setEggs(prev => [...prev, newEgg]);
-    setShowNewEggModal(false);
-    setNewEggName('');
-    setNewEggDesc('');
+    try {
+      if (isNewEgg) {
+        const res = await fetch(`/api/application/nests/${eggNestId}/eggs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          showNotification('New Egg successfully created.');
+          fetchNestDetails(eggNestId);
+          setViewMode('nest-detail');
+        }
+      } else {
+        const res = await fetch(`/api/application/nests/${eggNestId}/eggs/${selectedEgg.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          showNotification('Egg configuration updated.');
+          fetchNestDetails(eggNestId);
+          setViewMode('nest-detail');
+        }
+      }
+    } catch {
+      setError('Error saving Egg configuration.');
+    }
+  };
+
+  // Export Egg JSON
+  const handleExportEgg = (egg: any) => {
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(egg, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('download', `egg-${egg.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  // Create Nest
+  const handleCreateNestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newNestName.trim()) return;
+    try {
+      const res = await fetch('/api/application/nests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newNestName.trim(), description: newNestDesc.trim() }),
+      });
+      if (res.ok) {
+        setShowCreateNestModal(false);
+        setNewNestName('');
+        setNewNestDesc('');
+        showNotification('Nest created successfully.');
+        fetchNests();
+      }
+    } catch {}
   };
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Zap className="w-5 h-5 text-amber-400" /> Nests & Eggs Catalog
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Game definitions, Docker Yolks runtime templates, and environment startup variables with full JSON import/export parity.
-          </p>
+      {/* Notifications */}
+      {notice && (
+        <div className="p-3.5 rounded bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-2">
+          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{notice}</span>
         </div>
+      )}
 
-        <div className="flex items-center gap-2">
-          <GlassButton
-            variant="glass"
-            size="sm"
-            onClick={() => setShowImportModal(true)}
-            leftIcon={<Upload className="w-4 h-4 text-red-500" />}
-          >
-            Import Egg JSON
-          </GlassButton>
-
-          <GlassButton
-            variant="accent"
-            size="sm"
-            onClick={() => setShowNewEggModal(true)}
-            leftIcon={<Plus className="w-4 h-4" />}
-          >
-            New Egg
-          </GlassButton>
+      {error && (
+        <div className="p-3.5 rounded bg-red-950/60 border border-red-600/40 text-red-500 text-xs font-bold flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+          <span>{error}</span>
         </div>
-      </div>
+      )}
 
-      {/* Eggs List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {eggs.map(egg => (
-          <GlassCard key={egg.id} className="p-5 flex flex-col justify-between">
+      {/* VIEW 1: CONFIGURED NESTS LIST */}
+      {viewMode === 'nests-list' && (
+        <>
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-400/20">
-                    <Zap className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-white">{egg.name}</h3>
-                    <p className="text-xs text-slate-400">Nest: {egg.nest_name} • by {egg.author}</p>
-                  </div>
-                </div>
-              </div>
-
-              <p className="text-xs text-slate-300 my-2">{egg.description}</p>
-
-              <div className="p-3 rounded-xl bg-slate-950/50 border border-white/5 text-xs font-mono text-slate-300 my-2">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Startup Command:</div>
-                <div className="truncate text-red-500">{egg.startup}</div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-2">
-                <span className="flex items-center gap-1 font-semibold text-white">
-                  <Box className="w-3.5 h-3.5 text-indigo-400" />
-                  {Object.keys(egg.docker_images).length} Docker Yolks Tag(s)
-                </span>
-                <span>•</span>
-                <span>{egg.variables.length} Startup Variables</span>
-              </div>
+              <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                <Zap className="w-5 h-5 text-red-500" /> Nests & Engines Management
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                All server categories and game eggs currently available on this system.
+              </p>
             </div>
 
-            <div className="flex items-center justify-between pt-4 border-t border-white/10 mt-4 text-xs">
-              <button
-                onClick={() => exportEggJson(egg)}
-                className="text-red-500 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" /> Export Egg JSON
-              </button>
-
-              <span className="text-[10px] font-mono text-slate-400 bg-white/5 px-2 py-0.5 rounded">
-                UUID: {egg.uuid.slice(0, 8)}
-              </span>
-            </div>
-          </GlassCard>
-        ))}
-      </div>
-
-      {/* NEW EGG MODAL */}
-      <GlassModal
-        isOpen={showNewEggModal}
-        onClose={() => setShowNewEggModal(false)}
-        title="Create New Game Egg"
-        description="Define a new Docker container startup script and Yolks image template"
-        maxWidth="md"
-      >
-        <form onSubmit={handleCreateEgg} className="flex flex-col gap-4 py-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <GlassInput
-              label="Egg Name"
-              value={newEggName}
-              onChange={e => setNewEggName(e.target.value)}
-              placeholder="e.g. Paper 1.21"
-              required
-            />
-            <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">Parent Nest</label>
-              <select
-                value={newEggNestId}
-                onChange={e => setNewEggNestId(e.target.value)}
-                className="glass-input w-full px-3 py-2 text-xs bg-slate-900 text-white cursor-pointer"
-              >
-                {nests.map(n => (
-                  <option key={n.id} value={n.id}>{n.name}</option>
-                ))}
-              </select>
+            <div className="text-[11px] font-mono text-slate-400 bg-black/40 px-3 py-1.5 rounded border border-white/10">
+              Admin &gt; <span className="text-white font-semibold">Nests</span>
             </div>
           </div>
 
-          <GlassInput
-            label="Egg Description"
-            value={newEggDesc}
-            onChange={e => setNewEggDesc(e.target.value)}
-            placeholder="Next-gen game container definition"
-          />
+          {/* Top Warning Banner matching screenshot */}
+          <div className="p-4 rounded bg-red-950/60 border border-red-600/50 text-red-300 text-xs leading-relaxed">
+            Eggs define service runtime parameters, environment flags, and container build images. Modifying default configurations incorrectly may affect server startup. Ensure custom commands and parameters are tested before applying to production servers.
+          </div>
 
+          {/* Configured Nests Card */}
+          <GlassCard className="overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white">Configured Nests</h3>
+              <div className="flex items-center gap-2">
+                <GlassButton
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowImportEggModal(true)}
+                  leftIcon={<Upload className="w-4 h-4 text-emerald-400" />}
+                >
+                  Import Egg
+                </GlassButton>
+                <GlassButton
+                  variant="accent"
+                  size="sm"
+                  onClick={() => setShowCreateNestModal(true)}
+                  leftIcon={<Plus className="w-4 h-4" />}
+                >
+                  Create New
+                </GlassButton>
+              </div>
+            </div>
+
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-white/10 bg-white/5 text-slate-400 uppercase tracking-wider text-[11px]">
+                  <th className="p-3.5 w-16">ID</th>
+                  <th className="p-3.5 w-44">Name</th>
+                  <th className="p-3.5">Description</th>
+                  <th className="p-3.5 w-20 text-center">Eggs</th>
+                  <th className="p-3.5 w-20 text-center">Servers</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {nests.map(n => (
+                  <tr key={n.id} className="hover:bg-white/5 transition-colors">
+                    <td className="p-3.5 font-mono text-slate-400">{n.id}</td>
+                    <td className="p-3.5">
+                      <button
+                        onClick={() => handleOpenNest(n)}
+                        className="font-bold text-white hover:text-red-400 text-left cursor-pointer transition-colors"
+                      >
+                        {n.name}
+                      </button>
+                    </td>
+                    <td className="p-3.5 text-slate-400 line-clamp-2">{n.description}</td>
+                    <td className="p-3.5 font-mono text-center text-slate-300">{n.eggs_count || 0}</td>
+                    <td className="p-3.5 font-mono text-center text-slate-300">{n.servers_count || 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </GlassCard>
+        </>
+      )}
+
+      {/* VIEW 2: NEST DETAIL VIEW */}
+      {viewMode === 'nest-detail' && selectedNest && (
+        <>
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode('nests-list')}
+                className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <div>
+                <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-red-500" /> {selectedNest.name}
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{selectedNest.description}</p>
+              </div>
+            </div>
+
+            <div className="text-[11px] font-mono text-slate-400 bg-black/40 px-3 py-1.5 rounded border border-white/10">
+              Admin &gt; <button onClick={() => setViewMode('nests-list')} className="hover:text-white underline cursor-pointer">Nests</button> &gt;{' '}
+              <span className="text-white font-semibold">{selectedNest.name}</span>
+            </div>
+          </div>
+
+          {/* Top 2 Cards matching screenshot */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Left Card: Name & Description */}
+            <GlassCard className="p-5 flex flex-col justify-between">
+              <form onSubmit={handleSaveNest} className="flex flex-col gap-3 text-xs">
+                <GlassInput
+                  label="Name (required)"
+                  value={nestName}
+                  onChange={e => setNestName(e.target.value)}
+                  required
+                />
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Description</label>
+                  <textarea
+                    value={nestDesc}
+                    onChange={e => setNestDesc(e.target.value)}
+                    rows={3}
+                    className="glass-input w-full px-3 py-2 bg-[#121318] text-white rounded"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <button
+                    type="button"
+                    onClick={handleDeleteNest}
+                    className="p-2 rounded bg-red-950/40 text-red-400 hover:text-red-300 border border-red-800/40 cursor-pointer"
+                    title="Delete Nest"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+
+                  <GlassButton variant="accent" size="sm" type="submit" leftIcon={<Save className="w-4 h-4" />}>
+                    Save
+                  </GlassButton>
+                </div>
+              </form>
+            </GlassCard>
+
+            {/* Right Card: Nest ID, Author, UUID */}
+            <GlassCard className="p-5 flex flex-col gap-3.5 text-xs">
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1 uppercase tracking-wider text-[11px]">Nest ID</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={selectedNest.id}
+                  className="glass-input w-full px-3 py-2 bg-black/40 text-slate-300 font-mono rounded"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1 uppercase tracking-wider text-[11px]">Author</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={selectedNest.author || 'admin@slayernode.xyz'}
+                  className="glass-input w-full px-3 py-2 bg-black/40 text-slate-300 font-mono rounded"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1 uppercase tracking-wider text-[11px]">UUID</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={selectedNest.uuid}
+                  className="glass-input w-full px-3 py-2 bg-black/40 text-red-400 font-mono rounded"
+                />
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* Bottom Card: Nest Eggs Table */}
+          <GlassCard className="overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white">Nest Eggs</h3>
+              <GlassButton
+                variant="accent"
+                size="sm"
+                onClick={handleCreateNewEgg}
+                leftIcon={<Plus className="w-4 h-4" />}
+              >
+                New Egg
+              </GlassButton>
+            </div>
+
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-white/10 bg-white/5 text-slate-400 uppercase tracking-wider text-[11px]">
+                  <th className="p-3.5 w-16">ID</th>
+                  <th className="p-3.5 w-48">Name</th>
+                  <th className="p-3.5">Description</th>
+                  <th className="p-3.5 w-24 text-center">Servers</th>
+                  <th className="p-3.5 w-16 text-right">Export</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {(selectedNest.eggs || []).map((egg: any) => (
+                  <tr key={egg.id} className="hover:bg-white/5 transition-colors">
+                    <td className="p-3.5 font-mono text-slate-400">{egg.id}</td>
+                    <td className="p-3.5">
+                      <button
+                        onClick={() => handleOpenEgg(egg)}
+                        className="font-bold text-white hover:text-red-400 text-left cursor-pointer transition-colors"
+                      >
+                        {egg.name}
+                      </button>
+                    </td>
+                    <td className="p-3.5 text-slate-400 line-clamp-2">{egg.description}</td>
+                    <td className="p-3.5 font-mono text-center text-slate-300">{egg.servers_count || 0}</td>
+                    <td className="p-3.5 text-right">
+                      <button
+                        onClick={() => handleExportEgg(egg)}
+                        className="p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
+                        title="Export Egg JSON"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {(!selectedNest.eggs || selectedNest.eggs.length === 0) && (
+                  <tr>
+                    <td colSpan={5} className="p-6 text-center text-slate-500">
+                      No eggs registered in this nest category yet. Click "New Egg" to configure one.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </GlassCard>
+        </>
+      )}
+
+      {/* VIEW 3: EGG CONFIGURATION / NEW EGG VIEW */}
+      {viewMode === 'egg-detail' && (
+        <form onSubmit={handleSaveEgg} className="flex flex-col gap-5">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setViewMode('nest-detail')}
+                className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <div>
+                <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-red-500" /> {isNewEgg ? 'New Egg' : `Egg: ${selectedEgg?.name}`}
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {isNewEgg ? 'Create a new Egg to assign to servers.' : 'Modify service container configuration.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="text-[11px] font-mono text-slate-400 bg-black/40 px-3 py-1.5 rounded border border-white/10">
+              Admin &gt; <button type="button" onClick={() => setViewMode('nests-list')} className="hover:text-white underline cursor-pointer">Nests</button> &gt;{' '}
+              <button type="button" onClick={() => setViewMode('nest-detail')} className="hover:text-white underline cursor-pointer">{selectedNest?.name}</button> &gt;{' '}
+              <span className="text-white font-semibold">{isNewEgg ? 'New Egg' : selectedEgg?.name}</span>
+            </div>
+          </div>
+
+          {/* Section 1: Configuration matching screenshot */}
+          <GlassCard className="p-5">
+            <h3 className="text-sm font-bold text-white border-b border-white/10 pb-3 mb-4">
+              Configuration
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Associated Nest</label>
+                  <select
+                    value={eggNestId}
+                    onChange={e => setEggNestId(e.target.value)}
+                    className="glass-input w-full px-3 py-2 bg-[#121318] text-white rounded cursor-pointer"
+                  >
+                    {nests.map(n => (
+                      <option key={n.id} value={String(n.id)}>
+                        {n.name} &lt;{n.author || 'admin@slayernode.xyz'}&gt;
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <GlassInput
+                  label="Name (required)"
+                  value={eggName}
+                  onChange={e => setEggName(e.target.value)}
+                  placeholder="e.g. Paper"
+                  required
+                />
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Description</label>
+                  <textarea
+                    value={eggDesc}
+                    onChange={e => setEggDesc(e.target.value)}
+                    rows={4}
+                    className="glass-input w-full px-3 py-2 bg-[#121318] text-white rounded"
+                    placeholder="A descriptive summary of this egg."
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={eggForceOutgoingIp}
+                      onChange={e => setEggForceOutgoingIp(e.target.checked)}
+                      className="rounded text-red-500"
+                    />
+                    <span className="font-semibold">Force Outgoing IP</span>
+                  </label>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Forces all outgoing traffic to be NATed to the server allocation IP.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Docker Images</label>
+                  <textarea
+                    value={eggDockerImages}
+                    onChange={e => setEggDockerImages(e.target.value)}
+                    rows={3}
+                    className="glass-input w-full px-3 py-2 bg-[#121318] text-white font-mono rounded"
+                    placeholder="ghcr.io/slayernode/yolks:java_21"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-0.5">Enter one container image per line.</p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Startup Command</label>
+                  <textarea
+                    value={eggStartup}
+                    onChange={e => setEggStartup(e.target.value)}
+                    rows={3}
+                    className="glass-input w-full px-3 py-2 bg-[#121318] text-white font-mono rounded"
+                    placeholder="java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} nogui"
+                  />
+                </div>
+
+                <GlassInput
+                  label="Features"
+                  value={eggFeatures}
+                  onChange={e => setEggFeatures(e.target.value)}
+                  placeholder="e.g. eula, java_version"
+                />
+              </div>
+            </div>
+          </GlassCard>
+
+          {/* Section 2: Process Management matching screenshot */}
+          <GlassCard className="p-5">
+            <h3 className="text-sm font-bold text-white border-b border-white/10 pb-3 mb-4">
+              Process Management
+            </h3>
+
+            {/* Orange warning alert box */}
+            <div className="p-3 mb-4 rounded bg-amber-950/50 border border-amber-600/40 text-amber-300 text-xs">
+              All fields are required unless you select a separate option from the 'Copy Settings From' dropdown, in which case fields may be left blank to use the values from that option.
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Copy Settings From</label>
+                  <select
+                    className="glass-input w-full px-3 py-2 bg-[#121318] text-white rounded cursor-pointer"
+                  >
+                    <option value="">None</option>
+                    {(selectedNest?.eggs || []).map((e: any) => (
+                      <option key={e.id} value={e.id}>
+                        {e.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <GlassInput
+                  label="Stop Command"
+                  value={eggStopCmd}
+                  onChange={e => setEggStopCmd(e.target.value)}
+                  description="Command sent to gracefully stop the process (e.g. stop or ^C)."
+                  placeholder="stop"
+                />
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Log Configuration</label>
+                  <textarea
+                    value={eggLogConfig}
+                    onChange={e => setEggLogConfig(e.target.value)}
+                    rows={3}
+                    className="glass-input w-full px-3 py-2 bg-[#121318] text-white font-mono rounded"
+                    placeholder="{}"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-0.5">JSON representation of log location.</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Configuration Files</label>
+                  <textarea
+                    value={eggConfigFiles}
+                    onChange={e => setEggConfigFiles(e.target.value)}
+                    rows={4}
+                    className="glass-input w-full px-3 py-2 bg-[#121318] text-white font-mono rounded"
+                    placeholder='{"server.properties": {"server-port": "{{SERVER_PORT}}"}}'
+                  />
+                  <p className="text-[11px] text-slate-500 mt-0.5">JSON representation of configuration file replacements.</p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Start Configuration</label>
+                  <textarea
+                    value={eggStartConfig}
+                    onChange={e => setEggStartConfig(e.target.value)}
+                    rows={3}
+                    className="glass-input w-full px-3 py-2 bg-[#121318] text-white font-mono rounded"
+                    placeholder="{}"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-0.5">JSON completion regex values.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-5 border-t border-white/10 mt-5">
+              <GlassButton variant="accent" size="sm" type="submit" leftIcon={<Save className="w-4 h-4" />}>
+                {isNewEgg ? 'Create Egg' : 'Save Egg'}
+              </GlassButton>
+            </div>
+          </GlassCard>
+        </form>
+      )}
+
+      {/* CREATE NEST MODAL */}
+      <GlassModal
+        isOpen={showCreateNestModal}
+        onClose={() => setShowCreateNestModal(false)}
+        title="Create New Nest Category"
+        description="A Nest acts as a category grouping multiple related eggs."
+      >
+        <form onSubmit={handleCreateNestSubmit} className="flex flex-col gap-4 py-2 text-xs">
           <GlassInput
-            label="Default Docker Yolks Image"
-            value={newEggDocker}
-            onChange={e => setNewEggDocker(e.target.value)}
-            placeholder="ghcr.io/slayernode/yolks:java_21"
+            label="Nest Name"
+            value={newNestName}
+            onChange={e => setNewNestName(e.target.value)}
+            placeholder="e.g. Minecraft"
             required
           />
-
-          <GlassInput
-            label="Default Startup Script"
-            value={newEggStartup}
-            onChange={e => setNewEggStartup(e.target.value)}
-            placeholder="java -jar {{SERVER_JARFILE}}"
-            required
-          />
-
-          <div className="pt-2 flex justify-end gap-2">
-            <GlassButton variant="ghost" size="sm" type="button" onClick={() => setShowNewEggModal(false)}>
+          <div>
+            <label className="text-xs font-semibold text-slate-300 block mb-1">Description</label>
+            <textarea
+              value={newNestDesc}
+              onChange={e => setNewNestDesc(e.target.value)}
+              rows={3}
+              className="glass-input w-full px-3 py-2 bg-[#121318] text-white rounded"
+              placeholder="A brief category description"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <GlassButton variant="secondary" size="sm" type="button" onClick={() => setShowCreateNestModal(false)}>
               Cancel
             </GlassButton>
             <GlassButton variant="accent" size="sm" type="submit">
-              Save Egg Definition
+              Create Nest
             </GlassButton>
           </div>
         </form>
       </GlassModal>
 
-      {/* IMPORT MODAL */}
+      {/* IMPORT EGG MODAL */}
       <GlassModal
-        isOpen={showImportModal}
-        onClose={() => setShowImportModal(false)}
-        title="Import SlayerEgg / Game Egg JSON"
-        description="Paste standard Egg JSON definition exported from any community egg repository."
-        maxWidth="2xl"
+        isOpen={showImportEggModal}
+        onClose={() => setShowImportEggModal(false)}
+        title="Import Egg Configuration"
+        description="Paste raw Egg JSON representation to import."
       >
-        <div className="flex flex-col gap-4 py-2">
-          {importSuccess ? (
-            <div className="p-4 rounded-xl bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold flex items-center gap-2">
-              <Check className="w-4 h-4" /> Egg imported successfully into Minecraft nest!
-            </div>
-          ) : (
-            <>
-              <textarea
-                value={importedJsonText}
-                onChange={e => setImportedJsonText(e.target.value)}
-                placeholder='{ "_comment": "DO NOT EDIT...", "name": "Purpur", ... }'
-                rows={12}
-                className="w-full p-4 rounded-xl bg-slate-950 border border-white/10 font-mono text-xs text-slate-200 resize-none selection:bg-sky-500/30"
-              />
-              <div className="flex justify-end gap-2">
-                <GlassButton variant="ghost" size="sm" onClick={() => setShowImportModal(false)}>
-                  Cancel
-                </GlassButton>
-                <GlassButton variant="accent" size="sm" onClick={handleImportEgg}>
-                  Parse &amp; Import
-                </GlassButton>
-              </div>
-            </>
-          )}
+        <div className="flex flex-col gap-4 py-2 text-xs">
+          <div>
+            <label className="text-xs font-semibold text-slate-300 block mb-1">Egg JSON Data</label>
+            <textarea
+              value={importJsonText}
+              onChange={e => setImportJsonText(e.target.value)}
+              rows={8}
+              className="glass-input w-full px-3 py-2 bg-[#121318] text-white font-mono rounded"
+              placeholder='{"name": "Custom Paper", ...}'
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <GlassButton variant="secondary" size="sm" onClick={() => setShowImportEggModal(false)}>
+              Cancel
+            </GlassButton>
+            <GlassButton
+              variant="accent"
+              size="sm"
+              onClick={async () => {
+                try {
+                  const parsed = JSON.parse(importJsonText);
+                  await fetch(`/api/application/nests/${nests[0]?.id || 1}/eggs`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(parsed),
+                  });
+                  setShowImportEggModal(false);
+                  setImportJsonText('');
+                  showNotification('Egg imported successfully.');
+                  fetchNests();
+                } catch {
+                  setError('Invalid Egg JSON string.');
+                }
+              }}
+            >
+              Import Egg
+            </GlassButton>
+          </div>
         </div>
       </GlassModal>
     </div>

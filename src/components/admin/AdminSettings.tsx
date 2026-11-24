@@ -157,15 +157,13 @@ export const AdminSettings: React.FC = () => {
           </GlassCard>
 
           <GlassCard className="p-5 flex flex-col gap-4">
-            <h3 className="text-sm font-bold text-white">Docker Configuration</h3>
-            <GlassInput
-              label="Default Yolks Network Driver"
-              value="bridge (172.18.0.0/16)"
-              disabled
-            />
-            <p className="text-xs text-slate-400">
-              Container network interfaces are configured on a per-node basis in each Wings <code>config.yml</code>.
+            <h3 className="text-sm font-bold text-white">Architecture & Clustering</h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              SlayerNode Panel operates as a stateless API and control plane. Game container virtualization, Docker sockets, and SFTP subsystems run exclusively on external SlayerWings daemons hosted across your VPS fleet.
             </p>
+            <div className="p-3 rounded-lg bg-[#111216] border border-white/5 text-xs font-mono text-slate-400">
+              SlayerWings Protocol: Ports 8443 (API) / 2202 (SFTP)
+            </div>
           </GlassCard>
         </div>
       )}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Palette,
@@ -13,17 +13,17 @@ import {
   Eye,
   Check,
   Sparkles,
-  Layers,
   Smartphone,
   Monitor,
   Code,
-  Shield,
   ExternalLink,
   Plus,
   Trash2,
   Image as ImageIcon,
   Boxes,
   Package,
+  ArrowLeft,
+  X,
 } from 'lucide-react';
 import { useTheme, PRESET_THEMES } from '../../../context/ThemeContext';
 import { BlueprintExtension } from '../../../types';
@@ -36,7 +36,11 @@ import { ServerDashboard } from '../../server/ServerDashboard';
 import { LoginView } from '../../auth/LoginView';
 import { ConsoleTerminal } from '../../server/ConsoleTerminal';
 
-export const AppearanceStudio: React.FC = () => {
+interface AppearanceStudioProps {
+  onExit?: () => void;
+}
+
+export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) => {
   const {
     theme,
     previewTheme,
@@ -49,14 +53,17 @@ export const AppearanceStudio: React.FC = () => {
     importThemeJson,
   } = useTheme();
 
-  const [activeSection, setActiveSection] = useState<'colors' | 'layout' | 'buttons' | 'auth' | 'branding' | 'blueprint' | 'addons'>('colors');
+  const [activeSection, setActiveSection] = useState<
+    'colors' | 'canvas' | 'geometry' | 'auth' | 'branding' | 'blueprint' | 'addons' | 'nav'
+  >('canvas');
+
   const [blueprintExtensions, setBlueprintExtensions] = useState<BlueprintExtension[]>([
     {
       id: 'slayernode-theme',
       name: 'SlayerNode Liquid Theme Engine',
       version: '1.0.0',
       author: 'SlayerNode',
-      description: 'Official Blackish-Gray & Red customization engine.',
+      description: 'Official Blackish-Gray & Crimson Red customization engine.',
       target: 'v1.0.0',
       icon: 'Palette',
       enabled: true,
@@ -77,7 +84,7 @@ export const AppearanceStudio: React.FC = () => {
   const [uploadingBlueprint, setUploadingBlueprint] = useState(false);
   const [blueprintNotice, setBlueprintNotice] = useState<string | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let isMounted = true;
     const loadBlueprint = async () => {
       try {
@@ -101,7 +108,7 @@ export const AppearanceStudio: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, enabled: !current }),
       });
-      setBlueprintExtensions(prev => prev.map(e => e.id === id ? { ...e, enabled: !current } : e));
+      setBlueprintExtensions(prev => prev.map(e => (e.id === id ? { ...e, enabled: !current } : e)));
       setBlueprintNotice(`Extension ${id} status updated.`);
       setTimeout(() => setBlueprintNotice(null), 2500);
     } catch {}
@@ -149,6 +156,7 @@ export const AppearanceStudio: React.FC = () => {
     };
     reader.readAsText(file);
   };
+
   const [previewMode, setPreviewMode] = useState<'dashboard' | 'login' | 'console'>('dashboard');
   const [devicePreview, setDevicePreview] = useState<'desktop' | 'mobile'>('desktop');
   const [showJsonModal, setShowJsonModal] = useState(false);
@@ -160,8 +168,8 @@ export const AppearanceStudio: React.FC = () => {
     if (file) {
       const reader = new FileReader();
       reader.onload = event => {
-        if (event.target?.result) {
-          callback(event.target.result as string);
+        if (typeof event.target?.result === 'string') {
+          callback(event.target.result);
         }
       };
       reader.readAsDataURL(file);
@@ -171,57 +179,126 @@ export const AppearanceStudio: React.FC = () => {
   const handleSave = () => {
     saveTheme();
     setSavedNotice(true);
-    setTimeout(() => setSavedNotice(false), 2000);
+    setTimeout(() => setSavedNotice(false), 2500);
   };
 
   const handleExport = () => {
-    const data = exportThemeJson();
-    const blob = new Blob([data], { type: 'application/json' });
+    const jsonStr = exportThemeJson();
+    const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `slayernode-theme-${previewTheme.preset_name.toLowerCase().replace(/\s+/g, '-')}.json`;
+    a.download = `slayernode-theme-${Date.now()}.json`;
     a.click();
-    URL.revokeObjectURL(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleImport = () => {
-    const ok = importThemeJson(jsonText);
-    if (ok) {
+    if (importThemeJson(jsonText)) {
       setShowJsonModal(false);
-      setJsonText('');
+      setSavedNotice(true);
+      setTimeout(() => setSavedNotice(false), 2500);
     } else {
-      alert('Invalid Theme JSON.');
+      alert('Invalid Theme JSON structure.');
     }
   };
 
+  const navMenuItems = [
+    { id: 'canvas', label: 'Canvas & Wallpaper', icon: ImageIcon, desc: 'Solid background & custom wallpaper' },
+    { id: 'colors', label: 'Brand & Status Colors', icon: Palette, desc: 'Primary Red & Status accents' },
+    { id: 'geometry', label: 'Geometry & Buttons', icon: Sliders, desc: 'Square buttons, border radius & glass' },
+    { id: 'auth', label: 'Login Portal Gateway', icon: Eye, desc: 'Login wallpaper, blur & brand text' },
+    { id: 'branding', label: 'Branding & Fonts', icon: Type, desc: 'Logo, panel name & typography' },
+    { id: 'addons', label: 'Built-in Addon Modules', icon: Key, desc: 'Installer, Player Manager & Splitter' },
+    { id: 'blueprint', label: 'Blueprint Framework', icon: Boxes, desc: 'Extension packages & themes' },
+    { id: 'nav', label: 'Custom Navigation', icon: ExternalLink, desc: 'Discord, Store & external links' },
+  ];
+
+  const solidColorSwatches = [
+    { label: 'Slayer Charcoal', hex: '#111216' },
+    { label: 'Void Black', hex: '#0A0B0E' },
+    { label: 'Obsidian Gray', hex: '#181A20' },
+    { label: 'Bloodline Tint', hex: '#180C0E' },
+    { label: 'Pure Pitch Black', hex: '#000000' },
+  ];
+
   return (
-    <div className="flex flex-col gap-6">
-      {/* Studio Header Toolbar */}
-      <GlassCard className="p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xl">
+    <div
+      className="min-h-screen text-[#F3F4F6] flex flex-col relative"
+      style={{ backgroundColor: previewTheme.bg_canvas || '#111216' }}
+    >
+      {/* Background Wallpaper Layer */}
+      {previewTheme.custom_wallpaper_url && (
+        <div
+          className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center transition-all duration-300"
+          style={{
+            backgroundImage: `url(${previewTheme.custom_wallpaper_url})`,
+            filter: `blur(${previewTheme.wallpaper_blur || 0}px)`,
+            opacity: (previewTheme.wallpaper_opacity ?? 100) / 100,
+          }}
+        />
+      )}
+
+      {/* ========================================================
+          1. TOP APP BAR (Dedicated Full-Screen Toolbar)
+          ======================================================== */}
+      <header className="px-4 sm:px-6 py-3.5 bg-[#181A20]/95 backdrop-blur-md border-b border-white/10 sticky top-0 z-50 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-gradient-to-tr from-sky-400 to-indigo-600 text-white shadow-lg shadow-sky-500/25 border border-white/20">
-            <Palette className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-white tracking-tight">
-                Nebula-Style Theme & Appearance Studio
-              </h1>
-              {isDirty && (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30">
-                  UNSAVED CHANGES
-                </span>
-              )}
+          {onExit && (
+            <button
+              onClick={onExit}
+              className="p-2 rounded-lg bg-[#21242C] hover:bg-[#2A2E38] text-white border border-white/10 transition-colors cursor-pointer flex items-center gap-2 text-xs font-bold"
+              title="Exit to Admin Area"
+            >
+              <ArrowLeft className="w-4 h-4 text-[#DC2626]" />
+              <span className="hidden sm:inline">Exit to Admin</span>
+            </button>
+          )}
+
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-[#DC2626]/20 border border-[#DC2626]/30 text-[#DC2626]">
+              <Palette className="w-5 h-5" />
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Live split-screen customization editor. Every visual element, layout, physics slider, and addon is editable without touching code.
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm sm:text-base font-black text-white tracking-wide">
+                  Appearance & Theme Studio
+                </h1>
+                {isDirty && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                    UNSAVED
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400 hidden sm:block">
+                Real-time visual editor. Change colors, solid canvas, wallpapers & UI layout.
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Global Studio Actions */}
-        <div className="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
+        {/* Global Toolbar Actions */}
+        <div className="flex items-center gap-2">
+          {/* Preset Fast Selector */}
+          <div className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[#21242C] border border-white/10 text-xs">
+            <span className="text-slate-400 text-[11px] font-semibold flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-[#DC2626]" /> Preset:
+            </span>
+            {Object.keys(PRESET_THEMES).map(presetName => (
+              <button
+                key={presetName}
+                onClick={() => applyPreset(presetName)}
+                className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                  previewTheme.preset_name === presetName
+                    ? 'bg-[#DC2626] text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {presetName}
+              </button>
+            ))}
+          </div>
+
           <GlassButton
             size="sm"
             variant="glass"
@@ -229,9 +306,9 @@ export const AppearanceStudio: React.FC = () => {
               setJsonText(exportThemeJson());
               setShowJsonModal(true);
             }}
-            leftIcon={<Code className="w-3.5 h-3.5 text-sky-400" />}
+            leftIcon={<Code className="w-3.5 h-3.5 text-slate-400" />}
           >
-            JSON Config
+            <span className="hidden sm:inline">JSON</span>
           </GlassButton>
 
           <GlassButton
@@ -240,7 +317,7 @@ export const AppearanceStudio: React.FC = () => {
             onClick={resetDefaults}
             leftIcon={<RotateCcw className="w-3.5 h-3.5" />}
           >
-            Reset
+            <span className="hidden sm:inline">Reset</span>
           </GlassButton>
 
           <GlassButton
@@ -249,684 +326,635 @@ export const AppearanceStudio: React.FC = () => {
             onClick={handleSave}
             leftIcon={savedNotice ? <Check className="w-4 h-4 text-emerald-300" /> : <Save className="w-4 h-4" />}
           >
-            {savedNotice ? 'Published to DB!' : 'Publish Theme'}
+            {savedNotice ? 'Saved!' : 'Save & Publish'}
           </GlassButton>
         </div>
-      </GlassCard>
+      </header>
 
-      {/* Preset Fast Switcher */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-        <span className="text-slate-400 font-semibold shrink-0 flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Designer Presets:
-        </span>
-        {Object.keys(PRESET_THEMES).map(presetName => (
-          <button
-            key={presetName}
-            onClick={() => applyPreset(presetName)}
-            className={`px-3 py-1.5 rounded-full font-semibold transition-all shrink-0 cursor-pointer ${
-              previewTheme.preset_name === presetName
-                ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-md shadow-sky-500/25 border border-white/20'
-                : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5'
-            }`}
-          >
-            {presetName}
-          </button>
-        ))}
-      </div>
+      {/* ========================================================
+          2. WORKSPACE: LEFT MENU + CONTROLS + LIVE PREVIEW
+          ======================================================== */}
+      <div className="flex-1 flex flex-col md:flex-row relative z-10 overflow-hidden">
+        {/* Left Sidebar Menu (Category Selector) */}
+        <aside className="w-full md:w-64 bg-[#181A20] border-r border-white/10 shrink-0 p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto">
+          <span className="hidden md:block text-[10px] font-bold uppercase tracking-wider text-slate-500 px-3 py-2">
+            Studio Sections
+          </span>
 
-      {/* Split-Screen Studio Workspace */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Editor Controls (5 cols) */}
-        <div className="lg:col-span-5 flex flex-col gap-4">
-          {/* Section Navigation Tabs */}
-          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/80 border border-white/10 overflow-x-auto text-xs">
-            {[
-              { id: 'colors', label: 'Colors & Glass', icon: <Palette className="w-3.5 h-3.5" /> },
-              { id: 'layout', label: 'Layout & Nav', icon: <Layout className="w-3.5 h-3.5" /> },
-              { id: 'buttons', label: 'Buttons & UI', icon: <Sliders className="w-3.5 h-3.5" /> },
-              { id: 'auth', label: 'Auth Screen', icon: <Eye className="w-3.5 h-3.5" /> },
-              { id: 'branding', label: 'Branding & Media', icon: <Type className="w-3.5 h-3.5" /> },
-              { id: 'blueprint', label: 'Blueprint Addons', icon: <Boxes className="w-3.5 h-3.5" /> },
-              { id: 'addons', label: 'Addon Toggles', icon: <Key className="w-3.5 h-3.5" /> },
-            ].map(tab => (
+          {navMenuItems.map(item => {
+            const isActive = activeSection === item.id;
+            const IconComp = item.icon;
+            return (
               <button
-                key={tab.id}
-                onClick={() => setActiveSection(tab.id as any)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-semibold transition-all shrink-0 cursor-pointer ${
-                  activeSection === tab.id
-                    ? 'bg-sky-500/20 text-sky-300 border border-sky-400/30 shadow-xs'
-                    : 'text-slate-400 hover:text-white'
+                key={item.id}
+                onClick={() => setActiveSection(item.id as any)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer text-left shrink-0 md:shrink md:w-full ${
+                  isActive
+                    ? 'bg-[#DC2626] text-white shadow-md shadow-red-950/40'
+                    : 'text-slate-400 hover:text-white hover:bg-[#21242C]'
                 }`}
               >
-                {tab.icon}
-                <span>{tab.label}</span>
+                <IconComp className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                <div className="truncate hidden md:block">
+                  <div className="leading-tight">{item.label}</div>
+                  <div className="text-[10px] font-normal opacity-75 truncate">{item.desc}</div>
+                </div>
+                <span className="md:hidden">{item.label}</span>
               </button>
-            ))}
-          </div>
+            );
+          })}
+        </aside>
 
-          {/* Section 1: Colors & Glass Physics */}
-          {activeSection === 'colors' && (
-            <GlassCard className="p-5 flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Palette className="w-4 h-4 text-sky-400" /> Color Palette & Glass Physics
-              </h3>
+        {/* Center Panel: Controls for Active Section */}
+        <div className="w-full md:w-[460px] lg:w-[500px] shrink-0 p-4 sm:p-6 overflow-y-auto border-r border-white/10 bg-[#14161B]/90">
+          {/* SECTION: Canvas & Wallpaper */}
+          {activeSection === 'canvas' && (
+            <GlassCard className="p-5 flex flex-col gap-5">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-[#DC2626]" /> Canvas Background & Wallpaper
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Configure solid canvas color or upload custom high-resolution wallpapers. Changes reflect immediately.
+                </p>
+              </div>
 
-              {/* Sliders for Blur, Opacity, Specular, Roundness */}
-              <div className="flex flex-col gap-4">
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-300 font-semibold">Glass Backdrop Blur</span>
-                    <span className="font-mono text-sky-400">{previewTheme.glass_blur_px}px</span>
-                  </div>
+              {/* Solid Background Color & Quick Swatches */}
+              <div className="p-4 rounded-xl bg-[#181A20] border border-white/10 flex flex-col gap-3">
+                <label className="text-xs font-bold text-white block">Solid Canvas Background</label>
+                <div className="flex items-center gap-3">
                   <input
-                    type="range"
-                    min={0}
-                    max={60}
-                    value={previewTheme.glass_blur_px}
-                    onChange={e => updatePreview({ glass_blur_px: parseInt(e.target.value) })}
-                    className="w-full accent-sky-400 cursor-pointer"
+                    type="color"
+                    value={previewTheme.bg_canvas || '#111216'}
+                    onChange={e => updatePreview({ bg_canvas: e.target.value })}
+                    className="w-10 h-10 rounded-lg cursor-pointer bg-transparent border-0 p-0"
                   />
+                  <input
+                    type="text"
+                    value={previewTheme.bg_canvas || '#111216'}
+                    onChange={e => updatePreview({ bg_canvas: e.target.value })}
+                    className="glass-input px-3 py-2 text-xs font-mono w-32 text-center text-white uppercase"
+                  />
+                  <span className="text-[11px] text-slate-400">Current Hex</span>
                 </div>
 
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-300 font-semibold">Card Translucency Opacity</span>
-                    <span className="font-mono text-sky-400">{previewTheme.card_opacity_pct}%</span>
+                {/* Preset Swatches */}
+                <div className="pt-2 border-t border-white/5">
+                  <span className="text-[11px] text-slate-400 font-medium block mb-2">Preset Solid Swatches:</span>
+                  <div className="flex flex-wrap gap-2">
+                    {solidColorSwatches.map(swatch => (
+                      <button
+                        key={swatch.hex}
+                        type="button"
+                        onClick={() => updatePreview({ bg_canvas: swatch.hex })}
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-mono border transition-all cursor-pointer ${
+                          previewTheme.bg_canvas === swatch.hex
+                            ? 'border-[#DC2626] bg-[#DC2626]/20 text-white font-bold'
+                            : 'border-white/10 bg-[#21242C] text-slate-300 hover:border-white/25'
+                        }`}
+                      >
+                        <span className="w-3.5 h-3.5 rounded border border-white/20 shrink-0" style={{ backgroundColor: swatch.hex }} />
+                        <span className="text-[11px]">{swatch.label}</span>
+                      </button>
+                    ))}
                   </div>
-                  <input
-                    type="range"
-                    min={10}
-                    max={95}
-                    value={previewTheme.card_opacity_pct}
-                    onChange={e => updatePreview({ card_opacity_pct: parseInt(e.target.value) })}
-                    className="w-full accent-sky-400 cursor-pointer"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-300 font-semibold">Specular Border Opacity</span>
-                    <span className="font-mono text-sky-400">{previewTheme.specular_border_opacity_pct}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={50}
-                    value={previewTheme.specular_border_opacity_pct}
-                    onChange={e => updatePreview({ specular_border_opacity_pct: parseInt(e.target.value) })}
-                    className="w-full accent-sky-400 cursor-pointer"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-300 font-semibold">Corner Roundness (Border Radius)</span>
-                    <span className="font-mono text-sky-400">{previewTheme.corner_roundness_px}px</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={8}
-                    max={36}
-                    value={previewTheme.corner_roundness_px}
-                    onChange={e => updatePreview({ corner_roundness_px: parseInt(e.target.value) })}
-                    className="w-full accent-sky-400 cursor-pointer"
-                  />
                 </div>
               </div>
 
-              {/* Color Hex Pickers */}
-              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/10">
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Primary Accent</label>
-                  <div className="flex items-center gap-2">
+              {/* Custom Wallpaper Configuration */}
+              <div className="p-4 rounded-xl bg-[#181A20] border border-white/10 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4 text-[#DC2626]" /> Custom Wallpaper Image
+                  </label>
+                  <label className="px-2.5 py-1 rounded bg-[#21242C] hover:bg-[#2A2E38] text-[11px] font-bold text-slate-200 border border-white/10 cursor-pointer flex items-center gap-1.5 transition-colors">
+                    <Upload className="w-3 h-3 text-[#DC2626]" /> Upload Image
                     <input
-                      type="color"
-                      value={previewTheme.accent_primary}
-                      onChange={e => updatePreview({ accent_primary: e.target.value })}
-                      className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => handleFileUpload(e, url => updatePreview({ custom_wallpaper_url: url }))}
                     />
-                    <input
-                      type="text"
-                      value={previewTheme.accent_primary}
-                      onChange={e => updatePreview({ accent_primary: e.target.value })}
-                      className="glass-input px-2 py-1 text-xs font-mono w-24 text-center"
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-16 h-12 rounded-lg bg-cover bg-center border border-white/15 shrink-0 bg-slate-900"
+                    style={{
+                      backgroundImage: previewTheme.custom_wallpaper_url ? `url(${previewTheme.custom_wallpaper_url})` : 'none',
+                    }}
+                  />
+                  <div className="flex-1">
+                    <GlassInput
+                      label="Wallpaper URL (or upload above)"
+                      value={previewTheme.custom_wallpaper_url || ''}
+                      onChange={e => updatePreview({ custom_wallpaper_url: e.target.value })}
+                      placeholder="https://example.com/wallpaper.jpg"
                     />
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Secondary Accent</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={previewTheme.accent_secondary}
-                      onChange={e => updatePreview({ accent_secondary: e.target.value })}
-                      className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
-                    />
-                    <input
-                      type="text"
-                      value={previewTheme.accent_secondary}
-                      onChange={e => updatePreview({ accent_secondary: e.target.value })}
-                      className="glass-input px-2 py-1 text-xs font-mono w-24 text-center"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Canvas Background</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={previewTheme.bg_canvas}
-                      onChange={e => updatePreview({ bg_canvas: e.target.value })}
-                      className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0"
-                    />
-                    <input
-                      type="text"
-                      value={previewTheme.bg_canvas}
-                      onChange={e => updatePreview({ bg_canvas: e.target.value })}
-                      className="glass-input px-2 py-1 text-xs font-mono w-24 text-center"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">Shadow Depth</label>
-                  <select
-                    value={previewTheme.shadow_depth}
-                    onChange={e => updatePreview({ shadow_depth: e.target.value as any })}
-                    className="glass-input text-xs px-2.5 py-1.5 w-full bg-slate-900 text-slate-200"
+                {previewTheme.custom_wallpaper_url && (
+                  <button
+                    onClick={() => updatePreview({ custom_wallpaper_url: '' })}
+                    className="self-start text-[11px] text-red-400 hover:text-red-300 flex items-center gap-1 cursor-pointer font-semibold"
                   >
-                    <option value="none">None</option>
-                    <option value="subtle">Subtle</option>
-                    <option value="deep">Deep Obsidian</option>
-                    <option value="colored_glow">Colored Glow</option>
-                  </select>
+                    <Trash2 className="w-3 h-3" /> Remove Wallpaper (Use Solid Color)
+                  </button>
+                )}
+
+                {/* Wallpaper Blur & Opacity Sliders */}
+                <div className="grid grid-cols-2 gap-4 pt-3 border-t border-white/5">
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="text-slate-300 font-semibold">Wallpaper Blur</span>
+                      <span className="font-mono text-[#DC2626] font-bold">{previewTheme.wallpaper_blur ?? 0}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={32}
+                      value={previewTheme.wallpaper_blur ?? 0}
+                      onChange={e => updatePreview({ wallpaper_blur: parseInt(e.target.value) })}
+                      className="w-full accent-[#DC2626] cursor-pointer"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="text-slate-300 font-semibold">Wallpaper Opacity</span>
+                      <span className="font-mono text-[#DC2626] font-bold">{previewTheme.wallpaper_opacity ?? 100}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={10}
+                      max={100}
+                      value={previewTheme.wallpaper_opacity ?? 100}
+                      onChange={e => updatePreview({ wallpaper_opacity: parseInt(e.target.value) })}
+                      className="w-full accent-[#DC2626] cursor-pointer"
+                    />
+                  </div>
                 </div>
               </div>
             </GlassCard>
           )}
 
-          {/* Section 2: Layout & Navigation */}
-          {activeSection === 'layout' && (
+          {/* SECTION: Brand & Status Colors */}
+          {activeSection === 'colors' && (
             <GlassCard className="p-5 flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Layout className="w-4 h-4 text-indigo-400" /> Layout & Navigation Architecture
-              </h3>
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Palette className="w-4 h-4 text-[#DC2626]" /> Brand & Status Colors
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Primary Crimson Red and cluster telemetry status indicator colors.
+                </p>
+              </div>
 
-              <div className="flex flex-col gap-3">
-                <label className="text-xs font-semibold text-slate-300">Navigation Bar Style</label>
-                <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-xl bg-[#181A20] border border-white/10">
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">Primary Red Accent</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={previewTheme.accent_primary}
+                      onChange={e => updatePreview({ accent_primary: e.target.value })}
+                      className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0 p-0"
+                    />
+                    <input
+                      type="text"
+                      value={previewTheme.accent_primary}
+                      onChange={e => updatePreview({ accent_primary: e.target.value })}
+                      className="glass-input px-2 py-1 text-xs font-mono w-24 text-center text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-[#181A20] border border-white/10">
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">Secondary Crimson</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={previewTheme.accent_secondary}
+                      onChange={e => updatePreview({ accent_secondary: e.target.value })}
+                      className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0 p-0"
+                    />
+                    <input
+                      type="text"
+                      value={previewTheme.accent_secondary}
+                      onChange={e => updatePreview({ accent_secondary: e.target.value })}
+                      className="glass-input px-2 py-1 text-xs font-mono w-24 text-center text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-[#181A20] border border-white/10">
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">Status: Online</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={previewTheme.status_online}
+                      onChange={e => updatePreview({ status_online: e.target.value })}
+                      className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0 p-0"
+                    />
+                    <input
+                      type="text"
+                      value={previewTheme.status_online}
+                      onChange={e => updatePreview({ status_online: e.target.value })}
+                      className="glass-input px-2 py-1 text-xs font-mono w-24 text-center text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-[#181A20] border border-white/10">
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">Status: Offline</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={previewTheme.status_offline}
+                      onChange={e => updatePreview({ status_offline: e.target.value })}
+                      className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0 p-0"
+                    />
+                    <input
+                      type="text"
+                      value={previewTheme.status_offline}
+                      onChange={e => updatePreview({ status_offline: e.target.value })}
+                      className="glass-input px-2 py-1 text-xs font-mono w-24 text-center text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Accent Glow Customization */}
+              <div className="flex flex-col gap-2 pt-2 border-t border-white/5">
+                <label className="text-xs font-bold text-slate-300">Crimson Ambient Glow Intensity</label>
+                <div className="grid grid-cols-4 gap-2">
                   {[
-                    { id: 'floating_top', label: 'Floating Top Pill' },
-                    { id: 'collapsible_sidebar', label: 'Glass Sidebar' },
-                    { id: 'dock_bar', label: 'macOS Glass Dock' },
-                  ].map(item => (
+                    { id: 'none', label: 'None' },
+                    { id: 'subtle', label: 'Subtle' },
+                    { id: 'vibrant', label: 'Vibrant' },
+                    { id: 'cyber', label: 'Cyber' },
+                  ].map(glow => (
                     <button
-                      key={item.id}
-                      onClick={() => updatePreview({ navigation_layout: item.id as any })}
-                      className={`p-3 rounded-xl text-xs font-semibold text-center transition-all cursor-pointer ${
-                        previewTheme.navigation_layout === item.id
-                          ? 'bg-sky-500/20 text-sky-300 border border-sky-400/40 shadow-sm'
-                          : 'bg-white/5 text-slate-400 hover:text-white border border-white/5'
+                      key={glow.id}
+                      onClick={() => updatePreview({ accent_glow_intensity: glow.id as any })}
+                      className={`p-2 rounded-lg text-xs font-semibold text-center transition-all cursor-pointer ${
+                        (previewTheme.accent_glow_intensity || 'subtle') === glow.id
+                          ? 'bg-[#DC2626] text-white shadow-md'
+                          : 'bg-[#21242C] text-slate-300 hover:text-white border border-white/10'
                       }`}
                     >
-                      {item.label}
+                      {glow.label}
                     </button>
                   ))}
                 </div>
+              </div>
 
-                <div className="pt-2">
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">
-                    Server Fleet Card Layout
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
+              {/* Status Indicator Style */}
+              <div className="flex flex-col gap-2 pt-2 border-t border-white/5">
+                <label className="text-xs font-bold text-slate-300">Telemetry Status Indicator Style</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'badge', label: 'Solid Badge' },
+                    { id: 'dot', label: 'Pulsing Dot' },
+                    { id: 'glow_pill', label: 'Glow Pill' },
+                  ].map(st => (
                     <button
-                      onClick={() => updatePreview({ server_card_layout: 'grid' })}
-                      className={`p-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                        previewTheme.server_card_layout === 'grid'
-                          ? 'bg-sky-500/20 text-sky-300 border border-sky-400/40'
-                          : 'bg-white/5 text-slate-400 hover:text-white'
+                      key={st.id}
+                      onClick={() => updatePreview({ status_style: st.id as any })}
+                      className={`p-2 rounded-lg text-xs font-semibold text-center transition-all cursor-pointer ${
+                        (previewTheme.status_style || 'badge') === st.id
+                          ? 'bg-[#DC2626] text-white shadow-md'
+                          : 'bg-[#21242C] text-slate-300 hover:text-white border border-white/10'
                       }`}
                     >
-                      3-Column Grid Cards
+                      {st.label}
                     </button>
-                    <button
-                      onClick={() => updatePreview({ server_card_layout: 'list' })}
-                      className={`p-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                        previewTheme.server_card_layout === 'list'
-                          ? 'bg-sky-500/20 text-sky-300 border border-sky-400/40'
-                          : 'bg-white/5 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Compact Row List
-                    </button>
-                  </div>
-                </div>
-
-                {/* Custom Nav Links */}
-                <div className="pt-3 border-t border-white/10">
-                  <span className="text-xs font-semibold text-slate-300 block mb-2">
-                    Custom External Links ({previewTheme.custom_nav_links?.length || 0})
-                  </span>
-                  <div className="flex flex-col gap-2">
-                    {previewTheme.custom_nav_links?.map((link, idx) => (
-                      <div key={link.id} className="flex items-center justify-between p-2 rounded-xl bg-slate-900/60 border border-white/5 text-xs">
-                        <span className="font-bold text-white">{link.label}</span>
-                        <span className="font-mono text-slate-400 truncate max-w-[150px]">{link.url}</span>
-                        <button
-                          onClick={() => {
-                            const filtered = previewTheme.custom_nav_links.filter(l => l.id !== link.id);
-                            updatePreview({ custom_nav_links: filtered });
-                          }}
-                          className="text-rose-400 p-1 hover:bg-rose-500/10 rounded cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                  ))}
                 </div>
               </div>
             </GlassCard>
           )}
 
-          {/* Section 3: Button & UI Components */}
-          {activeSection === 'buttons' && (
+          {/* SECTION: Geometry & Buttons */}
+          {activeSection === 'geometry' && (
             <GlassCard className="p-5 flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-emerald-400" /> Buttons & UI Primitives
-              </h3>
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-[#DC2626]" /> Geometry, Buttons & Glass Physics
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Button shapes, corner radii, and obsidian card surface translucency.
+                </p>
+              </div>
 
-              <div className="flex flex-col gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-2">Global Button Shape</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: 'pill', label: 'Apple Pill (Full)' },
-                      { id: 'squircle', label: 'Squircle (16px)' },
-                      { id: 'rounded', label: 'Subtle (8px)' },
-                    ].map(shape => (
-                      <button
-                        key={shape.id}
-                        onClick={() => updatePreview({ button_shape: shape.id as any })}
-                        className={`p-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                          previewTheme.button_shape === shape.id
-                            ? 'bg-sky-500/20 text-sky-300 border border-sky-400/40'
-                            : 'bg-white/5 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {shape.label}
-                      </button>
-                    ))}
-                  </div>
+              {/* Button Shape */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-bold text-slate-300">Button Shape</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'square', label: 'Square (Standard)' },
+                    { id: 'squircle', label: 'Squircle Bevel' },
+                    { id: 'pill', label: 'Pill Shape' },
+                  ].map(shape => (
+                    <button
+                      key={shape.id}
+                      onClick={() => updatePreview({ button_shape: shape.id as any })}
+                      className={`p-2.5 rounded-lg text-xs font-semibold text-center transition-all cursor-pointer ${
+                        previewTheme.button_shape === shape.id
+                          ? 'bg-[#DC2626] text-white shadow-md'
+                          : 'bg-[#21242C] text-slate-300 hover:text-white border border-white/10'
+                      }`}
+                    >
+                      {shape.label}
+                    </button>
+                  ))}
                 </div>
+              </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-2">Hover Motion Physics</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: 'subtle', label: 'Subtle' },
-                      { id: 'normal', label: 'Tactile (1.02)' },
-                      { id: 'energetic', label: 'Spring (1.04)' },
-                    ].map(motion => (
-                      <button
-                        key={motion.id}
-                        onClick={() => updatePreview({ hover_motion_intensity: motion.id as any })}
-                        className={`p-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                          previewTheme.hover_motion_intensity === motion.id
-                            ? 'bg-sky-500/20 text-sky-300 border border-sky-400/40'
-                            : 'bg-white/5 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {motion.label}
-                      </button>
-                    ))}
-                  </div>
+              {/* Corner Roundness */}
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-slate-300 font-semibold">Corner Roundness (Border Radius)</span>
+                  <span className="font-mono text-[#DC2626] font-bold">{previewTheme.corner_roundness_px}px</span>
                 </div>
+                <input
+                  type="range"
+                  min={4}
+                  max={24}
+                  value={previewTheme.corner_roundness_px}
+                  onChange={e => updatePreview({ corner_roundness_px: parseInt(e.target.value) })}
+                  className="w-full accent-[#DC2626] cursor-pointer"
+                />
+              </div>
 
-                {/* Preview sample buttons */}
-                <div className="p-4 rounded-xl bg-slate-950/50 border border-white/5 flex flex-col gap-2">
-                  <span className="text-[11px] text-slate-400 font-semibold uppercase">Interactive Preview:</span>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <GlassButton size="sm" variant="glass">Glass Button</GlassButton>
-                    <GlassButton size="sm" variant="accent">Accent Glow</GlassButton>
-                    <GlassButton size="sm" variant="danger">Danger</GlassButton>
-                  </div>
+              {/* Card Opacity */}
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-slate-300 font-semibold">Card Surface Opacity</span>
+                  <span className="font-mono text-[#DC2626] font-bold">{previewTheme.card_opacity_pct}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={60}
+                  max={100}
+                  value={previewTheme.card_opacity_pct}
+                  onChange={e => updatePreview({ card_opacity_pct: parseInt(e.target.value) })}
+                  className="w-full accent-[#DC2626] cursor-pointer"
+                />
+              </div>
+
+              {/* Glass Blur */}
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-slate-300 font-semibold">Glass Backdrop Blur</span>
+                  <span className="font-mono text-[#DC2626] font-bold">{previewTheme.glass_blur_px}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={32}
+                  value={previewTheme.glass_blur_px}
+                  onChange={e => updatePreview({ glass_blur_px: parseInt(e.target.value) })}
+                  className="w-full accent-[#DC2626] cursor-pointer"
+                />
+              </div>
+
+              {/* Font Scale Customization */}
+              <div className="flex flex-col gap-2 pt-2 border-t border-white/5">
+                <label className="text-xs font-bold text-slate-300">Interface Typography Scaling</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'compact', label: 'Compact (90%)' },
+                    { id: 'normal', label: 'Standard (100%)' },
+                    { id: 'large', label: 'Enlarged (110%)' },
+                  ].map(scale => (
+                    <button
+                      key={scale.id}
+                      onClick={() => updatePreview({ font_scale: scale.id as any })}
+                      className={`p-2 rounded-lg text-xs font-semibold text-center transition-all cursor-pointer ${
+                        (previewTheme.font_scale || 'normal') === scale.id
+                          ? 'bg-[#DC2626] text-white shadow-md'
+                          : 'bg-[#21242C] text-slate-300 hover:text-white border border-white/10'
+                      }`}
+                    >
+                      {scale.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Card Border Style */}
+              <div className="flex flex-col gap-2 pt-2 border-t border-white/5">
+                <label className="text-xs font-bold text-slate-300">Card Frame & Border Accent</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'subtle', label: 'Subtle Line' },
+                    { id: 'crimson_glow', label: 'Crimson Neon Glow' },
+                    { id: 'glass_clean', label: 'Glass Clean' },
+                    { id: 'none', label: 'Borderless Flat' },
+                  ].map(border => (
+                    <button
+                      key={border.id}
+                      onClick={() => updatePreview({ card_border_style: border.id as any })}
+                      className={`p-2 rounded-lg text-xs font-semibold text-center transition-all cursor-pointer ${
+                        (previewTheme.card_border_style || 'subtle') === border.id
+                          ? 'bg-[#DC2626] text-white shadow-md'
+                          : 'bg-[#21242C] text-slate-300 hover:text-white border border-white/10'
+                      }`}
+                    >
+                      {border.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </GlassCard>
           )}
 
-          {/* Section 4: Login & Auth Page Editor */}
+          {/* SECTION: Login Portal Gateway */}
           {activeSection === 'auth' && (
             <GlassCard className="p-5 flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Eye className="w-4 h-4 text-sky-400" /> Authentication Surface Architecture
-              </h3>
-
-              <div className="flex flex-col gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-2">Background Shader Engine</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { id: 'wallpaper', label: 'Transparent Wallpaper' },
-                      { id: 'aurora_mesh', label: 'Dynamic Aurora Mesh' },
-                      { id: 'particle_grid', label: 'Cyber Particle Grid' },
-                      { id: 'video', label: 'Looping Video URL' },
-                    ].map(bg => (
-                      <button
-                        key={bg.id}
-                        onClick={() => updatePreview({ auth_background_type: bg.id as any })}
-                        className={`p-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                          previewTheme.auth_background_type === bg.id
-                            ? 'bg-red-600/20 text-red-500 border border-red-600/40'
-                            : 'bg-white/5 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {bg.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Login Wallpaper Customization */}
-                <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/10 flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5 text-red-500" /> Login Background Wallpaper
-                    </label>
-                    <label className="text-[11px] font-semibold text-red-500 hover:underline cursor-pointer flex items-center gap-1">
-                      <Upload className="w-3 h-3" /> Upload File
-                      <input
-                        type="file"
-                        accept="image/*,video/mp4"
-                        className="hidden"
-                        onChange={e => handleFileUpload(e, url => updatePreview({ auth_bg_url: url }))}
-                      />
-                    </label>
-                  </div>
-
-                  <GlassInput
-                    label="Background Image / Video URL"
-                    value={previewTheme.auth_bg_url || ''}
-                    onChange={e => updatePreview({ auth_bg_url: e.target.value })}
-                    placeholder="/wallpapers/slayernode-liquid-mesh.png"
-                  />
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => updatePreview({ auth_bg_url: '/wallpapers/slayernode-liquid-mesh.png' })}
-                      className="text-[10px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5 cursor-pointer"
-                    >
-                      Use SlayerNode Mesh Wallpaper
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/5">
-                    <div>
-                      <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-semibold">Overlay Darkness</span>
-                        <span className="font-mono text-red-500">{previewTheme.auth_overlay_darkness}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={90}
-                        value={previewTheme.auth_overlay_darkness}
-                        onChange={e => updatePreview({ auth_overlay_darkness: parseInt(e.target.value) })}
-                        className="w-full accent-red-600 cursor-pointer"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-semibold">Wallpaper Blur</span>
-                        <span className="font-mono text-red-500">{previewTheme.auth_overlay_blur}px</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={24}
-                        value={previewTheme.auth_overlay_blur}
-                        onChange={e => updatePreview({ auth_overlay_blur: parseInt(e.target.value) })}
-                        className="w-full accent-red-600 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-2">Auth Card Alignment</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: 'center', label: 'Center Card' },
-                      { id: 'split_left', label: 'Left Split' },
-                      { id: 'split_right', label: 'Right Split' },
-                    ].map(pos => (
-                      <button
-                        key={pos.id}
-                        onClick={() => updatePreview({ auth_card_position: pos.id as any })}
-                        className={`p-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                          previewTheme.auth_card_position === pos.id
-                            ? 'bg-red-600/20 text-red-500 border border-red-600/40'
-                            : 'bg-white/5 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {pos.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <GlassInput
-                  label="Welcome Heading Text"
-                  value={previewTheme.auth_heading}
-                  onChange={e => updatePreview({ auth_heading: e.target.value })}
-                />
-
-                <GlassInput
-                  label="Welcome Subtitle"
-                  value={previewTheme.auth_subtitle}
-                  onChange={e => updatePreview({ auth_subtitle: e.target.value })}
-                />
-
-                <GlassToggle
-                  label="Allow Self-Registration"
-                  description="Display 'Create Account' link on login"
-                  checked={previewTheme.auth_allow_registration}
-                  onChange={v => updatePreview({ auth_allow_registration: v })}
-                />
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Eye className="w-4 h-4 text-[#DC2626]" /> Authentication Gateway Portal
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Custom wallpaper, overlay blur, and typography for public login page.
+                </p>
               </div>
+
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-white">Login Wallpaper</label>
+                <label className="px-2.5 py-1 rounded bg-[#21242C] hover:bg-[#2A2E38] text-[11px] font-bold text-slate-200 border border-white/10 cursor-pointer flex items-center gap-1.5 transition-colors">
+                  <Upload className="w-3 h-3 text-[#DC2626]" /> Upload
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => handleFileUpload(e, url => updatePreview({ auth_bg_url: url }))}
+                  />
+                </label>
+              </div>
+
+              <GlassInput
+                label="Login Background Image URL"
+                value={previewTheme.auth_bg_url || ''}
+                onChange={e => updatePreview({ auth_bg_url: e.target.value })}
+                placeholder="Leave empty to use solid canvas color"
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="flex justify-between text-[11px] mb-1">
+                    <span className="text-slate-300 font-semibold">Overlay Darkness</span>
+                    <span className="font-mono text-[#DC2626]">{previewTheme.auth_overlay_darkness}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={20}
+                    max={95}
+                    value={previewTheme.auth_overlay_darkness}
+                    onChange={e => updatePreview({ auth_overlay_darkness: parseInt(e.target.value) })}
+                    className="w-full accent-[#DC2626] cursor-pointer"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-[11px] mb-1">
+                    <span className="text-slate-300 font-semibold">Overlay Blur</span>
+                    <span className="font-mono text-[#DC2626]">{previewTheme.auth_overlay_blur}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={30}
+                    value={previewTheme.auth_overlay_blur}
+                    onChange={e => updatePreview({ auth_overlay_blur: parseInt(e.target.value) })}
+                    className="w-full accent-[#DC2626] cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <GlassToggle
+                label="Public Registration"
+                description="Allow new users to self-register accounts"
+                checked={previewTheme.auth_allow_registration}
+                onChange={v => updatePreview({ auth_allow_registration: v })}
+              />
             </GlassCard>
           )}
 
-          {/* Section 5: Branding, Fonts & Custom CSS */}
+          {/* SECTION: Branding & Media */}
           {activeSection === 'branding' && (
             <GlassCard className="p-5 flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Type className="w-4 h-4 text-amber-400" /> Branding, Logos & Wallpapers
-              </h3>
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Type className="w-4 h-4 text-[#DC2626]" /> Branding, Logo & Typography
+                </h3>
+              </div>
 
-              <div className="flex flex-col gap-4">
-                <GlassInput
-                  label="Panel Name"
-                  value={previewTheme.panel_name}
-                  onChange={e => updatePreview({ panel_name: e.target.value })}
+              <GlassInput
+                label="Control Panel Name"
+                value={previewTheme.panel_name}
+                onChange={e => updatePreview({ panel_name: e.target.value })}
+              />
+
+              <div className="flex items-center gap-3">
+                <img
+                  src={previewTheme.logo_url || '/logo.jpg'}
+                  alt="Logo preview"
+                  className="w-12 h-12 rounded-lg object-cover border border-white/20 shrink-0"
                 />
-
-                {/* Brand Logo Upload & Selector */}
-                <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/10 flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5 text-red-500" /> Official Brand Logo
-                    </label>
-                    <label className="text-[11px] font-semibold text-red-500 hover:underline cursor-pointer flex items-center gap-1">
-                      <Upload className="w-3 h-3" /> Upload Logo
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={e => handleFileUpload(e, url => updatePreview({ logo_url: url }))}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={previewTheme.logo_url || '/logo.jpg'}
-                      alt="Logo Preview"
-                      className="w-12 h-12 rounded-xl object-cover border border-white/20 shadow-md shrink-0"
-                    />
-                    <div className="flex-1">
-                      <GlassInput
-                        label="Logo URL or File Path"
-                        value={previewTheme.logo_url || ''}
-                        onChange={e => updatePreview({ logo_url: e.target.value })}
-                        placeholder="/logo.jpg"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => updatePreview({ logo_url: '/logo.jpg' })}
-                      className="text-[10px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5 cursor-pointer"
-                    >
-                      Use Official SlayerNode SN Logo
-                    </button>
-                  </div>
-                </div>
-
-                {/* Dashboard / Home Page Wallpaper Upload & Physics */}
-                <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/10 flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5 text-red-500" /> Dashboard & Home Background Wallpaper
-                    </label>
-                    <label className="text-[11px] font-semibold text-red-500 hover:underline cursor-pointer flex items-center gap-1">
-                      <Upload className="w-3 h-3" /> Upload Wallpaper
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={e => handleFileUpload(e, url => updatePreview({ custom_wallpaper_url: url }))}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-16 h-12 rounded-xl bg-cover bg-center border border-white/20 shadow-md shrink-0"
-                      style={{ backgroundImage: `url(${previewTheme.custom_wallpaper_url || '/wallpapers/slayernode-liquid-mesh.png'})` }}
-                    />
-                    <div className="flex-1">
-                      <GlassInput
-                        label="Dashboard Wallpaper URL"
-                        value={previewTheme.custom_wallpaper_url || ''}
-                        onChange={e => updatePreview({ custom_wallpaper_url: e.target.value })}
-                        placeholder="/wallpapers/slayernode-liquid-mesh.png"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => updatePreview({ custom_wallpaper_url: '/wallpapers/slayernode-liquid-mesh.png' })}
-                      className="text-[10px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5 cursor-pointer"
-                    >
-                      Use SlayerNode Liquid Mesh Wallpaper
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/5">
-                    <div>
-                      <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-semibold">Wallpaper Blur</span>
-                        <span className="font-mono text-red-500">{previewTheme.wallpaper_blur ?? 0}px</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={30}
-                        value={previewTheme.wallpaper_blur ?? 0}
-                        onChange={e => updatePreview({ wallpaper_blur: parseInt(e.target.value) })}
-                        className="w-full accent-red-600 cursor-pointer"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-[11px] mb-1">
-                        <span className="text-slate-300 font-semibold">Wallpaper Opacity</span>
-                        <span className="font-mono text-red-500">{previewTheme.wallpaper_opacity ?? 85}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={10}
-                        max={100}
-                        value={previewTheme.wallpaper_opacity ?? 85}
-                        onChange={e => updatePreview({ wallpaper_opacity: parseInt(e.target.value) })}
-                        className="w-full accent-red-600 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1.5">Primary Font Family</label>
-                  <select
-                    value={previewTheme.font_family}
-                    onChange={e => updatePreview({ font_family: e.target.value })}
-                    className="glass-input text-xs w-full px-3 py-2 bg-slate-900 text-white cursor-pointer"
-                  >
-                    <option value="Inter">Inter (Apple Clean)</option>
-                    <option value="Plus Jakarta Sans">Plus Jakarta Sans (Modern Geometric)</option>
-                    <option value="Space Grotesk">Space Grotesk (Tech/Cyber)</option>
-                    <option value="JetBrains Mono">JetBrains Mono (Developer)</option>
-                  </select>
-                </div>
-
-                <GlassToggle
-                  label="Announcement Banner"
-                  description="Show fleet notification bar at the top"
-                  checked={previewTheme.announcement_banner.enabled}
-                  onChange={v =>
-                    updatePreview({
-                      announcement_banner: { ...previewTheme.announcement_banner, enabled: v },
-                    })
-                  }
-                />
-
-                {previewTheme.announcement_banner.enabled && (
+                <div className="flex-1">
                   <GlassInput
-                    label="Banner Text"
-                    value={previewTheme.announcement_banner.text}
-                    onChange={e =>
-                      updatePreview({
-                        announcement_banner: { ...previewTheme.announcement_banner, text: e.target.value },
-                      })
-                    }
-                  />
-                )}
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">
-                    Custom CSS Override (Live Injected)
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={previewTheme.custom_css || ''}
-                    onChange={e => updatePreview({ custom_css: e.target.value })}
-                    placeholder="/* Custom CSS rules injected into document head */"
-                    className="glass-input w-full p-3 font-mono text-xs text-sky-200 resize-none selection:bg-sky-500/30"
+                    label="Logo URL"
+                    value={previewTheme.logo_url}
+                    onChange={e => updatePreview({ logo_url: e.target.value })}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1.5">Primary Font Family</label>
+                <select
+                  value={previewTheme.font_family}
+                  onChange={e => updatePreview({ font_family: e.target.value })}
+                  className="glass-input text-xs w-full px-3 py-2 bg-[#181A20] text-white cursor-pointer"
+                >
+                  <option value="Inter">Inter (Apple Clean)</option>
+                  <option value="Plus Jakarta Sans">Plus Jakarta Sans (Modern)</option>
+                  <option value="JetBrains Mono">JetBrains Mono (Developer)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  Custom CSS (Injected Live)
+                </label>
+                <textarea
+                  rows={4}
+                  value={previewTheme.custom_css || ''}
+                  onChange={e => updatePreview({ custom_css: e.target.value })}
+                  placeholder="/* Custom CSS overrides */"
+                  className="glass-input w-full p-3 font-mono text-xs text-red-200 resize-none"
+                />
               </div>
             </GlassCard>
           )}
 
-          {/* Section: Blueprint Framework & Extension Manager */}
+          {/* SECTION: Built-in Addon Modules */}
+          {activeSection === 'addons' && (
+            <GlassCard className="p-5 flex flex-col gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Key className="w-4 h-4 text-[#DC2626]" /> Built-In Addon Modules
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Toggle native integrated server modules without installing third-party plugins.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <GlassToggle
+                  label="1. Plugin & Modpack Installer"
+                  description="Modrinth, CurseForge, SpigotMC"
+                  checked={previewTheme.addon_mod_installer_enabled}
+                  onChange={v => updatePreview({ addon_mod_installer_enabled: v })}
+                />
+
+                <GlassToggle
+                  label="2. Player Manager"
+                  description="Online players, avatars, kick/ban, gamemode"
+                  checked={previewTheme.addon_player_manager_enabled}
+                  onChange={v => updatePreview({ addon_player_manager_enabled: v })}
+                />
+
+                <GlassToggle
+                  label="3. 1-Click Server Software Changer"
+                  description="Purpur, Paper, Fabric, Forge, Velocity"
+                  checked={previewTheme.addon_software_changer_enabled}
+                  onChange={v => updatePreview({ addon_software_changer_enabled: v })}
+                />
+
+                <GlassToggle
+                  label="4. Visual Config Editor"
+                  description="GUI sliders & live MOTD preview"
+                  checked={previewTheme.addon_config_editor_enabled}
+                  onChange={v => updatePreview({ addon_config_editor_enabled: v })}
+                />
+
+                <GlassToggle
+                  label="5. Dynamic Server Splitter"
+                  description="Distribute resources across instances"
+                  checked={previewTheme.addon_server_splitter_enabled}
+                  onChange={v => updatePreview({ addon_server_splitter_enabled: v })}
+                />
+              </div>
+            </GlassCard>
+          )}
+
+          {/* SECTION: Blueprint Framework */}
           {activeSection === 'blueprint' && (
             <GlassCard className="p-5 flex flex-col gap-4">
               <div className="flex items-center justify-between pb-2 border-b border-white/10">
@@ -940,20 +968,20 @@ export const AppearanceStudio: React.FC = () => {
               </div>
 
               {blueprintNotice && (
-                <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-semibold flex items-center gap-2">
+                <div className="p-3 rounded-lg bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-semibold flex items-center gap-2">
                   <Check className="w-4 h-4 text-red-400" />
                   <span>{blueprintNotice}</span>
                 </div>
               )}
 
               {/* Upload Dropzone */}
-              <div className="p-4 rounded-xl border border-dashed border-white/20 bg-slate-900/40 text-center flex flex-col items-center justify-center gap-2">
+              <div className="p-4 rounded-xl border border-dashed border-white/20 bg-[#181A20] text-center flex flex-col items-center justify-center gap-2">
                 <Boxes className="w-8 h-8 text-[#DC2626] opacity-80" />
                 <div>
                   <span className="text-xs font-bold text-white block">Install Blueprint Extension</span>
-                  <span className="text-[11px] text-slate-400">Drag and drop or select a <code className="text-[#DC2626]">.blueprint</code> or <code className="text-[#DC2626]">.zip</code> package archive</span>
+                  <span className="text-[11px] text-slate-400">Select a <code className="text-[#DC2626]">.blueprint</code> or <code className="text-[#DC2626]">.zip</code> package archive</span>
                 </div>
-                <label className="mt-1 px-3 py-1.5 rounded bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold cursor-pointer transition-colors">
+                <label className="mt-1 px-3 py-1.5 rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold cursor-pointer transition-colors">
                   {uploadingBlueprint ? 'Verifying Package...' : 'Select Extension File'}
                   <input
                     type="file"
@@ -965,7 +993,7 @@ export const AppearanceStudio: React.FC = () => {
               </div>
 
               {/* Installed Extensions List */}
-              <div className="flex flex-col gap-2.5">
+              <div className="flex flex-col gap-2">
                 <span className="text-xs font-bold text-slate-300">
                   Installed Extensions ({(blueprintExtensions || []).length})
                 </span>
@@ -973,13 +1001,13 @@ export const AppearanceStudio: React.FC = () => {
                 {(blueprintExtensions || []).map(ext => (
                   <div
                     key={ext.id}
-                    className="p-3.5 rounded-xl bg-[#181A20] border border-white/10 flex flex-col gap-2"
+                    className="p-3 rounded-lg bg-[#181A20] border border-white/10 flex flex-col gap-2"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Package className="w-4 h-4 text-[#DC2626]" />
                         <span className="text-xs font-bold text-white">{ext.name}</span>
-                        <span className="text-[10px] font-mono text-slate-400 bg-white/5 px-1.5 py-0.2 rounded">
+                        <span className="text-[10px] font-mono text-slate-400 bg-white/5 px-1.5 py-0.5 rounded">
                           v{ext.version}
                         </span>
                       </div>
@@ -1002,7 +1030,7 @@ export const AppearanceStudio: React.FC = () => {
                           ext.enabled ? 'text-slate-400 hover:text-white' : 'text-red-400 hover:text-red-300'
                         }`}
                       >
-                        {ext.enabled ? 'Disable Extension' : 'Enable Extension'}
+                        {ext.enabled ? 'Disable' : 'Enable'}
                       </button>
                     </div>
                   </div>
@@ -1011,111 +1039,64 @@ export const AppearanceStudio: React.FC = () => {
             </GlassCard>
           )}
 
-          {/* Section 6: Built-in Addon Toggles & API Keys */}
-          {activeSection === 'addons' && (
+          {/* SECTION: Custom Navigation Links */}
+          {activeSection === 'nav' && (
             <GlassCard className="p-5 flex flex-col gap-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Key className="w-4 h-4 text-emerald-400" /> Built-In Addon Modules & API Keys
-              </h3>
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <ExternalLink className="w-4 h-4 text-[#DC2626]" /> Custom Navigation Links
+                </h3>
+              </div>
 
-              <div className="flex flex-col gap-3">
-                <GlassToggle
-                  label="1. Plugin & Modpack Installer"
-                  description="Modrinth, CurseForge, Hangar, SpigotMC"
-                  checked={previewTheme.addon_mod_installer_enabled}
-                  onChange={v => updatePreview({ addon_mod_installer_enabled: v })}
-                />
-
-                <GlassToggle
-                  label="2. Player Manager"
-                  description="Live online players, avatars, kick/ban, OP, gamemode"
-                  checked={previewTheme.addon_player_manager_enabled}
-                  onChange={v => updatePreview({ addon_player_manager_enabled: v })}
-                />
-
-                <GlassToggle
-                  label="3. 1-Click Server Software Changer"
-                  description="Purpur, Paper, Folia, Fabric, Forge, Velocity"
-                  checked={previewTheme.addon_software_changer_enabled}
-                  onChange={v => updatePreview({ addon_software_changer_enabled: v })}
-                />
-
-                <GlassToggle
-                  label="4. Visual Config & server.properties Editor"
-                  description="GUI sliders, toggles, and live MOTD preview"
-                  checked={previewTheme.addon_config_editor_enabled}
-                  onChange={v => updatePreview({ addon_config_editor_enabled: v })}
-                />
-
-                <GlassToggle
-                  label="5. Server Resource Splitter"
-                  description="Sub-container resource partitioning sliders"
-                  checked={previewTheme.addon_server_splitter_enabled}
-                  onChange={v => updatePreview({ addon_server_splitter_enabled: v })}
-                />
-
-                <GlassToggle
-                  label="6. Cloudflare Subdomain Manager"
-                  description="Automated 1-click custom A and SRV DNS records"
-                  checked={previewTheme.addon_subdomain_manager_enabled}
-                  onChange={v => updatePreview({ addon_subdomain_manager_enabled: v })}
-                />
-
-                <GlassToggle
-                  label="7. Smart Crash & Log Stack-Trace Analyzer"
-                  description="Heuristic crash detection & 1-click automated fix"
-                  checked={previewTheme.addon_crash_analyzer_enabled}
-                  onChange={v => updatePreview({ addon_crash_analyzer_enabled: v })}
-                />
-
-                <div className="pt-3 border-t border-white/10 flex flex-col gap-3">
-                  <GlassInput
-                    label="Cloudflare API Token"
-                    type="password"
-                    placeholder="cf_api_..."
-                    value={previewTheme.cloudflare_api_token || ''}
-                    onChange={e => updatePreview({ cloudflare_api_token: e.target.value })}
-                  />
-
-                  <GlassInput
-                    label="CurseForge Core API Key"
-                    type="password"
-                    placeholder="$2a$10$..."
-                    value={previewTheme.curseforge_api_key || ''}
-                    onChange={e => updatePreview({ curseforge_api_key: e.target.value })}
-                  />
-                </div>
+              <div className="flex flex-col gap-2">
+                {(previewTheme.custom_nav_links || []).map(link => (
+                  <div key={link.id} className="p-3 rounded-lg bg-[#181A20] border border-white/10 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-white block">{link.label}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">{link.url}</span>
+                    </div>
+                    <button
+                      onClick={() =>
+                        updatePreview({
+                          custom_nav_links: previewTheme.custom_nav_links.filter(x => x.id !== link.id),
+                        })
+                      }
+                      className="p-1 rounded text-slate-400 hover:text-red-400"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             </GlassCard>
           )}
         </div>
 
-        {/* Right Column: Live Interactive Split-Screen Preview (7 cols) */}
-        <div className="lg:col-span-7 flex flex-col gap-3 sticky top-4">
-          {/* Preview Controls Bar */}
-          <div className="flex items-center justify-between p-2 rounded-2xl bg-slate-900/80 border border-white/10 text-xs">
-            <div className="flex items-center gap-1.5">
-              <span className="font-bold text-slate-300 ml-2">Preview Mode:</span>
+        {/* Right Panel: Live Interactive Preview Sandbox */}
+        <div className="flex-1 p-4 sm:p-6 flex flex-col gap-4 overflow-y-auto">
+          {/* Sandbox Top Controller Toolbar */}
+          <div className="flex items-center justify-between bg-[#181A20] p-2.5 rounded-lg border border-white/10">
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => setPreviewMode('dashboard')}
-                className={`px-3 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
-                  previewMode === 'dashboard' ? 'bg-sky-500/20 text-sky-300 border border-sky-400/30' : 'text-slate-400 hover:text-white'
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  previewMode === 'dashboard' ? 'bg-[#DC2626] text-white shadow-md' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 Dashboard
               </button>
               <button
                 onClick={() => setPreviewMode('console')}
-                className={`px-3 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
-                  previewMode === 'console' ? 'bg-sky-500/20 text-sky-300 border border-sky-400/30' : 'text-slate-400 hover:text-white'
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  previewMode === 'console' ? 'bg-[#DC2626] text-white shadow-md' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 Console
               </button>
               <button
                 onClick={() => setPreviewMode('login')}
-                className={`px-3 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
-                  previewMode === 'login' ? 'bg-sky-500/20 text-sky-300 border border-sky-400/30' : 'text-slate-400 hover:text-white'
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  previewMode === 'login' ? 'bg-[#DC2626] text-white shadow-md' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 Login View
@@ -1125,7 +1106,7 @@ export const AppearanceStudio: React.FC = () => {
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setDevicePreview('desktop')}
-                className={`p-1.5 rounded-lg transition-colors ${
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
                   devicePreview === 'desktop' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
                 }`}
                 title="Desktop View"
@@ -1134,7 +1115,7 @@ export const AppearanceStudio: React.FC = () => {
               </button>
               <button
                 onClick={() => setDevicePreview('mobile')}
-                className={`p-1.5 rounded-lg transition-colors ${
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
                   devicePreview === 'mobile' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
                 }`}
                 title="Mobile View"
@@ -1144,14 +1125,27 @@ export const AppearanceStudio: React.FC = () => {
             </div>
           </div>
 
-          {/* Interactive Screen Sandbox */}
+          {/* Interactive Screen Sandbox Container */}
           <div
-            className={`transition-all duration-300 mx-auto w-full rounded-2xl overflow-hidden border border-white/20 shadow-2xl relative bg-slate-950 min-h-[640px] max-h-[820px] overflow-y-auto ${
+            className={`transition-all duration-300 mx-auto w-full rounded-xl overflow-hidden border border-white/20 shadow-2xl relative min-h-[640px] max-h-[840px] overflow-y-auto ${
               devicePreview === 'mobile' ? 'max-w-sm' : 'max-w-full'
             }`}
+            style={{ backgroundColor: previewTheme.bg_canvas || '#111216' }}
           >
+            {/* Live Wallpaper in Preview Sandbox */}
+            {previewTheme.custom_wallpaper_url && (
+              <div
+                className="absolute inset-0 pointer-events-none z-0 bg-cover bg-center transition-all duration-300"
+                style={{
+                  backgroundImage: `url(${previewTheme.custom_wallpaper_url})`,
+                  filter: `blur(${previewTheme.wallpaper_blur || 0}px)`,
+                  opacity: (previewTheme.wallpaper_opacity ?? 100) / 100,
+                }}
+              />
+            )}
+
             {/* Live Interactive Component */}
-            <div className="p-4">
+            <div className="p-4 relative z-10">
               {previewMode === 'dashboard' && (
                 <ServerDashboard onSelectServerDetail={() => setPreviewMode('console')} />
               )}
@@ -1181,7 +1175,7 @@ export const AppearanceStudio: React.FC = () => {
             rows={14}
             value={jsonText}
             onChange={e => setJsonText(e.target.value)}
-            className="w-full p-4 rounded-xl bg-slate-950 font-mono text-xs text-sky-200 border border-white/10 resize-none selection:bg-sky-500/30"
+            className="w-full p-4 rounded-xl bg-[#14161B] font-mono text-xs text-red-200 border border-white/10 resize-none"
           />
           <div className="flex items-center justify-between pt-2">
             <GlassButton size="sm" variant="glass" onClick={handleExport} leftIcon={<Download className="w-3.5 h-3.5" />}>

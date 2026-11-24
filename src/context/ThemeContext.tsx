@@ -81,6 +81,14 @@ export const DEFAULT_THEME: ThemeStudioSettings = {
   cloudflare_zone_id: '',
   curseforge_api_key: '',
   modrinth_token: '',
+
+  // Advanced Customizations
+  font_scale: 'normal',
+  accent_glow_intensity: 'subtle',
+  status_style: 'badge',
+  card_border_style: 'subtle',
+  console_ansi_theme: 'slayer_crimson',
+  server_card_density: 'compact',
 };
 
 export const PRESET_THEMES: Record<string, Partial<ThemeStudioSettings>> = {
@@ -173,6 +181,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const active = previewTheme;
     const root = document.documentElement;
 
+    document.body.style.backgroundColor = active.bg_canvas || '#111216';
+
     root.style.setProperty('--color-primary', active.accent_primary);
     root.style.setProperty('--color-dark', active.bg_canvas);
     root.style.setProperty('--status-online', active.status_online);
@@ -180,7 +190,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     root.style.setProperty('--status-offline', active.status_offline);
     root.style.setProperty('--glass-blur', `${active.glass_blur_px}px`);
     root.style.setProperty('--card-opacity', `${active.card_opacity_pct / 100}`);
-    root.style.setProperty('--color-surface', `rgba(13, 19, 34, ${active.card_opacity_pct / 100})`);
+    root.style.setProperty('--color-surface', `rgba(24, 26, 32, ${active.card_opacity_pct / 100})`);
     root.style.setProperty('--color-border', `rgba(255, 255, 255, ${active.specular_border_opacity_pct / 100})`);
     root.style.setProperty('--radius-corner', `${active.corner_roundness_px}px`);
 
@@ -202,6 +212,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [previewTheme]);
 
   const updatePreview = (partial: Partial<ThemeStudioSettings>) => {
+    if (partial.bg_canvas) {
+      document.body.style.backgroundColor = partial.bg_canvas;
+    }
     setPreviewTheme(prev => ({ ...prev, ...partial }));
     setIsDirty(true);
   };
@@ -210,6 +223,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setTheme(previewTheme);
     localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(previewTheme));
     setIsDirty(false);
+    fetch('/api/studio/theme', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(previewTheme),
+    }).catch(() => {});
   };
 
   const resetDefaults = () => {
@@ -219,6 +237,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.removeItem('slayernode_theme_settings');
     localStorage.removeItem('slayer_theme_v1');
     setIsDirty(false);
+    fetch('/api/studio/theme/reset', { method: 'POST' }).catch(() => {});
   };
 
   const applyPreset = (presetName: string) => {

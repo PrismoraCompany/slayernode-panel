@@ -23,17 +23,20 @@ import { GlassBadge } from '../ui/GlassBadge';
 import { GlassToggle } from '../ui/GlassToggle';
 import { Server as ServerType, Node, User, Nest, Egg } from '../../types';
 import { useServer } from '../../context/ServerContext';
+import { AdminServerDetailView } from './server-edit/AdminServerDetailView';
+import { CreateServerView } from './CreateServerView';
 
 interface AdminServersManagerProps {
   onSelectServerDetail: (serverId: string) => void;
 }
 
 export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSelectServerDetail }) => {
-  const { servers, sendPowerAction } = useServer();
+  const { servers, sendPowerAction, refreshServers } = useServer();
   const [serverList, setServerList] = useState<ServerType[]>(servers);
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [editingServerId, setEditingServerId] = useState<string | null>(null);
 
   // External data for wizard
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -73,21 +76,45 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
 
         if (nodesRes.ok) {
           const d = await nodesRes.json();
-          setNodes(d.data.map((x: any) => x.attributes));
+          const loadedNodes = d.data.map((x: any) => x.attributes);
+          setNodes(loadedNodes);
+          if (loadedNodes.length > 0) {
+            setSelectedNodeId(String(loadedNodes[0].id));
+          }
         }
         if (usersRes.ok) {
           const d = await usersRes.json();
-          setUsers(d.data.map((x: any) => x.attributes));
+          const loadedUsers = d.data.map((x: any) => x.attributes);
+          setUsers(loadedUsers);
+          if (loadedUsers.length > 0) {
+            setSelectedOwnerId(String(loadedUsers[0].id));
+          }
         }
         if (nestsRes.ok) {
           const d = await nestsRes.json();
-          setNests(d.data.map((x: any) => x.attributes));
+          const loadedNests = d.data.map((x: any) => x.attributes);
+          setNests(loadedNests);
+          if (loadedNests.length > 0) {
+            setSelectedNestId(String(loadedNests[0].id));
+          }
         }
       } catch {}
     };
 
     loadWizardData();
   }, []);
+
+  useEffect(() => {
+    if (nodes.length > 0 && !nodes.some(n => String(n.id) === String(selectedNodeId))) {
+      setSelectedNodeId(String(nodes[0].id));
+    }
+  }, [nodes, showCreateModal]);
+
+  useEffect(() => {
+    if (users.length > 0 && !users.some(u => String(u.id) === String(selectedOwnerId))) {
+      setSelectedOwnerId(String(users[0].id));
+    }
+  }, [users, showCreateModal]);
 
   const handleCreateServer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +126,12 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
     setIsDeploying(true);
     setDeployError(null);
 
+    const targetNode = nodes.find(n => String(n.id) === String(selectedNodeId)) || nodes[0];
+    const targetNodeId = targetNode ? targetNode.id : selectedNodeId;
+
+    const targetUser = users.find(u => String(u.id) === String(selectedOwnerId)) || users[0];
+    const targetUserId = targetUser ? targetUser.id : selectedOwnerId;
+
     try {
       const res = await fetch('/api/application/servers', {
         method: 'POST',
@@ -106,14 +139,15 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
         body: JSON.stringify({
           name: serverName.trim(),
           description: serverDesc.trim(),
-          owner_id: parseInt(selectedOwnerId) || 1,
-          node_id: parseInt(selectedNodeId) || 1,
+          owner_id: targetUserId,
+          node_id: targetNodeId,
           egg_id: parseInt(selectedEggId) || 1,
           nest_id: parseInt(selectedNestId) || 1,
           memory: parseInt(memoryMb) || 2048,
           disk: parseInt(diskMb) || 10240,
           cpu: parseInt(cpuPct) || 100,
           swap: parseInt(swapMb) || 512,
+          start_on_deploy: startOnDeploy,
         }),
       });
 
@@ -124,6 +158,13 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
         return;
       }
 
+      if (data?.attributes) {
+        setServerList(prev => [data.attributes, ...prev.filter(s => s.uuid !== data.attributes.uuid)]);
+        if (refreshServers) {
+          refreshServers();
+        }
+      }
+
       setShowCreateModal(false);
       setServerName('');
       setServerDesc('');
@@ -131,9 +172,9 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
       setTimeout(() => setActionNotice(null), 4000);
 
       // Auto start if selected
-      if (startOnDeploy) {
+      if (startOnDeploy && data.attributes?.uuid) {
         setTimeout(() => {
-          sendPowerAction('start');
+          sendPowerAction('start', data.attributes.uuid);
         }, 500);
       }
     } catch (err: any) {
@@ -149,6 +190,34 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
     s.owner_username.toLowerCase().includes(searchTerm.toLowerCase()) ||
     s.node.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  if (showCreateModal) {
+    return (
+      <CreateServerView
+        onBack={() => setShowCreateModal(false)}
+        onServerCreated={(newServer) => {
+          setShowCreateModal(false);
+          if (refreshServers) refreshServers();
+          setActionNotice(`Server "${newServer.name}" provisioned successfully on ${newServer.node}!`);
+          setTimeout(() => setActionNotice(null), 4000);
+        }}
+      />
+    );
+  }
+
+  if (editingServerId) {
+    return (
+      <AdminServerDetailView
+        serverId={editingServerId}
+        onBack={() => setEditingServerId(null)}
+        onOpenConsole={onSelectServerDetail}
+        onServerDeleted={() => {
+          setEditingServerId(null);
+          if (refreshServers) refreshServers();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -210,7 +279,12 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
             {filtered.map(s => (
               <tr key={s.id} className="hover:bg-white/5 transition-colors">
                 <td className="p-3.5">
-                  <span className="font-bold text-white block">{s.name}</span>
+                  <button
+                    onClick={() => setEditingServerId(s.id)}
+                    className="font-bold text-white hover:text-red-400 block text-left cursor-pointer transition-colors"
+                  >
+                    {s.name}
+                  </button>
                   <span className="font-mono text-slate-400 text-[11px]">{s.identifier}</span>
                 </td>
 
@@ -237,8 +311,14 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
                 <td className="p-3.5 text-right">
                   <div className="flex items-center justify-end gap-1.5">
                     <button
+                      onClick={() => setEditingServerId(s.id)}
+                      className="px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-200 hover:text-white cursor-pointer border border-white/10"
+                    >
+                      Manage
+                    </button>
+                    <button
                       onClick={() => onSelectServerDetail(s.id)}
-                      className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-semibold text-red-400 hover:text-red-300 cursor-pointer border border-white/10"
+                      className="px-2.5 py-1 rounded bg-red-950/40 hover:bg-red-900/40 text-xs font-semibold text-red-400 hover:text-red-300 cursor-pointer border border-red-800/40"
                     >
                       Console
                     </button>
@@ -287,12 +367,12 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
             <div>
               <label className="text-xs font-semibold text-slate-300 block mb-1">Server Owner</label>
               <select
-                value={selectedOwnerId}
+                value={String(selectedOwnerId)}
                 onChange={e => setSelectedOwnerId(e.target.value)}
                 className="glass-input w-full px-3 py-2 text-xs bg-slate-900 text-white cursor-pointer"
               >
                 {users.map(u => (
-                  <option key={u.id} value={u.id}>
+                  <option key={u.id} value={String(u.id)}>
                     {u.name_first} {u.name_last} (@{u.username})
                   </option>
                 ))}
@@ -312,15 +392,19 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
             <div>
               <label className="text-xs font-semibold text-slate-300 block mb-1">Target Infrastructure Node</label>
               <select
-                value={selectedNodeId}
+                value={String(selectedNodeId)}
                 onChange={e => setSelectedNodeId(e.target.value)}
                 className="glass-input w-full px-3 py-2 text-xs bg-slate-900 text-white cursor-pointer"
               >
-                {nodes.map(n => (
-                  <option key={n.id} value={n.id}>
-                    {n.name} ({n.fqdn})
-                  </option>
-                ))}
+                {nodes.length === 0 ? (
+                  <option value="">No nodes registered</option>
+                ) : (
+                  nodes.map(n => (
+                    <option key={n.id} value={String(n.id)}>
+                      {n.name} ({n.fqdn})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 

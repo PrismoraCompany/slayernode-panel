@@ -9,20 +9,20 @@
 
 ---
 
-## ⚡ 1-Command Automated Installer (VPS & Containers)
+## ⚡ 1-Command Automated Installer (VPS, Local & Containers)
 
-Modeled after `pterodactyl-installer.se`, you can install SlayerNode Panel, the SlayerWings Daemon, or both with a single interactive CLI command:
+Modeled after `pterodactyl-installer.se`, you can install SlayerNode Panel, the SlayerWings Daemon, or both with a single interactive CLI command that automatically detects and adapts to your environment:
 
 ```bash
 bash <(curl -s https://raw.githubusercontent.com/PrismoraCompany/slayernode-panel/main/install.sh)
 ```
 
-The installer presents an interactive menu:
-```
-  [1] Install SlayerNode Panel (Web UI, API, Nginx & SSL)
-  [2] Install SlayerWings Daemon (Docker Engine, Volumes & SFTP)
-  [3] Install Both (Standalone Host: Panel + SlayerWings)
-  [4] GitHub Codespaces / Dev Container Launcher (Zero systemd, instant)
+The installer presents an interactive OS & environment menu:
+```text
+  [1] Dedicated / Production Linux VPS (Ubuntu 22.04/24.04 LTS, Debian 12 — Systemd & Nginx)
+  [2] Local Machine / Desktop (Linux, macOS, WSL2 — Non-systemd, instant local run)
+  [3] GitHub Codespaces / Web Sandboxes (Zero systemd, auto-forwarded web ports)
+  [4] Cloudflare Zero Trust Tunnel Setup (Ingress routing, WebSocket, & Behind-Proxy)
   [0] Exit
 ```
 
@@ -449,6 +449,85 @@ RESULTS: 6/6 TESTS PASSED
    - Cloudflare API tokens, CurseForge API keys, and SMTP credentials are encrypted at rest using AES-256-CBC.
 4. **ANSI Terminal Sanitization**:
    - Live WebSocket output filters malicious terminal escape sequences while preserving full 24-bit TrueColor and Minecraft MOTD formatting.
+
+---
+
+---
+
+## 🌐 Cloudflare Zero Trust Tunnels & Behind-Proxy Architecture
+
+SlayerNode natively supports deployment behind **Cloudflare Zero Trust (Tunnels)** without needing public IPv4 addresses, port forwarding on home routers, or exposing host firewall ports.
+
+### 1. Ingress Configuration (`~/.cloudflared/config.yml`)
+Configure your Cloudflare Tunnel to route both the Web Panel and the SlayerWings Daemon:
+
+```yaml
+tunnel: YOUR_TUNNEL_UUID
+credentials-file: /root/.cloudflared/YOUR_TUNNEL_UUID.json
+
+ingress:
+  # 1. SlayerNode Web Panel & Client API (HTTP Port 3000)
+  - hostname: panel.yourdomain.com
+    service: http://localhost:3000
+    originRequest:
+      noTLSVerify: true
+
+  # 2. SlayerWings Daemon (REST & WebSocket Engine Port 8443)
+  - hostname: node.yourdomain.com
+    service: http://localhost:8443
+    originRequest:
+      noTLSVerify: true
+
+  # 3. Catch-all HTTP 404 rule
+  - service: http_status:404
+```
+
+### 2. Panel Node Settings for Cloudflare Tunnels
+When registering or editing a node in the SlayerNode admin panel (`Admin > Nodes > Create Node / Edit Node`):
+- **FQDN**: Enter your tunnel hostname (e.g. `node.yourdomain.com`).
+- **Communicate Over SSL**: Select `Use SSL Connection` (`https`).
+- **Behind Proxy**: Select `Behind Proxy` (`behind_proxy: true`).
+- **Daemon Port**: Set to `8443` (Cloudflare connects to the local daemon port).
+
+> **How Behind-Proxy Logic Works**:
+> When `Behind Proxy` is enabled, SlayerWings knows that SSL is terminated at Cloudflare's Edge network. The daemon will not look for local SSL certificates, will accept reverse-proxy headers (`X-Forwarded-For`, `X-Forwarded-Proto`), and will permit WebSocket upgrades (`wss://`) through Cloudflare without connection drops.
+
+---
+
+## 🗑️ Node Lifecycle Management & Safety Rules
+
+SlayerNode enforces strict infrastructure safety rules to protect your containers and volume data:
+
+* **Deletion Safeguard**: A node **cannot be deleted** if any server instances are currently assigned to it.
+* **HTTP 400 Enforcement**: Attempting to delete an active hypervisor node will return:
+  ```json
+  { "error": "Cannot delete node: It currently hosts 2 active servers." }
+  ```
+* **Safe Deletion Procedure**:
+  1. Navigate to `Admin > Servers`.
+  2. Delete or migrate all server containers currently hosted on that target node.
+  3. Navigate to `Admin > Nodes`.
+  4. Click the red **Delete** button on the node card or in the node detail header.
+  5. The panel will confirm the action and cleanly remove the node and its unassigned allocations.
+
+---
+
+## 🛠️ Comprehensive Connection & Error Troubleshooting Matrix
+
+| Error Message / Status Code | Common Root Cause | Exact Diagnosis & Fix |
+|:---|:---|:---|
+| **`WebSocket connection to 'ws://...:8443' failed`** | Wings daemon is offline or port 8443 is blocked by firewall. | Run `ss -tulpn \| grep 8443` on the node host. Verify `node sandbox-wing/daemon.js` is running. Check UFW rules: `sudo ufw allow 8443/tcp`. |
+| **`Mixed Content: loaded over HTTPS but requested an insecure WebSocket endpoint`** | The panel was accessed over `https://` but the node is set to `http://` / `ws://`. | Edit the node in `Admin > Nodes > Settings`. Toggle **Communicate Over SSL** to `Use SSL Connection` (`https`), or configure a Cloudflare Tunnel with `wss://`. |
+| **`400 Bad Request: Cannot delete node: It currently hosts X active servers`** | Protection rule preventing orphaned volume deletion. | Delete or migrate all child game servers assigned to that node before deleting the node itself. |
+| **`400 Bad Request: Target node does not exist`** | The server creation form selected a node ID that was removed or invalid. | Refresh the page and pick an active online node from the **Target Infrastructure Node** dropdown. |
+| **`403 Forbidden: Direct access to internal database forbidden`** | Security boundary preventing direct download of `storage_db.json`. | Normal security behavior. System database files cannot be downloaded over public HTTP routes. |
+| **`401 Unauthenticated: Invalid or revoked API credential`** | An API token has expired, been deleted, or was not passed in the `Authorization: Bearer <token>` header. | Generate a new Client API Key in `/accounts > API Credentials` and verify the Authorization header format. |
+| **`Cloudflare Error 521: Web Server Is Down`** | Cloudflare Tunnel cannot reach the local port (e.g. 3000 or 8443). | Verify local processes are listening (`curl -I http://localhost:3000` and `curl -I http://localhost:8443/api/system`). Restart `cloudflared`. |
+| **`Cloudflare Error 522: Connection Timed Out`** | Node firewall is dropping Cloudflare edge requests. | If using direct DNS rather than tunnels, allow Cloudflare IP ranges or run `cloudflared tunnel run`. |
+| **`Cloudflare Error 525: SSL Handshake Failed`** | Cloudflare SSL encryption mode is set to "Strict" but the origin server does not have a trusted certificate. | In Cloudflare Dashboard, set SSL/TLS mode to **Full** (or use Cloudflare Tunnels with `originRequest.noTLSVerify: true`). In the panel, enable `Behind Proxy`. |
+| **`docker.sock: permission denied`** | Current Linux user is not in the `docker` usergroup. | Run `sudo usermod -aG docker $USER` and log out / log back in, or run the daemon with administrative privileges. |
+| **`Exit code 1: Java Heap Out of Memory (OOM)`** | Host machine has insufficient free physical RAM for the requested Minecraft container allocation. | Increase host swap (`sudo fallocate -l 4G /swapfile`) or adjust container RAM limits in the Server Creation screen. |
+| **`SFTP Port 2202 Connection Refused / Closed`** | Port collision with host SSH daemon or port 2202 closed in firewall. | Do **not** bind SFTP to port 22. SlayerWings runs its embedded SFTP subsystem on custom port `2202`. Run `sudo ufw allow 2202/tcp`. |
 
 ---
 

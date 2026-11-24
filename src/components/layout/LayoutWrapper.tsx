@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Menu, X, Shield, Layers, LogOut, ExternalLink, ChevronRight, Server } from 'lucide-react';
+import { Menu, X, Shield, Layers, LogOut, ExternalLink, ChevronRight, Server, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { AnnouncementBanner } from './AnnouncementBanner';
@@ -29,7 +29,21 @@ export const LayoutWrapper: React.FC<LayoutWrapperProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#111216] text-[#F3F4F6] flex flex-col md:flex-row relative">
+    <div
+      className="min-h-screen text-[#F3F4F6] flex flex-col md:flex-row relative"
+      style={{ backgroundColor: previewTheme.bg_canvas || '#111216' }}
+    >
+      {/* Background Wallpaper Layer */}
+      {previewTheme.custom_wallpaper_url && (
+        <div
+          className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center transition-all duration-300"
+          style={{
+            backgroundImage: `url(${previewTheme.custom_wallpaper_url})`,
+            filter: `blur(${previewTheme.wallpaper_blur || 0}px)`,
+            opacity: (previewTheme.wallpaper_opacity ?? 100) / 100,
+          }}
+        />
+      )}
       {/* ========================================================
           1. MOBILE TOP HEADER (With 3-Lines Hamburger in Top-Left)
           ======================================================== */}
@@ -121,24 +135,36 @@ export const LayoutWrapper: React.FC<LayoutWrapperProps> = ({
               <span>Servers</span>
             </button>
 
-            {/* Admin Switcher Tile */}
+            {/* Account Settings (For admins: in between servers and admin panel; for normal users: below servers) */}
+            <button
+              onClick={() => {
+                if (isAdminView) onToggleAdminView();
+                handleNavClick('account');
+              }}
+              className={`w-full px-3 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer ${
+                !isAdminView && (currentTab === 'account' || currentTab === 'accounts')
+                  ? 'bg-[#DC2626] text-white shadow-md shadow-red-950/40'
+                  : 'text-slate-300 hover:text-white hover:bg-[#21242C]'
+              }`}
+            >
+              <User className="w-4 h-4 shrink-0" />
+              <span>Account Settings</span>
+            </button>
+
+            {/* Dedicated Admin Panel Link */}
             {isAdmin && (
               <button
                 onClick={() => {
                   onToggleAdminView();
                   setMobileMenuOpen(false);
                 }}
-                className={`w-full px-3 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-between transition-all cursor-pointer mt-1 ${
-                  isAdminView
-                    ? 'bg-[#DC2626] text-white shadow-md'
-                    : 'bg-[#21242C] text-slate-200 hover:bg-[#2A2E38] border border-white/10'
-                }`}
+                className="w-full px-3 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-between transition-all cursor-pointer mt-1 bg-[#21242C] text-slate-200 hover:bg-[#2A2E38] hover:text-white border border-white/10"
               >
                 <div className="flex items-center gap-2.5">
-                  <Shield className="w-4 h-4 text-white" />
-                  <span>{isAdminView ? 'Client Area' : 'Admin Area'}</span>
+                  <Shield className="w-4 h-4 text-[#DC2626]" />
+                  <span>Admin Panel</span>
                 </div>
-                <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
               </button>
             )}
 
@@ -166,7 +192,11 @@ export const LayoutWrapper: React.FC<LayoutWrapperProps> = ({
         {/* Footer: User Profile & Logout */}
         <div className="p-3 border-t border-white/10 bg-[#14161B]">
           <div className="flex items-center justify-between p-2 rounded-lg bg-[#181A20] border border-white/10">
-            <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              onClick={() => handleNavClick('account')}
+              className="flex items-center gap-2.5 min-w-0 cursor-pointer hover:opacity-85 transition-opacity"
+              title="Open Account Settings"
+            >
               <div className="w-8 h-8 rounded-lg bg-[#21242C] border border-white/10 flex items-center justify-center font-bold text-white text-xs uppercase shrink-0 font-mono">
                 {user?.username ? user.username[0] : 'A'}
               </div>

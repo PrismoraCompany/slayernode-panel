@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import nodemailer from 'nodemailer';
 
@@ -287,6 +288,17 @@ app.use((req, res, next) => {
 });
 
 function getRequestUser(req) {
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7).trim();
+    const key = (db.client_api_keys || []).find(k => k.secret_token === token || k.token === token || k.identifier === token);
+    if (key) {
+      const user = db.users.find(u => u.id === key.user_id) || db.users[0];
+      return user;
+    }
+    return null;
+  }
+
   const userIdHeader = req.headers['x-user-id'];
   if (userIdHeader) {
     const found = db.users.find(u => String(u.id) === String(userIdHeader));
@@ -297,6 +309,9 @@ function getRequestUser(req) {
 
 function verifyServerOwnership(req, res, next) {
   const user = getRequestUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Unauthenticated.' });
+  }
   const serverId = req.params.uuid;
 
   const target = db.servers.find(
@@ -334,20 +349,54 @@ function requireRootAdmin(req, res, next) {
 // 1. Application Nodes & Wings Engine API
 // ==========================================
 
-app.get('/api/application/nodes', (req, res) => {
+async function probeNode(n) {
+  const t0 = Date.now();
+  const scheme = n.scheme || 'http';
+  const fqdn = n.fqdn || '127.0.0.1';
+  const port = n.daemon_listen || 8443;
+  const daemonUrl = `${scheme}://${fqdn}:${port}/api/system`;
+
+  try {
+    const probeRes = await fetch(daemonUrl, {
+      signal: AbortSignal.timeout(1200)
+    });
+    if (probeRes.ok) {
+      const sysInfo = await probeRes.json();
+      const pingMs = Math.max(1, Date.now() - t0);
+      return {
+        ...n,
+        is_online: true,
+        ping_ms: pingMs,
+        daemon_version: sysInfo.version || n.daemon_version || 'v1.0.0-slayerwings',
+        docker_active: !!sysInfo.docker_active,
+        docker_version: sysInfo.docker_version,
+      };
+    }
+  } catch (err) {}
+
+  return {
+    ...n,
+    is_online: false,
+    ping_ms: null,
+  };
+}
+
+app.get('/api/application/nodes', async (req, res) => {
+  const probed = await Promise.all(db.nodes.map(n => probeNode(n)));
   res.json({
     object: 'list',
-    data: db.nodes.map(n => ({
+    data: probed.map(n => ({
       object: 'node',
       attributes: n,
     })),
   });
 });
 
-app.get('/api/application/nodes/:id', (req, res) => {
+app.get('/api/application/nodes/:id', async (req, res) => {
   const node = db.nodes.find(n => String(n.id) === String(req.params.id));
   if (!node) return res.status(404).json({ error: 'Node not found' });
-  res.json({ object: 'node', attributes: node });
+  const probed = await probeNode(node);
+  res.json({ object: 'node', attributes: probed });
 });
 
 app.post('/api/application/nodes', requireRootAdmin, (req, res) => {
@@ -646,6 +695,8 @@ app.post('/api/application/servers', requireRootAdmin, (req, res) => {
   const uuid = crypto.randomUUID();
   const identifier = uuid.slice(0, 8);
 
+  const startOnDeploy = !!req.body.start_on_deploy;
+
   const newServer = {
     id: serverId,
     uuid,
@@ -656,7 +707,7 @@ app.post('/api/application/servers', requireRootAdmin, (req, res) => {
     owner_username: owner.username,
     node: node.name,
     node_id: node.id,
-    status: 'offline',
+    status: startOnDeploy ? 'running' : 'offline',
     is_suspended: false,
     is_transferring: false,
     pinned: false,
@@ -685,6 +736,32 @@ app.post('/api/application/servers', requireRootAdmin, (req, res) => {
 
   saveState(db);
   console.log(`[Wings Server Provisioned] Container ${newServer.name} (${newServer.uuid}) created on node ${node.name}`);
+
+  // Forward volume creation and auto-boot to daemon on node host
+  try {
+    const daemonUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers`;
+    fetch(daemonUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uuid: newServer.uuid,
+        name: newServer.name,
+        memory: newServer.limits.memory,
+        disk: newServer.limits.disk,
+      })
+    }).then(async () => {
+      if (startOnDeploy) {
+        await fetch(`${daemonUrl}/${newServer.uuid}/power`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'start' })
+        }).catch(() => {});
+      }
+    }).catch(err => {
+      console.log(`[Wings Daemon Provision Notice] Daemon sync notification:`, err.message);
+    });
+  } catch (err) {}
+
   res.status(201).json({ object: 'server', attributes: newServer });
 });
 
@@ -700,9 +777,14 @@ app.delete('/api/application/servers/:id', requireRootAdmin, (req, res) => {
   });
 
   db.servers = db.servers.filter(s => s.id !== server.id);
-  const node = db.nodes.find(n => n.id === server.node_id);
+  const node = db.nodes.find(n => n.id === server.node_id) || db.nodes[0];
   if (node) {
     node.servers_count = db.servers.filter(s => s.node_id === node.id).length;
+    // Tell daemon to remove container volume and kill process
+    try {
+      const daemonUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${server.uuid}`;
+      fetch(daemonUrl, { method: 'DELETE' }).catch(() => {});
+    } catch {}
   }
 
   saveState(db);
@@ -893,6 +975,7 @@ app.post('/api/admin/mail/test', async (req, res) => {
 
 app.get(['/api/client', '/api/client/servers'], (req, res) => {
   const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
   const filtered = user.root_admin
     ? db.servers
     : db.servers.filter(s => s.owner_id === user.id);
@@ -916,6 +999,184 @@ app.get(['/api/client', '/api/client/servers'], (req, res) => {
   });
 });
 
+// ==========================================
+// 8. Client Account & Personal Preferences API
+// ==========================================
+
+app.get('/api/client/account', (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
+  res.json({
+    object: 'user',
+    attributes: user,
+  });
+});
+
+app.put('/api/client/account/email', (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
+  const { email } = req.body;
+  if (!email || !email.includes('@') || !email.includes('.')) {
+    return res.status(400).json({ error: 'Invalid email address.' });
+  }
+  user.email = email.trim().toLowerCase();
+  saveState(db);
+  res.json({ object: 'user', attributes: user });
+});
+
+app.put('/api/client/account/password', (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
+  const { new_password, new_password_confirmation } = req.body;
+  if (!new_password || new_password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters in length.' });
+  }
+  if (new_password_confirmation && new_password !== new_password_confirmation) {
+    return res.status(400).json({ error: 'Password confirmation does not match.' });
+  }
+  saveState(db);
+  res.status(204).send();
+});
+
+app.get('/api/client/account/api-keys', (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
+  const keys = (db.client_api_keys || []).filter(k => k.user_id === user.id);
+  res.json({
+    object: 'list',
+    data: keys.map(k => ({
+      object: 'api_key',
+      attributes: {
+        identifier: k.identifier,
+        description: k.description,
+        allowed_ips: k.allowed_ips || [],
+        created_at: k.created_at,
+        last_used_at: k.last_used_at || null,
+      },
+    })),
+  });
+});
+
+app.post('/api/client/account/api-keys', (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
+  const rawDesc = String(req.body.description || '').replace(/(UNION|SELECT|--|;|'|"|<|>)/gi, '').trim();
+  const description = rawDesc || 'API Key';
+  const allowed_ips = req.body.allowed_ips ? (Array.isArray(req.body.allowed_ips) ? req.body.allowed_ips : [req.body.allowed_ips]) : [];
+
+  const identifier = 'ptlc_' + crypto.randomBytes(8).toString('hex');
+  const secret_token = 'ptlc_' + crypto.randomBytes(24).toString('hex');
+
+  const newKey = {
+    id: Date.now(),
+    user_id: user.id,
+    identifier,
+    secret_token,
+    description,
+    allowed_ips,
+    created_at: new Date().toISOString(),
+  };
+
+  db.client_api_keys = db.client_api_keys || [];
+  db.client_api_keys.push(newKey);
+  saveState(db);
+
+  res.status(201).json({
+    object: 'api_key',
+    attributes: {
+      identifier: newKey.identifier,
+      description: newKey.description,
+      allowed_ips: newKey.allowed_ips,
+      created_at: newKey.created_at,
+    },
+    meta: {
+      secret_token,
+    },
+  });
+});
+
+app.delete('/api/client/account/api-keys/:identifier', (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
+  const id = req.params.identifier;
+  db.client_api_keys = (db.client_api_keys || []).filter(k => k.identifier !== id);
+  saveState(db);
+  res.status(204).send();
+});
+
+app.get('/api/client/account/ssh-keys', (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
+  const keys = (db.ssh_keys || []).filter(k => k.user_id === user.id);
+  res.json({
+    object: 'list',
+    data: keys.map(k => ({
+      object: 'ssh_key',
+      attributes: k,
+    })),
+  });
+});
+
+app.post('/api/client/account/ssh-keys', (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
+  const { name, public_key } = req.body;
+  if (!public_key || !public_key.trim().match(/^(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521)\s+[A-Za-z0-9+/=]+/)) {
+    return res.status(400).json({ error: 'Invalid SSH key format. Must be a valid public key starting with ssh-rsa, ssh-ed25519, etc.' });
+  }
+
+  const cleanKey = public_key.trim();
+  const fingerprint = crypto.createHash('sha256').update(cleanKey).digest('base64').replace(/=+$/, '');
+  const newSsh = {
+    id: Date.now(),
+    user_id: user.id,
+    name: name?.trim() || 'SSH Key',
+    fingerprint,
+    public_key: cleanKey,
+    created_at: new Date().toISOString(),
+  };
+
+  db.ssh_keys = db.ssh_keys || [];
+  db.ssh_keys.push(newSsh);
+  saveState(db);
+
+  res.status(201).json({
+    object: 'ssh_key',
+    attributes: newSsh,
+  });
+});
+
+app.delete('/api/client/account/ssh-keys/:fingerprint', (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
+  const fp = req.params.fingerprint;
+  db.ssh_keys = (db.ssh_keys || []).filter(k => k.fingerprint !== fp);
+  saveState(db);
+  res.status(204).send();
+});
+
+app.get('/api/client/account/activity', (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
+  res.json({
+    object: 'list',
+    data: (db.activity_logs || []).map(a => ({
+      object: 'activity_log',
+      attributes: a,
+    })),
+  });
+});
+
+app.get('/api/client/regions', (req, res) => {
+  res.json({
+    object: 'list',
+    data: (db.locations || []).map(l => ({
+      object: 'location',
+      attributes: l,
+    })),
+  });
+});
+
 app.get('/api/client/servers/:uuid', verifyServerOwnership, (req, res) => {
   res.json({
     object: 'server',
@@ -932,13 +1193,56 @@ app.post('/api/client/servers/:uuid/power', verifyServerOwnership, (req, res) =>
     req.targetServer.status = 'offline';
   }
   saveState(db);
+
+  // Forward signal to node daemon
+  try {
+    const node = db.nodes.find(n => n.id === req.targetServer.node_id) || db.nodes[0];
+    if (node) {
+      const daemonPowerUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.params.uuid}/power`;
+      fetch(daemonPowerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: signal })
+      }).catch(err => console.log('[Wings Daemon Forward Notice]', err.message));
+    }
+  } catch (err) {}
+
   res.status(204).send();
 });
 
 app.post('/api/client/servers/:uuid/command', verifyServerOwnership, (req, res) => {
   const { command } = req.body;
   console.log(`[Wings Daemon Stdin Command] ${req.targetServer.name} -> ${command}`);
+
+  // Forward stdin command to node daemon
+  try {
+    const node = db.nodes.find(n => n.id === req.targetServer.node_id) || db.nodes[0];
+    if (node) {
+      const daemonCmdUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.params.uuid}/commands`;
+      fetch(daemonCmdUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commands: [command] })
+      }).catch(err => console.log('[Wings Daemon Forward Notice]', err.message));
+    }
+  } catch (err) {}
+
   res.status(204).send();
+});
+
+app.get('/api/client/servers/:uuid/logs', verifyServerOwnership, async (req, res) => {
+  try {
+    const node = db.nodes.find(n => n.id === req.targetServer.node_id) || db.nodes[0];
+    if (node) {
+      const daemonLogsUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.params.uuid}/logs`;
+      const response = await fetch(daemonLogsUrl, { signal: AbortSignal.timeout(1500) });
+      if (response.ok) {
+        const data = await response.json();
+        return res.json({ data: data.logs || [] });
+      }
+    }
+  } catch (err) {}
+  res.json({ data: [] });
 });
 
 app.get('/api/client/servers/:uuid/websocket', verifyServerOwnership, (req, res) => {
@@ -994,48 +1298,37 @@ server.on('upgrade', (request, socket, head) => {
   }
 });
 
-wss.on('connection', (ws, req) => {
-  ws.send(JSON.stringify({ event: 'auth success', args: [] }));
-  ws.send(JSON.stringify({ event: 'status', args: ['running'] }));
+wss.on('connection', (clientWs, req) => {
+  // Extract server UUID from URL if present
+  const match = req.url?.match(/\/api\/client\/servers\/([^\/]+)\/ws/);
+  const serverUuid = match ? match[1] : null;
 
-  const statsTimer = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-      const cpu = 25 + Math.random() * 20;
-      const mem = 4200000000 + Math.random() * 50000000;
-      ws.send(JSON.stringify({
-        event: 'stats',
-        args: [
-          JSON.stringify({
-            memory_bytes: Math.round(mem),
-            memory_limit_bytes: 8589934592,
-            cpu_absolute: Math.round(cpu * 10) / 10,
-            network: { rx_bytes: 148900000, tx_bytes: 289400000 },
-            disk_bytes: 18450000000,
-            state: 'running',
-          }),
-        ],
-      }));
-    }
-  }, 3000);
-
-  ws.on('message', message => {
-    try {
-      const data = JSON.parse(message.toString());
-      if (data.event === 'set state') {
-        ws.send(JSON.stringify({ event: 'status', args: [data.args[0]] }));
-      } else if (data.event === 'send command') {
-        ws.send(JSON.stringify({
-          event: 'console output',
-          args: [`[INFO]: Executed command: ${data.args[0]}`],
-        }));
+  // Establish upstream WebSocket bridge to SlayerWings Daemon on port 8443
+  let daemonWs = null;
+  try {
+    daemonWs = new WebSocket('ws://127.0.0.1:8443');
+    daemonWs.on('message', data => {
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(data);
       }
-    } catch (e) {
-      console.error('WS error:', e);
-    }
+    });
+    daemonWs.on('error', () => {});
+  } catch (e) {}
+
+  clientWs.on('message', message => {
+    try {
+      if (daemonWs && daemonWs.readyState === WebSocket.OPEN) {
+        daemonWs.send(message);
+      }
+    } catch (e) {}
   });
 
-  ws.on('close', () => {
-    clearInterval(statsTimer);
+  clientWs.on('close', () => {
+    if (daemonWs) {
+      try {
+        daemonWs.close();
+      } catch {}
+    }
   });
 });
 

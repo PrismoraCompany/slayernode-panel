@@ -192,7 +192,25 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({
       </div>
 
       {/* 3. Server Grid / List */}
-      {filteredServers.length === 0 ? (
+      {servers.length === 0 ? (
+        <div className="p-12 rounded-xl bg-[#181A20] border border-white/10 text-center flex flex-col items-center justify-center">
+          <div className="p-4 rounded-xl bg-[#21242C] text-slate-400 mb-3 border border-white/10">
+            <Server className="w-8 h-8 text-[#DC2626]" />
+          </div>
+          <h3 className="text-base font-bold text-white mb-1">No Servers Linked</h3>
+          <p className="text-xs text-slate-400 max-w-sm mb-4">
+            There are no servers linked to your account.
+          </p>
+          {isAdmin && onNavigateAdminServer && (
+            <button
+              onClick={onNavigateAdminServer}
+              className="px-4 py-2 rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold transition-all shadow-md shadow-red-950/40 cursor-pointer"
+            >
+              Deploy First Server
+            </button>
+          )}
+        </div>
+      ) : filteredServers.length === 0 ? (
         <div className="p-8 rounded-xl bg-[#181A20] border border-white/10 text-center flex flex-col items-center justify-center">
           <p className="text-xs text-slate-400">No servers match your current filter.</p>
           <button

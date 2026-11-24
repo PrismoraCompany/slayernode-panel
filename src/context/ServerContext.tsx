@@ -16,6 +16,7 @@ interface ServerContextType {
   sendCommand: (command: string) => void;
   togglePinServer: (id: string) => void;
   clearConsole: () => void;
+  refreshServers: () => Promise<void>;
   accessDeniedError: string | null;
 }
 
@@ -27,22 +28,23 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [activeServerId, setActiveServerId] = useState<string>('');
   const [accessDeniedError, setAccessDeniedError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchServers = async () => {
-      try {
-        const res = await fetch('/api/client/servers');
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.data)) {
-            const mapped = data.data.map((d: any) => d.attributes || d);
-            setServers(mapped);
-            if (mapped.length > 0) {
-              setActiveServerId(mapped[0].id);
-            }
+  const fetchServers = async () => {
+    try {
+      const res = await fetch('/api/client/servers');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.data)) {
+          const mapped = data.data.map((d: any) => d.attributes || d);
+          setServers(mapped);
+          if (mapped.length > 0) {
+            setActiveServerId(prev => (prev && mapped.some((m: any) => m.id === prev || m.uuid === prev) ? prev : (mapped[0].id || mapped[0].uuid)));
           }
         }
-      } catch {}
-    };
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
     fetchServers();
   }, []);
 
@@ -84,41 +86,98 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return points;
   });
 
-  const [consoleLogs, setConsoleLogs] = useState<string[]>([
-    '\x1b[38;2;0;210;255m[SlayerWings Engine v1.0.0]\x1b[0m Connected to container socket 8a9c4b12...',
-    '\x1b[38;2;16;185;129m[SlayerWings]\x1b[0m Container booted in 380ms with cgroups v2 limits enforced.',
-    '\x1b[38;2;255;255;255m[Java Runtime]\x1b[0m OpenJDK 64-Bit Server VM (build 21.0.5+11-LTS)',
-    '[14:22:01 INFO]: Loading purpur-1.21.4.jar (-Xms128M -XX:MaxRAMPercentage=95.0)',
-    '[14:22:02 INFO]: [Paper] Starting minecraft server version 1.21.4',
-    '[14:22:03 INFO]: Loading plugins: EssentialsX, LuckPerms, Vault, Chunky, CoreProtect, FoliaLib, ViaVersion, Geyser-Spigot...',
-    '[14:22:05 INFO]: [LuckPerms] Permissions storage: MariaDB (10.11.6-MariaDB)',
-    '\x1b[38;2;16;185;129m[14:22:07 INFO]: Done (4.189s)! For help, type "help"\x1b[0m',
-  ]);
+  const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
+  const wsRef = React.useRef<WebSocket | null>(null);
 
-  // Live telemetry ticker
+  // Connect to real Wings Daemon WebSocket on port 8443
   useEffect(() => {
-    if (!activeServer || activeServer.status !== 'running') return;
+    if (!activeServer) return;
 
-    const interval = setInterval(() => {
-      setStats(prev => {
-        const cpuJitter = Math.max(5, Math.min(180, prev.cpu_absolute + (Math.random() * 10 - 5)));
-        const ramJitter = Math.max(2000000000, Math.min(prev.memory_limit_bytes * 0.9, prev.memory_bytes + (Math.random() * 30000000 - 15000000)));
+    // 1. Fetch persistent log buffer from daemon
+    fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/logs`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.data) && data.data.length > 0) {
+          const lines = data.data.map((l: string) => l.endsWith('\n') ? l.slice(0, -1) : l);
+          setConsoleLogs(lines);
+        } else {
+          setConsoleLogs([]);
+        }
+      })
+      .catch(() => {});
 
-        return {
-          ...prev,
-          cpu_absolute: Math.round(cpuJitter * 10) / 10,
-          memory_bytes: ramJitter,
-          network: {
-            rx_bytes: prev.network.rx_bytes + Math.floor(Math.random() * 40000),
-            tx_bytes: prev.network.tx_bytes + Math.floor(Math.random() * 80000),
-          },
-          uptime_ms: prev.uptime_ms + 2500,
-        };
-      });
-    }, 2500);
+    // 2. Establish live WebSocket connection to daemon telemetry & stdout bridge
+    const isSecure = window.location.protocol === 'https:';
+    const wsProto = isSecure ? 'wss:' : 'ws:';
+    const host = window.location.hostname || 'localhost';
 
-    return () => clearInterval(interval);
-  }, [activeServer?.status]);
+    // When running in local dev on 3000/3001, connect directly to daemon on 8443.
+    // When running behind Cloudflare Zero Trust tunnel or Nginx reverse proxy, connect via websocket bridge.
+    let wsUrl: string;
+    if (window.location.port === '3000' || window.location.port === '3001') {
+      wsUrl = `${wsProto}//${host}:8443`;
+    } else {
+      const portPart = window.location.port ? `:${window.location.port}` : '';
+      wsUrl = `${wsProto}//${host}${portPart}/api/client/servers/${activeServer.uuid || activeServer.id}/ws`;
+    }
+
+    let socket: WebSocket;
+
+    try {
+      socket = new WebSocket(wsUrl);
+      wsRef.current = socket;
+
+      socket.onopen = () => {
+        console.log('[SlayerWings] Connected to live daemon WebSocket telemetry bridge');
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.event === 'console_output') {
+            if (!msg.server || msg.server === activeServer.uuid || msg.server === activeServer.id) {
+              const cleanLine = msg.line.endsWith('\n') ? msg.line.slice(0, -1) : msg.line;
+              setConsoleLogs(prev => [...prev.slice(-300), cleanLine]);
+            }
+          } else if (msg.event === 'stats' && msg.data) {
+            setStats(prev => ({
+              ...prev,
+              cpu_absolute: msg.data.cpu_absolute ?? prev.cpu_absolute,
+              memory_bytes: msg.data.memory_bytes ?? prev.memory_bytes,
+              memory_limit_bytes: msg.data.memory_limit_bytes ?? prev.memory_limit_bytes,
+              network: msg.data.network ?? prev.network,
+              state: msg.data.state || (activeServer.status as any),
+            }));
+
+            // Add real point to history graph
+            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            setHistoryStats(prev => [
+              ...prev.slice(-20),
+              {
+                time: timeStr,
+                cpu: msg.data.cpu_absolute || 0,
+                ram: Math.round((msg.data.memory_bytes || 0) / 1024 / 1024),
+                disk: 17.1,
+                netRx: Math.round(((msg.data.network?.rx_bytes || 0) % 1000000) / 1024),
+                netTx: Math.round(((msg.data.network?.tx_bytes || 0) % 1000000) / 1024),
+              }
+            ]);
+          }
+        } catch {}
+      };
+
+      socket.onerror = () => {
+        console.log('[SlayerWings] WebSocket connection to daemon currently dormant');
+      };
+    } catch {}
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [activeServer?.uuid, activeServer?.id]);
 
   // Tenant Boundary URL validation
   const selectServer = (id: string): boolean => {
@@ -140,18 +199,25 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const sendPowerAction = (action: 'start' | 'stop' | 'restart' | 'kill', targetServerId?: string) => {
-    const idToTarget = targetServerId || activeServer?.id;
-    if (!idToTarget) return;
+    const target = servers.find(s => s.id === targetServerId || s.uuid === targetServerId) || activeServer;
+    if (!target) return;
 
     setServers(prev =>
       prev.map(s => {
-        if (s.id !== idToTarget) return s;
+        if (s.id !== target.id && s.uuid !== target.uuid) return s;
         let newStatus: ServerStatus = 'offline';
         if (action === 'start' || action === 'restart') newStatus = 'running';
         if (action === 'stop') newStatus = 'stopping';
         return { ...s, status: newStatus };
       })
     );
+
+    // Call REST endpoint
+    fetch(`/api/client/servers/${target.uuid || target.id}/power`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signal: action }),
+    }).catch(() => {});
 
     const timestamp = new Date().toLocaleTimeString();
     setConsoleLogs(prev => [
@@ -161,18 +227,34 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const sendCommand = (cmd: string) => {
-    if (!cmd.trim()) return;
-    const timestamp = new Date().toLocaleTimeString();
+    if (!cmd.trim() || !activeServer) return;
+
+    // Echo operator command in console
     setConsoleLogs(prev => [
       ...prev,
       `\x1b[38;2;0;210;255m>\x1b[0m ${cmd}`,
-      `[${timestamp} INFO]: Command '${cmd}' dispatched by operator.`,
     ]);
+
+    // Send via REST endpoint
+    fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: cmd }),
+    }).catch(() => {});
+
+    // Send via live WebSocket to daemon process stdin
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        event: 'send_command',
+        args: [cmd],
+        server: activeServer.uuid || activeServer.id,
+      }));
+    }
   };
 
   const togglePinServer = (id: string) => {
     setServers(prev =>
-      prev.map(s => (s.id === id ? { ...s, pinned: !s.pinned } : s))
+      prev.map(s => (s.id === id || s.uuid === id ? { ...s, pinned: !s.pinned } : s))
     );
   };
 
@@ -194,6 +276,7 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         sendCommand,
         togglePinServer,
         clearConsole,
+        refreshServers: fetchServers,
         accessDeniedError,
       }}
     >

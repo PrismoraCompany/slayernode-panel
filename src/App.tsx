@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldAlert } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useServer } from './context/ServerContext';
 import { LayoutWrapper } from './components/layout/LayoutWrapper';
+import { AdminLayout } from './components/admin/AdminLayout';
 import { ServerDashboard } from './components/server/ServerDashboard';
 import { ServerDetailView } from './components/server/ServerDetailView';
 import { AdminDashboard } from './components/admin/AdminDashboard';
@@ -16,7 +18,7 @@ import { UsersManager } from './components/admin/UsersManager';
 import { ActivityLogsManager } from './components/admin/ActivityLogsManager';
 import { AppearanceStudio } from './components/admin/studio/AppearanceStudio';
 import { AdminServersManager } from './components/admin/AdminServersManager';
-import { AdminSidebarNav } from './components/admin/AdminSidebarNav';
+import { AccountSettingsView } from './components/account/AccountSettingsView';
 import { LoginView } from './components/auth/LoginView';
 import { RegisterView } from './components/auth/RegisterView';
 import { GlassButton } from './components/ui/GlassButton';
@@ -28,17 +30,25 @@ export const App: React.FC = () => {
   const [isAdminView, setIsAdminView] = useState(false);
   const [currentTab, setCurrentTab] = useState('dashboard');
 
-  // Sync /admin pathname and #admin-* URL hash
+  // Sync /account, /accounts, /admin pathname and URL hash
   useEffect(() => {
     const handleUrlRoute = () => {
       const hash = window.location.hash.replace('#', '');
       const path = window.location.pathname;
 
-      if (path === '/admin' || path.startsWith('/admin/') || hash.startsWith('admin')) {
+      if (path === '/account' || path === '/accounts' || hash === 'account' || hash === 'accounts') {
+        setIsAdminView(false);
+        setCurrentTab('account');
+      } else if (path === '/admin' || path.startsWith('/admin/') || hash.startsWith('admin')) {
         if (isAdmin) {
           setIsAdminView(true);
           const targetTab = hash && hash !== 'admin' ? hash : 'admin-dashboard';
           setCurrentTab(targetTab);
+        }
+      } else {
+        if (!hash.startsWith('admin')) {
+          setIsAdminView(false);
+          setCurrentTab(hash || 'dashboard');
         }
       }
     };
@@ -125,87 +135,123 @@ export const App: React.FC = () => {
     );
   }
 
-  return (
-    <LayoutWrapper
-      currentTab={currentTab}
-      onTabChange={handleTabChange}
-      isAdminView={isAdminView}
-      onToggleAdminView={handleToggleAdmin}
-    >
-      {/* Client View Components */}
-      {!isAdminView ? (
-        <>
-          {currentTab === 'dashboard' && (
-            <ServerDashboard
-              onSelectServerDetail={() => setCurrentTab('server-detail')}
-              onNavigateAdminServer={() => {
-                setIsAdminView(true);
-                setCurrentTab('admin-servers');
+  // ========================================================
+  // 1. DEDICATED APPEARANCE STUDIO FULL-SCREEN PAGE
+  // ========================================================
+  if (isAdmin && currentTab === 'admin-studio') {
+    return (
+      <AppearanceStudio
+        onExit={() => {
+          setCurrentTab('admin-dashboard');
+          window.location.hash = 'admin-dashboard';
+        }}
+      />
+    );
+  }
+
+  // ========================================================
+  // 2. DEDICATED ADMIN MANAGEMENT SUITE PAGE
+  // ========================================================
+  if (isAdmin && isAdminView) {
+    return (
+      <motion.div
+        key="admin-workspace-view"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        className="w-full min-h-screen"
+      >
+        <AdminLayout
+          currentTab={currentTab}
+          onTabChange={handleTabChange}
+          onExitAdmin={() => {
+            setIsAdminView(false);
+            setCurrentTab('dashboard');
+            window.location.hash = '';
+          }}
+        >
+          {currentTab === 'admin-dashboard' && (
+            <AdminDashboard onNavigateTab={handleTabChange} />
+          )}
+
+          {currentTab === 'admin-settings' && <AdminSettings />}
+
+          {currentTab === 'admin-api' && <AdminApiKeys />}
+
+          {currentTab === 'admin-audit' && <ActivityLogsManager />}
+
+          {currentTab === 'admin-locations' && <LocationsManager />}
+
+          {currentTab === 'admin-nodes' && (
+            <NodesManager
+              onNavigateServer={serverId => {
+                selectServer(serverId);
+                setIsAdminView(false);
+                setCurrentTab('server-detail');
               }}
             />
           )}
 
-          {currentTab === 'server-detail' && (
-            <ServerDetailView
-              onBackToDashboard={() => setCurrentTab('dashboard')}
+          {currentTab === 'admin-servers' && (
+            <AdminServersManager
+              onSelectServerDetail={serverId => {
+                selectServer(serverId);
+                setIsAdminView(false);
+                setCurrentTab('server-detail');
+              }}
             />
           )}
-        </>
-      ) : (
-        /* Full SlayerNode Admin Management Suite */
-        <div className="flex flex-col lg:flex-row gap-6 items-start">
-          <AdminSidebarNav
-            currentTab={currentTab}
-            onTabChange={handleTabChange}
-            onExitAdmin={() => {
-              setIsAdminView(false);
-              setCurrentTab('dashboard');
+
+          {currentTab === 'admin-mounts' && <MountsManager />}
+
+          {currentTab === 'admin-nests' && <NestsEggsManager />}
+
+          {currentTab === 'admin-users' && <UsersManager />}
+        </AdminLayout>
+      </motion.div>
+    );
+  }
+
+  // ========================================================
+  // 3. CLIENT GAME SERVER FLEET & DASHBOARD
+  // ========================================================
+  return (
+    <motion.div
+      key="client-workspace-view"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      className="w-full min-h-screen"
+    >
+      <LayoutWrapper
+        currentTab={currentTab}
+        onTabChange={handleTabChange}
+        isAdminView={false}
+        onToggleAdminView={handleToggleAdmin}
+      >
+        {currentTab === 'dashboard' && (
+          <ServerDashboard
+            onSelectServerDetail={() => setCurrentTab('server-detail')}
+            onNavigateAdminServer={() => {
+              setIsAdminView(true);
+              setCurrentTab('admin-servers');
+              window.location.hash = 'admin-servers';
             }}
           />
+        )}
 
-          <div className="flex-1 w-full min-w-0">
-            {currentTab === 'admin-dashboard' && (
-              <AdminDashboard onNavigateTab={handleTabChange} />
-            )}
+        {currentTab === 'server-detail' && (
+          <ServerDetailView
+            onBackToDashboard={() => setCurrentTab('dashboard')}
+          />
+        )}
 
-            {currentTab === 'admin-settings' && <AdminSettings />}
-
-            {currentTab === 'admin-api' && <AdminApiKeys />}
-
-            {currentTab === 'admin-audit' && <ActivityLogsManager />}
-
-            {currentTab === 'admin-locations' && <LocationsManager />}
-
-            {currentTab === 'admin-nodes' && (
-              <NodesManager
-                onNavigateServer={serverId => {
-                  selectServer(serverId);
-                  setIsAdminView(false);
-                  setCurrentTab('server-detail');
-                }}
-              />
-            )}
-
-            {currentTab === 'admin-servers' && (
-              <AdminServersManager
-                onSelectServerDetail={serverId => {
-                  selectServer(serverId);
-                  setIsAdminView(false);
-                  setCurrentTab('server-detail');
-                }}
-              />
-            )}
-
-            {currentTab === 'admin-mounts' && <MountsManager />}
-
-            {currentTab === 'admin-nests' && <NestsEggsManager />}
-
-            {currentTab === 'admin-users' && <UsersManager />}
-
-            {currentTab === 'admin-studio' && <AppearanceStudio />}
-          </div>
-        </div>
-      )}
-    </LayoutWrapper>
+        {(currentTab === 'account' || currentTab === 'accounts') && (
+          <AccountSettingsView />
+        )}
+      </LayoutWrapper>
+    </motion.div>
   );
 };

@@ -32,6 +32,7 @@ import { GlassModal } from '../ui/GlassModal';
 import { GlassInput } from '../ui/GlassInput';
 import { Node, NodeAllocation, Server as ServerType } from '../../types';
 import { useServer } from '../../context/ServerContext';
+import { CreateNodeView } from './nodes/CreateNodeView';
 
 export const INITIAL_NODES: Node[] = [];
 
@@ -82,20 +83,21 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
   const [vpsError, setVpsError] = useState<string | null>(null);
   const [allocError, setAllocError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchNodes = async () => {
-      try {
-        const res = await fetch('/api/application/nodes');
-        if (res.ok) {
-          const json = await res.json();
-          if (Array.isArray(json.data)) {
-            setNodes(json.data.map((d: any) => d.attributes || d));
-          }
+  const fetchNodes = async () => {
+    try {
+      const res = await fetch('/api/application/nodes');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.data)) {
+          setNodes(json.data.map((d: any) => d.attributes || d));
         }
-      } catch (err) {
-        console.error('Failed fetching nodes:', err);
       }
-    };
+    } catch (err) {
+      console.error('Failed fetching nodes:', err);
+    }
+  };
+
+  useEffect(() => {
     fetchNodes();
   }, []);
 
@@ -222,11 +224,60 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const testPingVPS = (nodeId: number) => {
+  const testPingVPS = async (nodeId: number) => {
     setPingStatus(prev => ({ ...prev, [nodeId]: 'testing' }));
-    setTimeout(() => {
-      setPingStatus(prev => ({ ...prev, [nodeId]: 'online' }));
-    }, 800);
+    const t0 = Date.now();
+    try {
+      const res = await fetch(`/api/application/nodes/${nodeId}`);
+      if (res.ok) {
+        const d = await res.json();
+        const attr = d.attributes || d;
+        if (attr.is_online) {
+          const latency = attr.ping_ms || Math.max(1, Date.now() - t0);
+          setPingStatus(prev => ({ ...prev, [nodeId]: `${latency}ms (OK)` }));
+          setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, is_online: true, ping_ms: latency } : n));
+        } else {
+          setPingStatus(prev => ({ ...prev, [nodeId]: 'offline' }));
+          setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, is_online: false, ping_ms: null } : n));
+        }
+      } else {
+        setPingStatus(prev => ({ ...prev, [nodeId]: 'offline' }));
+      }
+    } catch {
+      setPingStatus(prev => ({ ...prev, [nodeId]: 'offline' }));
+    }
+  };
+
+  const handleDeleteNode = async (nodeToDelete: Node) => {
+    const hostedServers = servers.filter(s => String(s.node_id) === String(nodeToDelete.id));
+    if (hostedServers.length > 0) {
+      alert(`Cannot delete node "${nodeToDelete.name}": It currently hosts ${hostedServers.length} active server instance(s). You must delete or migrate all servers off this node before it can be deleted.`);
+      return;
+    }
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete node "${nodeToDelete.name}"?\nThis will permanently remove the node and its configured allocations.`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      const res = await fetch(`/api/application/nodes/${nodeToDelete.id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setNodes(prev => prev.filter(n => n.id !== nodeToDelete.id));
+        if (selectedNode?.id === nodeToDelete.id) {
+          setSelectedNode(null);
+        }
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to delete node.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Network error deleting node.');
+    }
   };
 
   const generateWingsConfigYaml = (node: Node) => {
@@ -278,6 +329,21 @@ docker:
     : [];
 
   // =========================================================================
+  // VIEW 1.5: DEDICATED NEW NODE CREATION SCREEN (Matches screenshots)
+  // =========================================================================
+  if (showDeployWizard) {
+    return (
+      <CreateNodeView
+        onBack={() => setShowDeployWizard(false)}
+        onNodeCreated={() => {
+          setShowDeployWizard(false);
+          fetchNodes();
+        }}
+      />
+    );
+  }
+
+  // =========================================================================
   // VIEW 2: NODE DETAIL & WINGS ENGINE (When a node is selected)
   // Matches exact layout of screenshot with 5 tabs: About, Settings, Configuration, Allocation, Servers
   // =========================================================================
@@ -314,6 +380,15 @@ docker:
             >
               <Wifi className="w-3.5 h-3.5 text-red-500" />
               {pingStatus[selectedNode.id] === 'testing' ? 'Testing...' : pingStatus[selectedNode.id] === 'online' ? 'Ping: 1.1ms (OK)' : 'Ping Daemon'}
+            </button>
+
+            <button
+              onClick={() => handleDeleteNode(selectedNode)}
+              className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-xs font-semibold text-red-400 hover:text-red-300 transition-colors flex items-center gap-1.5 cursor-pointer border border-red-500/20"
+              title={servers.some(s => String(s.node_id) === String(selectedNode.id)) ? 'Cannot delete: hosts active servers' : 'Delete node'}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete Node
             </button>
           </div>
         </div>
@@ -1057,7 +1132,7 @@ docker:
           onClick={() => setShowDeployWizard(true)}
           leftIcon={<Plus className="w-4 h-4" />}
         >
-          Add External VPS Node
+          Create New
         </GlassButton>
       </div>
 
@@ -1069,7 +1144,7 @@ docker:
           </div>
           <h3 className="text-base font-bold text-white mb-1">No Hypervisor Nodes Configured</h3>
           <p className="text-xs text-slate-400 max-w-md mb-5">
-            You don't have any SlayerWings nodes configured yet. Click the button below to add your first Linux VPS node and generate the daemon configuration.
+            You don't have any SlayerWings nodes configured yet. Click the button below to add your first node and generate the daemon configuration.
           </p>
           <GlassButton
             variant="accent"
@@ -1080,7 +1155,7 @@ docker:
             }}
             leftIcon={<Plus className="w-4 h-4" />}
           >
-            Add External VPS Node
+            Create New
           </GlassButton>
         </div>
       ) : (
@@ -1108,7 +1183,7 @@ docker:
                           {node.name}
                         </h3>
                         <GlassBadge status={node.is_online ? 'running' : 'offline'}>
-                          {node.is_online ? 'CONNECTED' : 'OFFLINE'}
+                          {node.is_online ? (node.ping_ms ? `CONNECTED (${node.ping_ms}ms)` : 'CONNECTED') : 'OFFLINE'}
                         </GlassBadge>
                       </div>
                       <p className="text-xs text-slate-400 font-mono mt-0.5">
@@ -1123,7 +1198,7 @@ docker:
                       className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 transition-colors flex items-center gap-1.5 cursor-pointer border border-white/10"
                     >
                       <Wifi className="w-3.5 h-3.5 text-red-500" />
-                      {ping === 'testing' ? 'Testing...' : ping === 'online' ? 'Ping: 1.2ms (OK)' : 'Ping VPS'}
+                      {ping === 'testing' ? 'Testing...' : (ping || (node.is_online ? `Ping: ${node.ping_ms || 1}ms (OK)` : 'Ping VPS'))}
                     </button>
 
                     <GlassButton
@@ -1137,6 +1212,15 @@ docker:
                     >
                       Node Settings
                     </GlassButton>
+
+                    <button
+                      onClick={() => handleDeleteNode(node)}
+                      className="px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-xs font-semibold text-red-400 hover:text-red-300 transition-colors flex items-center gap-1.5 cursor-pointer border border-red-500/20"
+                      title={servers.some(s => String(s.node_id) === String(node.id)) ? 'Cannot delete: hosts active servers' : 'Delete node'}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete
+                    </button>
                   </div>
                 </div>
 

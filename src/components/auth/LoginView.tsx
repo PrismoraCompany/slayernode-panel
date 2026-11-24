@@ -60,8 +60,24 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
   const isLockedOut = lockoutRemaining > 0;
 
+  const bgWallpaper = previewTheme.auth_bg_url || previewTheme.custom_wallpaper_url;
+
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-between p-4 bg-[#111216] text-[#F3F4F6] relative z-10">
+    <div
+      className="min-h-screen w-full flex flex-col items-center justify-between p-4 text-[#F3F4F6] relative z-10"
+      style={{ backgroundColor: previewTheme.bg_canvas || '#111216' }}
+    >
+      {/* Background Wallpaper Layer */}
+      {bgWallpaper && (
+        <div
+          className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center transition-all duration-300"
+          style={{
+            backgroundImage: `url(${bgWallpaper})`,
+            filter: `blur(${previewTheme.auth_overlay_blur || previewTheme.wallpaper_blur || 0}px)`,
+            opacity: Math.max(0.1, (100 - (previewTheme.auth_overlay_darkness || 60)) / 100),
+          }}
+        />
+      )}
       <div className="flex-1 flex items-center justify-center w-full my-auto">
         <motion.div
           initial={{ opacity: 0, y: 12 }}

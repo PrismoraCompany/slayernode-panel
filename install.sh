@@ -339,6 +339,117 @@ install_standalone() {
   log_success "Standalone setup complete! Panel and Wings are fully operational on this server."
 }
 
+launch_local() {
+  print_banner
+  echo -e "${C_BOLD_RED}>>> LOCAL SYSTEM / DESKTOP LAUNCHER${C_RESET}"
+  echo ""
+  log_info "Setting up SlayerNode on your local desktop machine..."
+
+  local target_dir="."
+  if [ -f "server/index.js" ]; then
+    target_dir="."
+  elif [ -d "panel" ] && [ -f "panel/server/index.js" ]; then
+    target_dir="panel"
+  elif [ -f "$INSTALL_DIR/server/index.js" ]; then
+    target_dir="$INSTALL_DIR"
+  fi
+
+  cd "$target_dir"
+  install_node
+
+  log_info "Installing npm packages..."
+  npm install
+
+  log_info "Building production web client..."
+  npm run build
+
+  log_info "Stopping previous instances..."
+  pkill -9 -f "server/index.js" 2>/dev/null || true
+  pkill -9 -f "sandbox-wing/daemon.js" 2>/dev/null || true
+  pkill -9 -f "vite" 2>/dev/null || true
+  fuser -k 3001/tcp 2>/dev/null || true
+  fuser -k 8443/tcp 2>/dev/null || true
+  fuser -k 3000/tcp 2>/dev/null || true
+  fuser -k 2202/tcp 2>/dev/null || true
+  sleep 1
+
+  mkdir -p "$HOME/.slayerwings/volumes"
+  mkdir -p "$HOME/.slayerwings/cache"
+
+  log_info "Starting SlayerWings Real Daemon on port 8443 (SFTP 2202)..."
+  node sandbox-wing/daemon.js &
+  DAEMON_PID=$!
+
+  log_info "Starting SlayerNode Backend API on port 3001..."
+  node server/index.js &
+  BACKEND_PID=$!
+
+  echo ""
+  echo -e "${C_BOLD_GREEN}================================================================================${C_RESET}"
+  echo -e "${C_BOLD_GREEN}✔ LOCAL ENVIRONMENT ONLINE!${C_RESET}"
+  echo -e "${C_WHITE}Panel Web UI : ${C_YELLOW}http://localhost:3000${C_RESET}"
+  echo -e "${C_WHITE}Backend API  : ${C_YELLOW}http://localhost:3001${C_RESET}"
+  echo -e "${C_WHITE}Daemon REST  : ${C_YELLOW}http://localhost:8443${C_RESET}"
+  echo -e "${C_WHITE}Daemon SFTP  : ${C_YELLOW}localhost:2202${C_RESET}"
+  echo -e "${C_WHITE}Login        : ${C_YELLOW}admin@slayernode.xyz${C_RESET} | Password: ${C_YELLOW}admin${C_RESET}"
+  echo -e "${C_BOLD_GREEN}================================================================================${C_RESET}"
+  echo ""
+
+  exec npm run dev -- --host 0.0.0.0 --port 3000
+}
+
+setup_cloudflare_tunnel() {
+  print_banner
+  echo -e "${C_BOLD_RED}>>> CLOUDFLARE ZERO TRUST TUNNEL CONFIGURATOR${C_RESET}"
+  echo ""
+  echo -e "${C_WHITE}Cloudflare Tunnels expose your local Panel and Wings node securely without opening router ports.${C_RESET}"
+  echo ""
+
+  read -r -p "Enter your Panel domain (e.g. panel.yourdomain.com): " CF_PANEL_DOMAIN
+  read -r -p "Enter your Wings Node domain (e.g. node.yourdomain.com): " CF_NODE_DOMAIN
+
+  echo ""
+  log_info "Generating Cloudflare Zero Trust Ingress configuration..."
+
+  mkdir -p ~/.cloudflared 2>/dev/null || true
+  cat <<EOF > ~/.cloudflared/slayernode-tunnel.example.yml
+# ========================================================
+# Cloudflare Zero Trust Ingress Configuration for SlayerNode
+# ========================================================
+# Run: cloudflared tunnel run <TUNNEL_NAME>
+#
+tunnel: YOUR_TUNNEL_UUID
+credentials-file: /root/.cloudflared/YOUR_TUNNEL_UUID.json
+
+ingress:
+  # 1. SlayerNode Web Panel & Backend API
+  - hostname: ${CF_PANEL_DOMAIN:-panel.example.com}
+    service: http://localhost:3000
+    originRequest:
+      noTLSVerify: true
+
+  # 2. SlayerWings Engine Daemon (API & WebSocket Terminal)
+  - hostname: ${CF_NODE_DOMAIN:-node.example.com}
+    service: http://localhost:8443
+    originRequest:
+      noTLSVerify: true
+
+  # 3. Catch-all fallback
+  - service: http_status:404
+EOF
+
+  echo -e "${C_BOLD_GREEN}✔ Tunnel configuration template created at ~/.cloudflared/slayernode-tunnel.example.yml${C_RESET}"
+  echo ""
+  echo -e "${C_YELLOW}IMPORTANT PANEL CONFIGURATION FOR CLOUDFLARE:${C_RESET}"
+  echo -e "1. Go to ${C_WHITE}Admin > Nodes > Create Node (or Edit Node)${C_RESET}"
+  echo -e "2. Set ${C_WHITE}FQDN${C_RESET} to: ${C_YELLOW}${CF_NODE_DOMAIN:-node.example.com}${C_RESET}"
+  echo -e "3. Select ${C_WHITE}Communicate Over SSL: [Use SSL Connection]${C_RESET}"
+  echo -e "4. Select ${C_WHITE}Behind Proxy: [Behind Proxy]${C_RESET}"
+  echo -e "   This instructs SlayerWings to trust Cloudflare edge SSL termination and WebSocket upgrades."
+  echo ""
+  read -r -p "Press [Enter] to return to the main menu..."
+}
+
 launch_codespaces() {
   print_banner
   echo -e "${C_BOLD_RED}>>> 4. GITHUB CODESPACES / DEV CONTAINER LAUNCHER${C_RESET}"
@@ -409,16 +520,16 @@ if detect_container; then
   echo -e "${C_YELLOW}[NOTICE] Container / Codespaces detected (No systemd overhead).${C_RESET}"
   echo -e "${C_GRAY}Quickstart mode [4] is recommended for Codespaces.${C_RESET}"
   echo ""
-  DEFAULT_CHOICE=4
+  DEFAULT_CHOICE=3
 else
   DEFAULT_CHOICE=1
 fi
 
-echo -e "Please select an installation mode:"
-echo -e "  ${C_BOLD_RED}[1]${C_RESET} Install SlayerNode Panel ${C_GRAY}(Web UI, API, Nginx & SSL)${C_RESET}"
-echo -e "  ${C_BOLD_RED}[2]${C_RESET} Install SlayerWings Daemon ${C_GRAY}(Docker Engine, Volumes & SFTP)${C_RESET}"
-echo -e "  ${C_BOLD_RED}[3]${C_RESET} Install Both (Standalone Host: Panel + SlayerWings)${C_RESET}"
-echo -e "  ${C_BOLD_RED}[4]${C_RESET} GitHub Codespaces / Dev Container Launcher ${C_GRAY}(Zero systemd, instant)${C_RESET}"
+echo -e "Please select your operating environment / target OS:"
+echo -e "  ${C_BOLD_RED}[1]${C_RESET} Dedicated / Production Linux VPS ${C_GRAY}(Ubuntu 22.04/24.04 LTS, Debian 12 — Systemd & Nginx)${C_RESET}"
+echo -e "  ${C_BOLD_RED}[2]${C_RESET} Local Machine / Desktop ${C_GRAY}(Linux, macOS, WSL2 — Non-systemd, instant local run)${C_RESET}"
+echo -e "  ${C_BOLD_RED}[3]${C_RESET} GitHub Codespaces / Web Sandboxes ${C_GRAY}(Zero systemd, auto-forwarded web ports)${C_RESET}"
+echo -e "  ${C_BOLD_RED}[4]${C_RESET} Cloudflare Zero Trust Tunnel Setup ${C_GRAY}(Ingress routing, WebSocket, & Behind-Proxy)${C_RESET}"
 echo -e "  ${C_BOLD_RED}[0]${C_RESET} Exit"
 echo ""
 
@@ -427,16 +538,28 @@ CHOICE=${CHOICE:-$DEFAULT_CHOICE}
 
 case "$CHOICE" in
   1)
-    install_panel
+    echo ""
+    echo -e "VPS Component Selection:"
+    echo -e "  [a] Install Both (Standalone Host: Panel + SlayerWings Daemon - Recommended)"
+    echo -e "  [b] Install SlayerNode Panel only (Web UI, API, Nginx & SSL)"
+    echo -e "  [c] Install SlayerWings Daemon only (Hypervisor Node, Docker, SFTP)"
+    read -r -p "Select component [a/b/c, default: a]: " VPS_SUB
+    VPS_SUB=${VPS_SUB:-a}
+    case "$VPS_SUB" in
+      a|A) install_standalone ;;
+      b|B) install_panel ;;
+      c|C) install_wings ;;
+      *) install_standalone ;;
+    esac
     ;;
   2)
-    install_wings
+    launch_local
     ;;
   3)
-    install_standalone
+    launch_codespaces
     ;;
   4)
-    launch_codespaces
+    setup_cloudflare_tunnel
     ;;
   0)
     echo "Exiting."

@@ -440,4 +440,40 @@ export interface ThemeStudioSettings {
   cloudflare_zone_id?: string;
   curseforge_api_key?: string;
   modrinth_token?: string;
+
+  // Advanced Customization Options
+  font_scale?: 'compact' | 'normal' | 'large';
+  accent_glow_intensity?: 'none' | 'subtle' | 'vibrant' | 'cyber';
+  status_style?: 'badge' | 'dot' | 'glow_pill';
+  card_border_style?: 'subtle' | 'crimson_glow' | 'glass_clean' | 'none';
+  console_ansi_theme?: 'matrix_green' | 'slayer_crimson' | 'classic_white' | 'cyberpunk_cyan';
+  server_card_density?: 'compact' | 'spacious';
+}
+
+// User Account Types
+export interface ClientApiKey {
+  id: number;
+  identifier: string;
+  description: string;
+  allowed_ips: string[];
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface SshKey {
+  id: number;
+  name: string;
+  fingerprint: string;
+  public_key: string;
+  created_at: string;
+}
+
+export interface UserActivityLog {
+  id: number;
+  user_id: number;
+  username: string;
+  action: string;
+  description: string;
+  ip: string;
+  timestamp: string;
 }
