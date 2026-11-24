@@ -1779,15 +1779,13 @@ app.put('/api/client/servers/:uuid/startup', verifyServerOwnership, (req, res) =
 });
 
 // File Manager Proxy Routes (Pterodactyl Parity)
-app.all('/api/client/servers/:uuid/files*', verifyServerOwnership, async (req, res) => {
+app.use('/api/client/servers/:uuid/files', verifyServerOwnership, async (req, res) => {
   try {
     const node = db.nodes.find(n => n.id === req.targetServer.node_id) || db.nodes[0];
     if (!node) {
       return res.status(502).json({ error: 'Node unavailable for file operations.' });
     }
-    const subpath = req.path.replace(`/api/client/servers/${req.params.uuid}/files`, '');
-    const queryPart = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
-    const daemonUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.params.uuid}/files${subpath}${queryPart}`;
+    const daemonUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.params.uuid}/files${req.url}`;
 
     const headers = {
       'Content-Type': req.headers['content-type'] || 'application/json',
