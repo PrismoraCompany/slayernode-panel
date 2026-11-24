@@ -15,13 +15,13 @@ SlayerNode comes out-of-the-box with **7 production-grade Minecraft Eggs** pre-c
 
 | Egg Name | Engine | Default Startup Command | Recommended Docker / Java Runtime |
 |---|---|---|---|
-| **Paper (PaperMC)** | High-Performance Spigot Fork | `java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_21` |
-| **Purpur** | Feature-Rich Paper Fork | `java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_21` |
-| **Vanilla Minecraft** | Official Mojang Engine | `java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_21` |
-| **Forge Minecraft** | Modded Server Loader | `java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_21` |
-| **Fabric Minecraft** | Modular Lightweight Modloader | `java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_21` |
-| **Velocity Proxy** | Next-Gen Minecraft Proxy | `java -Xms512M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC -jar {{SERVER_JARFILE}}` | `ghcr.io/pterodactyl/yolks:java_21` |
-| **BungeeCord** | Multi-Server Network Proxy | `java -Xms512M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}` | `ghcr.io/pterodactyl/yolks:java_21` |
+| **Paper (PaperMC)** | High-Performance Spigot Fork | `java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_25` (Default) / `java_21` |
+| **Purpur** | Feature-Rich Paper Fork | `java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_25` (Default) / `java_21` |
+| **Vanilla Minecraft** | Official Mojang Engine | `java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_25` (Default) / `java_21` |
+| **Forge Minecraft** | Modded Server Loader | `java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_25` / `java_21` / `java_17` |
+| **Fabric Minecraft** | Modular Lightweight Modloader | `java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui` | `ghcr.io/pterodactyl/yolks:java_25` (Default) / `java_21` |
+| **Velocity Proxy** | Next-Gen Minecraft Proxy | `java -Xms512M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC -jar {{SERVER_JARFILE}}` | `ghcr.io/pterodactyl/yolks:java_25` (Default) / `java_21` |
+| **BungeeCord** | Multi-Server Network Proxy | `java -Xms512M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}` | `ghcr.io/pterodactyl/yolks:java_25` (Default) / `java_21` |
 
 ### ⚡ Real-Time `server.jar` Dynamic Fetching
 When starting a server instance on a SlayerWings node:
@@ -29,7 +29,7 @@ When starting a server instance on a SlayerWings node:
 2. **Live Console Telemetry**: Emits live byte-stream progress over the interactive WebSocket terminal (`Downloading server.jar: 15.2MB / 45.8MB (33%)`).
 3. **Engine Caching**: Downloaded binaries are verified and cached in `~/.slayerwings/cache` so future instances on that node boot instantly in < 1 second.
 4. **Automated EULA & Properties**: Automatically creates `eula.txt` (`eula=true`) and binds `server.properties` with the container's allocated port and host IP.
-5. **Real OpenJDK 21 Process**: Executes `/usr/bin/java` with piped interactive standard I/O (type `help`, `list`, `say`, or op commands in the terminal).
+5. **Real OpenJDK 25 Process**: Executes `/usr/bin/java` (OpenJDK 25 Runtime Environment) with piped interactive standard I/O (type `help`, `list`, `say`, or op commands in the terminal).
 
 ### 📤 Custom Egg JSON Import
 You can add any custom game egg by importing a standard Pterodactyl v1 / v2 `.json` file:
@@ -62,6 +62,7 @@ The installer presents an interactive OS & environment menu:
   [2] Local Machine / Desktop (Linux, macOS, WSL2 — Non-systemd, instant local run)
   [3] GitHub Codespaces / Web Sandboxes (Zero systemd, auto-forwarded web ports)
   [4] Cloudflare Zero Trust Tunnel Setup (Ingress routing, WebSocket, & Behind-Proxy)
+  [5] Update SlayerNode Panel & SlayerWings Daemon (Pull latest release, rebuild & restart)
   [0] Exit
 ```
 
