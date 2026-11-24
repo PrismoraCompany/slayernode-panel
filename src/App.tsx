@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { useServer } from './context/ServerContext';
@@ -28,7 +28,27 @@ export const App: React.FC = () => {
   const [isAdminView, setIsAdminView] = useState(false);
   const [currentTab, setCurrentTab] = useState('dashboard');
 
-  // If not authenticated, render pure Apple Liquid Glass Auth Gateway
+  // Sync /admin pathname and #admin-* URL hash
+  useEffect(() => {
+    const handleUrlRoute = () => {
+      const hash = window.location.hash.replace('#', '');
+      const path = window.location.pathname;
+
+      if (path === '/admin' || path.startsWith('/admin/') || hash.startsWith('admin')) {
+        if (isAdmin) {
+          setIsAdminView(true);
+          const targetTab = hash && hash !== 'admin' ? hash : 'admin-dashboard';
+          setCurrentTab(targetTab);
+        }
+      }
+    };
+
+    handleUrlRoute();
+    window.addEventListener('hashchange', handleUrlRoute);
+    return () => window.removeEventListener('hashchange', handleUrlRoute);
+  }, [isAdmin]);
+
+  // If not authenticated, render pure Auth Gateway
   if (!isAuthenticated) {
     if (authMode === 'register') {
       return <RegisterView onNavigateLogin={() => setAuthMode('login')} />;
@@ -48,8 +68,10 @@ export const App: React.FC = () => {
         return;
       }
       setIsAdminView(true);
+      window.location.hash = tab;
     } else {
       setIsAdminView(false);
+      window.location.hash = tab === 'dashboard' ? '' : tab;
     }
     setCurrentTab(tab);
   };
@@ -59,9 +81,11 @@ export const App: React.FC = () => {
     if (!isAdminView) {
       setIsAdminView(true);
       setCurrentTab('admin-dashboard');
+      window.location.hash = 'admin-dashboard';
     } else {
       setIsAdminView(false);
       setCurrentTab('dashboard');
+      window.location.hash = '';
     }
   };
 

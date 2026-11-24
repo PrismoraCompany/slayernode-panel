@@ -42,6 +42,18 @@
       "root_admin": true,
       "two_factor_enabled": false,
       "created_at": "2026-11-01T00:00:00Z"
+    },
+    {
+      "id": 1795495698087,
+      "uuid": "60b0382f-1b19-45d2-84ab-89f0cbaf5313",
+      "username": "user",
+      "email": "user@gmail.com",
+      "name_first": "use",
+      "name_last": "r",
+      "language": "en",
+      "root_admin": false,
+      "two_factor_enabled": false,
+      "created_at": "2026-11-24T04:48:18.088Z"
     }
   ],
   "nodes": [],
