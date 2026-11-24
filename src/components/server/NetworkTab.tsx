@@ -27,7 +27,7 @@ export const NetworkTab: React.FC = () => {
     );
   };
 
-  const maxAllocations = activeServer?.feature_limits.allocations || 4;
+  const maxAllocations = activeServer?.feature_limits?.allocations ?? 4;
 
   return (
     <div className="flex flex-col gap-5">

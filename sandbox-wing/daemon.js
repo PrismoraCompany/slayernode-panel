@@ -177,18 +177,18 @@ async function ensureServerJar(serverDir, serverUuid, customUrl, eggName) {
   const eggLower = (eggName || '').toLowerCase();
   if (eggLower.includes('purpur')) {
     candidates.push('https://api.purpurmc.org/v2/purpur/1.20.4/latest/download');
-    candidates.push('https://fill-data.papermc.io/v1/objects/cabed3ae77cf55deba7c7d8722bc9cfd5e991201c211665f9265616d9fe5c77b/paper-1.20.4-499.jar');
+    candidates.push('https://fill-data.papermc.io/v1/objects/ef3dbc68b013deafdbbee3bebf1ba351671ebcda94a8f136809b7532d5ba2fe1/paper-26.2-135.jar');
   } else if (eggLower.includes('vanilla')) {
     candidates.push('https://piston-data.mojang.com/v1/objects/8dd1a28015f51b1803213892b50b7b4fc76e594d/server.jar');
-    candidates.push('https://api.purpurmc.org/v2/purpur/1.20.4/latest/download');
+    candidates.push('https://fill-data.papermc.io/v1/objects/ef3dbc68b013deafdbbee3bebf1ba351671ebcda94a8f136809b7532d5ba2fe1/paper-26.2-135.jar');
   } else if (eggLower.includes('fabric')) {
     candidates.push('https://meta.fabricmc.net/v2/versions/loader/1.20.4/0.15.7/1.0.0/server/jar');
-    candidates.push('https://api.purpurmc.org/v2/purpur/1.20.4/latest/download');
+    candidates.push('https://fill-data.papermc.io/v1/objects/ef3dbc68b013deafdbbee3bebf1ba351671ebcda94a8f136809b7532d5ba2fe1/paper-26.2-135.jar');
   } else {
-    // Paper / Default
+    // Official PaperMC 26.2 (Latest Production Release)
+    candidates.push('https://fill-data.papermc.io/v1/objects/ef3dbc68b013deafdbbee3bebf1ba351671ebcda94a8f136809b7532d5ba2fe1/paper-26.2-135.jar');
+    candidates.push('https://fill-data.papermc.io/v1/objects/5ee4f542f628a14c644410b08c94ea42e772ef4d29fe92973636b6813d4eaffc/paper-1.21.4-232.jar');
     candidates.push('https://api.purpurmc.org/v2/purpur/1.20.4/latest/download');
-    candidates.push('https://fill-data.papermc.io/v1/objects/cabed3ae77cf55deba7c7d8722bc9cfd5e991201c211665f9265616d9fe5c77b/paper-1.20.4-499.jar');
-    candidates.push('https://piston-data.mojang.com/v1/objects/8dd1a28015f51b1803213892b50b7b4fc76e594d/server.jar');
   }
 
   broadcastConsoleOutput(serverUuid, `\x1b[38;2;0;210;255m[SlayerWings Engine]\x1b[0m Resolving real-time Minecraft server jar from remote repository...\n`);

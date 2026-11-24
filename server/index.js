@@ -378,6 +378,14 @@ function saveState(data) {
 
 let db = loadState();
 
+// Ensure all servers have required limits and feature_limits
+if (db.servers) {
+  for (const s of db.servers) {
+    if (!s.feature_limits) s.feature_limits = { databases: 3, allocations: 4, backups: 5 };
+    if (!s.limits) s.limits = { memory: 2048, swap: 512, disk: 10240, io: 500, cpu: 100 };
+  }
+}
+
 // ==========================================
 // Security & Sanitization Middlewares
 // ==========================================
@@ -952,6 +960,11 @@ app.post('/api/application/servers', requireRootAdmin, (req, res) => {
       disk: parseInt(disk) || 10240,
       io: parseInt(io) || 500,
       cpu: parseInt(cpu) || 100,
+    },
+    feature_limits: {
+      databases: parseInt(req.body.database_limit) || 3,
+      allocations: parseInt(req.body.allocation_limit) || 4,
+      backups: parseInt(req.body.backup_limit) || 5,
     },
     allocation: {
       id: alloc.id,

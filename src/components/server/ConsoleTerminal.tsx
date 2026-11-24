@@ -41,9 +41,9 @@ export const ConsoleTerminal: React.FC = () => {
   const [copiedHost, setCopiedHost] = useState(false);
   const terminalEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll terminal on new log lines
+  // Auto-scroll terminal on new log lines immediately (auto without lag)
   useEffect(() => {
-    terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    terminalEndRef.current?.scrollIntoView({ behavior: 'auto' });
   }, [consoleLogs]);
 
   // Handle command submission
@@ -96,7 +96,7 @@ export const ConsoleTerminal: React.FC = () => {
   // Copy connection address
   const copyAddress = () => {
     if (!activeServer) return;
-    const addr = activeServer.allocation.alias || `${activeServer.allocation.ip}:${activeServer.allocation.port}`;
+    const addr = activeServer?.allocation?.alias || (activeServer?.allocation ? `${activeServer.allocation.ip}:${activeServer.allocation.port}` : '127.0.0.1:25565');
     navigator.clipboard.writeText(addr);
     setCopiedHost(true);
     setTimeout(() => setCopiedHost(false), 2000);
@@ -113,7 +113,7 @@ export const ConsoleTerminal: React.FC = () => {
   const ramMb = Math.round(stats.memory_bytes / 1024 / 1024);
   const ramLimitMb = Math.round(stats.memory_limit_bytes / 1024 / 1024);
   const diskGb = (stats.disk_bytes / 1024 / 1024 / 1024).toFixed(1);
-  const diskLimitGb = (activeServer?.limits.disk || 40960) / 1024;
+  const diskLimitGb = (activeServer?.limits?.disk || 40960) / 1024;
   const netRxMb = (stats.network.rx_bytes / 1024 / 1024).toFixed(1);
   const netTxMb = (stats.network.tx_bytes / 1024 / 1024).toFixed(1);
 
@@ -134,7 +134,7 @@ export const ConsoleTerminal: React.FC = () => {
                 {activeServer?.name}
               </h2>
               <GlassBadge status={activeServer?.status}>
-                {activeServer?.status.toUpperCase()}
+                {activeServer?.status?.toUpperCase() || 'OFFLINE'}
               </GlassBadge>
             </div>
             <div className="flex items-center gap-3 text-xs text-slate-400 mt-1 font-mono">
@@ -142,7 +142,7 @@ export const ConsoleTerminal: React.FC = () => {
                 onClick={copyAddress}
                 className="cursor-pointer hover:text-sky-300 flex items-center gap-1 bg-white/5 px-2 py-0.5 rounded border border-white/5 transition-colors"
               >
-                {activeServer?.allocation.alias || `${activeServer?.allocation.ip}:${activeServer?.allocation.port}`}
+                {activeServer?.allocation?.alias || (activeServer?.allocation ? `${activeServer.allocation.ip}:${activeServer.allocation.port}` : '127.0.0.1:25565')}
                 {copiedHost ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
               </span>
               <span>•</span>
@@ -202,8 +202,8 @@ export const ConsoleTerminal: React.FC = () => {
             </span>
             <span className="text-slate-200 font-bold tabular-metrics">{cpuVal}%</span>
           </div>
-          <StatGraph data={cpuData} color="#38bdf8" height={60} limit={activeServer?.limits.cpu || 400} />
-          <span className="text-[10px] text-slate-500 mt-2">Allocated limit: {activeServer?.limits.cpu}%</span>
+          <StatGraph data={cpuData} color="#38bdf8" height={60} limit={activeServer?.limits?.cpu || 400} />
+          <span className="text-[10px] text-slate-500 mt-2">Allocated limit: {activeServer?.limits?.cpu || 100}%</span>
         </GlassCard>
 
         {/* RAM Chart */}

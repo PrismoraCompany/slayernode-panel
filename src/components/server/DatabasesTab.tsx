@@ -62,7 +62,7 @@ export const DatabasesTab: React.FC = () => {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const maxAllowed = activeServer?.feature_limits.databases || 3;
+  const maxAllowed = activeServer?.feature_limits?.databases ?? 3;
 
   return (
     <div className="flex flex-col gap-5">

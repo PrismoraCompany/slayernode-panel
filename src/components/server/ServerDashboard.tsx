@@ -54,12 +54,12 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({
   const filteredServers = servers
     .filter(s => {
       const matchSearch =
-        s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.identifier.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.node.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.allocation.ip.includes(searchTerm) ||
-        String(s.allocation.port).includes(searchTerm) ||
-        s.egg_name.toLowerCase().includes(searchTerm.toLowerCase());
+        (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (s.identifier || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (s.node || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (s.allocation?.ip || '').includes(searchTerm) ||
+        String(s.allocation?.port || '').includes(searchTerm) ||
+        (s.egg_name || '').toLowerCase().includes(searchTerm.toLowerCase());
 
       if (!matchSearch) return false;
       if (filterStatus === 'running') return s.status === 'running';
@@ -227,7 +227,7 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({
             const ramPct = isOnline ? 52 : 0;
             const cpuPct = isOnline ? 34 : 0;
             const diskPct = 42;
-            const addressString = server.allocation.alias || `${server.allocation.ip}:${server.allocation.port}`;
+            const addressString = server.allocation?.alias || (server.allocation ? `${server.allocation.ip}:${server.allocation.port}` : '127.0.0.1:25565');
 
             return (
               <motion.div
@@ -304,12 +304,12 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({
                           <Cpu className="w-3 h-3 text-[#DC2626]" /> CPU
                         </span>
                         <span className="text-slate-200">
-                          {isOnline ? `${cpuPct}%` : '0%'} / {server.limits.cpu}%
+                          {isOnline ? `${cpuPct}%` : '0%'} / {server.limits?.cpu || 100}%
                         </span>
                       </div>
                       <div className="h-1.5 w-full rounded bg-[#14161B] overflow-hidden border border-white/5">
                         <div
-                          style={{ width: `${Math.min(100, (cpuPct / server.limits.cpu) * 100)}%` }}
+                          style={{ width: `${Math.min(100, (cpuPct / (server.limits?.cpu || 100)) * 100)}%` }}
                           className="h-full bg-[#DC2626]"
                         />
                       </div>
@@ -321,7 +321,7 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({
                           <Activity className="w-3 h-3 text-white" /> Memory
                         </span>
                         <span className="text-slate-200">
-                          {isOnline ? `${Math.round((server.limits.memory * ramPct) / 100)} MB` : '0 MB'} / {server.limits.memory} MB
+                          {isOnline ? `${Math.round(((server.limits?.memory || 2048) * ramPct) / 100)} MB` : '0 MB'} / {server.limits?.memory || 2048} MB
                         </span>
                       </div>
                       <div className="h-1.5 w-full rounded bg-[#14161B] overflow-hidden border border-white/5">
@@ -335,7 +335,7 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({
                           <HardDrive className="w-3 h-3 text-slate-400" /> Disk
                         </span>
                         <span className="text-slate-200">
-                          {Math.round((server.limits.disk * diskPct) / 100)} MB / {server.limits.disk} MB
+                          {Math.round(((server.limits?.disk || 10240) * diskPct) / 100)} MB / {server.limits?.disk || 10240} MB
                         </span>
                       </div>
                       <div className="h-1.5 w-full rounded bg-[#14161B] overflow-hidden border border-white/5">
@@ -387,7 +387,7 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({
         <div className="flex flex-col gap-2">
           {filteredServers.map(server => {
             const isOnline = server.status === 'running';
-            const addressString = server.allocation.alias || `${server.allocation.ip}:${server.allocation.port}`;
+            const addressString = server.allocation?.alias || (server.allocation ? `${server.allocation.ip}:${server.allocation.port}` : '127.0.0.1:25565');
 
             return (
               <div

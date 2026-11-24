@@ -153,9 +153,10 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
               if (matches) {
                 const line = msg.line || msg.data || msg.args?.[0] || '';
-                const cleanLine = typeof line === 'string' && line.endsWith('\n') ? line.slice(0, -1) : String(line);
-                if (cleanLine) {
-                  setConsoleLogs(prev => [...prev.slice(-300), cleanLine]);
+                const cleanStr = typeof line === 'string' ? line : String(line);
+                const splitLines = cleanStr.split(/\r?\n/).filter(Boolean);
+                if (splitLines.length > 0) {
+                  setConsoleLogs(prev => [...prev.slice(-300 + splitLines.length), ...splitLines]);
                 }
               }
             } else if (msg.event === 'stats' && msg.data) {
@@ -268,7 +269,7 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       `\x1b[38;2;0;210;255m>\x1b[0m ${cmd}`,
     ]);
 
-    // Send via live WebSocket to daemon process stdin with both Pterodactyl event signatures
+    // Send via live WebSocket to daemon process stdin
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         event: 'send command',
@@ -276,14 +277,14 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         command: cmd,
         server: activeServer.uuid || activeServer.id,
       }));
+    } else {
+      // Send via REST endpoint as fallback only when WebSocket is disconnected
+      fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: cmd }),
+      }).catch(() => {});
     }
-
-    // Send via REST endpoint for guaranteed delivery
-    fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/command`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: cmd }),
-    }).catch(() => {});
   };
 
   const togglePinServer = (id: string) => {

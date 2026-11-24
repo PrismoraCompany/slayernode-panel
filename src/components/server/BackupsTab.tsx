@@ -66,7 +66,7 @@ export const BackupsTab: React.FC = () => {
     setShowCreateModal(false);
   };
 
-  const maxBackups = activeServer?.feature_limits.backups || 5;
+  const maxBackups = activeServer?.feature_limits?.backups ?? 5;
   const totalBytes = backups.reduce((acc, b) => acc + b.bytes, 0);
   const totalGb = (totalBytes / 1024 / 1024 / 1024).toFixed(2);
 
