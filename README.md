@@ -1,27 +1,48 @@
 # SlayerNode Panel & SlayerWings Engine (v1.0.0)
 
-[![Engine Status](https://img.shields.io/badge/SlayerWings-v1.0.0--active-00D2FF?style=for-the-badge&logo=docker)](https://slayernode.xyz)
-[![License](https://img.shields.io/badge/License-Proprietary-090D16?style=for-the-badge)](https://slayernode.xyz)
-[![Design System](https://img.shields.io/badge/UI-Apple_Liquid_Glass-FFFFFF?style=for-the-badge)](https://slayernode.xyz)
+[![Engine Status](https://img.shields.io/badge/SlayerWings-v1.0.0--active-DC2626?style=for-the-badge&logo=docker)](https://slayernode.xyz)
+[![License](https://img.shields.io/badge/License-Proprietary-111216?style=for-the-badge)](https://slayernode.xyz)
+[![Palette](https://img.shields.io/badge/Palette-Blackish--Gray_%26_Red-DC2626?style=for-the-badge)](https://slayernode.xyz)
 
 > **Official Website & Documentation**: [https://slayernode.xyz](https://slayernode.xyz)  
 > **Copyright**: © 2026 SlayerNode. All rights reserved. Version 1.0.0
 
 ---
 
+## ⚡ 1-Command Automated Installer (VPS & Containers)
+
+Modeled after `pterodactyl-installer.se`, you can install SlayerNode Panel, the SlayerWings Daemon, or both with a single interactive CLI command:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/PrismoraCompany/slayernode-panel/main/install.sh)
+```
+
+The installer presents an interactive menu:
+```
+  [1] Install SlayerNode Panel (Web UI, API, Nginx & SSL)
+  [2] Install SlayerWings Daemon (Docker Engine, Volumes & SFTP)
+  [3] Install Both (Standalone Host: Panel + SlayerWings)
+  [4] GitHub Codespaces / Dev Container Launcher (Zero systemd, instant)
+  [0] Exit
+```
+
+---
+
 ## 🌟 Executive Overview
 
-**SlayerNode Panel** is an enterprise-grade game server management platform and container orchestrator built with an **Apple-inspired Liquid Glass** design system (React 19 + TypeScript + Tailwind CSS + Framer Motion) powered by the high-speed **SlayerWings Engine** daemon.
+**SlayerNode Panel** is an enterprise-grade game server management platform and container orchestrator built with a sleek **Solid Blackish-Gray & Crimson Red** design system (React 19 + TypeScript + Tailwind CSS + Framer Motion) powered by the high-speed **SlayerWings Engine** daemon.
 
 ### Key Architectural Highlights
-- **Strict 3-Color Visual Identity**: High-contrast, glare-free palette engineered for server administrators (`#00D2FF` electric cyan, `#090D16` deep navy canvas, and `#FFFFFF` specular gloss highlights).
+- **Solid Blackish-Gray & Crimson Red Visual Identity**: High-contrast, glare-free palette engineered for server administrators (`#111216` dark charcoal canvas, `#181A20` solid panels, and `#DC2626` crimson red accents).
+- **Square Buttons & Bevels**: Removed pill buttons in favor of clean square shapes (`rounded-lg`, 8px bevel) with bold red form error validation.
+- **Clean Fresh-Install State**: Zero mock servers, zero pre-filled nodes, and zero telemetry version leak on public pages. New users see: *"There are no servers linked to your account."*
 - **Custom Independent Ports & Paths**: Eliminates all legacy directory references.
   - Custom SlayerWings REST/WebSocket API port: `8443`
   - Custom SlayerWings SFTP Subsystem port: `2202`
   - Custom storage & config paths: `/etc/slayerwings`, `/var/lib/slayerwings/volumes`, `/var/log/slayerwings`
   - Custom Docker network bridge: `slayernode_nw` (subnet `172.18.0.0/16`)
 - **Nebula-Style Admin Customization Studio**: Live split-screen theme editor with real-time blur, opacity, specular borders, button physics, login background shaders, and CSS overrides.
-- **Built-in Blueprint Framework v2.4.0 Engine**: Out-of-the-box extension registry allowing one-click installation and toggling of community addons.
+- **Built-in Blueprint Framework v2.4.0 Engine**: Out-of-the-box extension registry allowing one-click installation and toggling of community addons without crashing.
 - **Permanent Protected Root Administrator**: Account ID 1 (`admin@slayernode.xyz`) is safeguarded at the database and application levels, preventing accidental lockout, demotion, or deletion.
 - **Zero AI-Slop & Zero Stock Templates**: Pure bespoke components, genuine physics-based translucent cards with `backdrop-filter: blur(24px)`, tactile button scale (`1.02`), and tabular metric telemetry.
 

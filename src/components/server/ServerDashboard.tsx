@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Server as ServerIcon,
   Search,
@@ -15,35 +15,30 @@ import {
   Check,
   Grid,
   List,
-  ShieldCheck,
-  Zap,
-  Globe,
-  Radio,
+  Plus,
 } from 'lucide-react';
 import { useServer } from '../../context/ServerContext';
-import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import { GlassCard } from '../ui/GlassCard';
-import { GlassInput } from '../ui/GlassInput';
-import { GlassBadge } from '../ui/GlassBadge';
 import { GlassButton } from '../ui/GlassButton';
 
 interface ServerDashboardProps {
   onSelectServerDetail: (serverId: string) => void;
+  onNavigateAdminServer?: () => void;
 }
 
-export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServerDetail }) => {
+export const ServerDashboard: React.FC<ServerDashboardProps> = ({
+  onSelectServerDetail,
+  onNavigateAdminServer,
+}) => {
   const { servers, selectServer, togglePinServer, sendPowerAction } = useServer();
-  const { previewTheme } = useTheme();
+  const { isAdmin } = useAuth();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'running' | 'offline' | 'pinned'>('all');
   const [copiedIp, setCopiedIp] = useState<string | null>(null);
   const [layoutMode, setLayoutMode] = useState<'grid' | 'list'>('grid');
 
-  // Aggregated fleet metrics
-  const totalCores = servers.reduce((acc, s) => acc + (s.limits.cpu / 100), 0);
-  const totalRamMb = servers.reduce((acc, s) => acc + s.limits.memory, 0);
-  const usedRamMb = servers.reduce((acc, s) => acc + (s.status === 'running' ? Math.round(s.limits.memory * 0.52) : 0), 0);
   const runningCount = servers.filter(s => s.status === 'running').length;
   const offlineCount = servers.filter(s => s.status === 'offline').length;
   const pinnedCount = servers.filter(s => s.pinned).length;
@@ -74,102 +69,70 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServer
     })
     .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
-  return (
-    <div className="flex flex-col gap-6">
-      {/* 1. Fleet Command Header & Global Metrics Strip */}
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#00D2FF]/10 text-[#00D2FF] text-[11px] font-semibold tracking-wide border border-[#00D2FF]/20">
-                <Radio className="w-3 h-3 animate-pulse" /> SlayerWings Engine v1.0.0
-              </span>
-              <span className="text-xs text-slate-400 font-mono">Cluster Active</span>
-            </div>
-            <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
-              <span>Game Server Fleet</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white font-mono font-medium border border-white/15">
-                {servers.length}
-              </span>
-            </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              High-throughput container virtualization powered by external SlayerWings daemons.
-            </p>
-          </div>
+  // ========================================================
+  // FRESH INSTALL / ZERO-SERVER EMPTY STATE
+  // ========================================================
+  if (servers.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[55vh] p-6 text-center">
+        <div className="p-5 rounded-xl bg-[#181A20] border border-white/10 text-slate-400 mb-4 shadow-xl">
+          <ServerIcon className="w-10 h-10 text-[#DC2626]" />
+        </div>
+        <h2 className="text-xl font-bold text-white tracking-tight">
+          There are no servers linked to your account.
+        </h2>
+        <p className="text-xs text-slate-400 mt-1.5 max-w-md leading-relaxed">
+          {isAdmin
+            ? 'Your panel is freshly installed. As an administrator, you can configure your first node hypervisor and provision game server instances.'
+            : 'No game server containers are currently assigned to your account. Contact an administrator to allocate a server.'}
+        </p>
 
-          {/* Quick cluster health pill */}
-          <div className="flex items-center gap-3">
-            <div className="px-3.5 py-2 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl flex items-center gap-3">
-              <div className="flex items-center gap-1.5 text-xs text-slate-300">
-                <span className="w-2 h-2 rounded-full bg-[#00D2FF] animate-pulse" />
-                <span className="font-semibold text-white">{runningCount}</span> Online
-              </div>
-              <span className="text-white/20">|</span>
-              <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                <span className="w-2 h-2 rounded-full bg-slate-600" />
-                <span>{offlineCount}</span> Offline
-              </div>
-            </div>
-          </div>
+        {isAdmin && onNavigateAdminServer && (
+          <button
+            onClick={onNavigateAdminServer}
+            className="mt-6 px-4 py-2.5 rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold transition-all shadow-md shadow-red-950/40 flex items-center gap-2 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" /> Provision First Server
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* 1. Header & Controls */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
+            <span>Servers</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-[#21242C] text-slate-300 font-mono font-medium border border-white/10">
+              {servers.length}
+            </span>
+          </h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Select a server to access live console, file manager, and configuration.
+          </p>
         </div>
 
-        {/* 3-Column Glass Telemetry Strip */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="p-3.5 rounded-2xl bg-[#090D16]/70 border border-white/10 backdrop-blur-xl relative overflow-hidden flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-[#00D2FF]/10 text-[#00D2FF] border border-[#00D2FF]/20">
-                <Cpu className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">Allocated CPU Pool</span>
-                <span className="text-lg font-black text-white font-mono tabular-nums">{totalCores.toFixed(1)} vCPU Cores</span>
-              </div>
-            </div>
-            <span className="text-[11px] text-[#00D2FF] font-mono font-semibold bg-[#00D2FF]/10 px-2 py-0.5 rounded-lg border border-[#00D2FF]/20">
-              Optimal
-            </span>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-[#090D16]/70 border border-white/10 backdrop-blur-xl relative overflow-hidden flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-white/10 text-white border border-white/15">
-                <Activity className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">Memory Commitment</span>
-                <span className="text-lg font-black text-white font-mono tabular-nums">
-                  {(usedRamMb / 1024).toFixed(1)} / {(totalRamMb / 1024).toFixed(1)} GB
-                </span>
-              </div>
-            </div>
-            <span className="text-[11px] text-white/80 font-mono font-semibold bg-white/10 px-2 py-0.5 rounded-lg border border-white/15">
-              {Math.round((usedRamMb / totalRamMb) * 100)}% Used
-            </span>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-[#090D16]/70 border border-white/10 backdrop-blur-xl relative overflow-hidden flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-[#00D2FF]/10 text-[#00D2FF] border border-[#00D2FF]/20">
-                <Globe className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">SlayerWings Nodes</span>
-                <span className="text-lg font-black text-white font-mono tabular-nums">2 / 2 Synchronized</span>
-              </div>
-            </div>
-            <span className="text-[11px] text-[#00D2FF] font-mono font-semibold bg-[#00D2FF]/10 px-2 py-0.5 rounded-lg border border-[#00D2FF]/20">
-              Port 8443
-            </span>
-          </div>
+        {/* Quick status counter */}
+        <div className="flex items-center gap-2 text-xs font-mono">
+          <span className="px-3 py-1.5 rounded-lg bg-[#181A20] border border-white/10 text-slate-300 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <strong className="text-white">{runningCount}</strong> Online
+          </span>
+          <span className="px-3 py-1.5 rounded-lg bg-[#181A20] border border-white/10 text-slate-400 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-slate-600" />
+            <span>{offlineCount}</span> Offline
+          </span>
         </div>
       </div>
 
-      {/* 2. Filter Bar, Search & Layout Switcher */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-2 rounded-2xl bg-[#090D16]/60 border border-white/10 backdrop-blur-2xl">
-        {/* Status Filter Pills */}
-        <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+      {/* 2. Filter Bar & Search */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-2 rounded-xl bg-[#181A20] border border-white/10">
+        <div className="flex items-center gap-1 overflow-x-auto">
           {[
-            { id: 'all', label: 'All Servers', count: servers.length },
+            { id: 'all', label: 'All', count: servers.length },
             { id: 'running', label: 'Running', count: runningCount },
             { id: 'offline', label: 'Offline', count: offlineCount },
             { id: 'pinned', label: 'Pinned', count: pinnedCount },
@@ -177,42 +140,39 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServer
             <button
               key={tab.id}
               onClick={() => setFilterStatus(tab.id as any)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
                 filterStatus === tab.id
-                  ? 'bg-[#00D2FF] text-[#090D16] font-bold shadow-[0_0_16px_rgba(0,210,255,0.4)]'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  ? 'bg-[#DC2626] text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-[#21242C]'
               }`}
             >
               <span>{tab.label}</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                  filterStatus === tab.id ? 'bg-[#090D16]/20 text-[#090D16]' : 'bg-white/10 text-slate-300'
-                }`}
-              >
+              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                filterStatus === tab.id ? 'bg-black/20 text-white' : 'bg-white/10 text-slate-300'
+              }`}>
                 {tab.count}
               </span>
             </button>
           ))}
         </div>
 
-        {/* Search Input & Layout Controls */}
         <div className="flex items-center gap-2">
           <div className="relative flex-1 sm:w-64">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input
               type="text"
-              placeholder="Filter by name, IP, node..."
+              placeholder="Search servers..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00D2FF]/60 transition-colors font-sans"
+              className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-[#14161B] border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#DC2626] transition-colors"
             />
           </div>
 
-          <div className="flex items-center bg-slate-900/80 p-0.5 rounded-xl border border-white/10">
+          <div className="flex items-center bg-[#14161B] p-0.5 rounded-lg border border-white/10">
             <button
               onClick={() => setLayoutMode('grid')}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                layoutMode === 'grid' ? 'bg-[#00D2FF]/20 text-[#00D2FF]' : 'text-slate-400 hover:text-white'
+              className={`p-1.5 rounded transition-colors cursor-pointer ${
+                layoutMode === 'grid' ? 'bg-[#DC2626] text-white' : 'text-slate-400 hover:text-white'
               }`}
               title="Grid View"
             >
@@ -220,8 +180,8 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServer
             </button>
             <button
               onClick={() => setLayoutMode('list')}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                layoutMode === 'list' ? 'bg-[#00D2FF]/20 text-[#00D2FF]' : 'text-slate-400 hover:text-white'
+              className={`p-1.5 rounded transition-colors cursor-pointer ${
+                layoutMode === 'list' ? 'bg-[#DC2626] text-white' : 'text-slate-400 hover:text-white'
               }`}
               title="List View"
             >
@@ -231,19 +191,13 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServer
         </div>
       </div>
 
-      {/* 3. Server Cards Grid / List View */}
+      {/* 3. Server Grid / List */}
       {filteredServers.length === 0 ? (
-        <div className="p-12 rounded-3xl bg-[#090D16]/50 border border-white/10 backdrop-blur-2xl text-center flex flex-col items-center justify-center">
-          <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-slate-400 mb-3">
-            <ServerIcon className="w-8 h-8 text-[#00D2FF]" />
-          </div>
-          <h3 className="text-base font-bold text-white">No instances match your filter</h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-sm">
-            Try adjusting your search terms or status filter to locate running instances.
-          </p>
+        <div className="p-8 rounded-xl bg-[#181A20] border border-white/10 text-center flex flex-col items-center justify-center">
+          <p className="text-xs text-slate-400">No servers match your current filter.</p>
           <button
             onClick={() => { setSearchTerm(''); setFilterStatus('all'); }}
-            className="mt-4 px-4 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold border border-white/10 transition-colors cursor-pointer"
+            className="mt-3 px-3 py-1 rounded-lg bg-[#21242C] text-slate-200 text-xs font-semibold hover:bg-[#2A2E38] transition-colors"
           >
             Clear Filters
           </button>
@@ -261,40 +215,32 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServer
               <motion.div
                 key={server.id}
                 layout
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
                 onClick={() => {
                   selectServer(server.id);
                   onSelectServerDetail(server.id);
                 }}
-                className="group relative p-5 rounded-3xl bg-[#090D16]/75 hover:bg-[#090D16]/90 border border-white/10 hover:border-[#00D2FF]/40 backdrop-blur-2xl transition-all duration-300 shadow-xl cursor-pointer flex flex-col justify-between overflow-hidden"
+                className="group relative p-5 rounded-xl bg-[#181A20] hover:bg-[#1E2028] border border-white/10 hover:border-[#DC2626]/50 transition-all duration-200 shadow-lg cursor-pointer flex flex-col justify-between"
               >
-                {/* Top specular reflection strip */}
-                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
-
                 <div>
-                  {/* Card Header: Icon, Name, Address, Pin & Status */}
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="flex items-center gap-3 overflow-hidden">
-                      <div className="w-11 h-11 rounded-2xl bg-white/5 border border-white/15 flex items-center justify-center text-[#00D2FF] shrink-0 group-hover:scale-105 group-hover:border-[#00D2FF]/40 transition-all duration-300 shadow-inner">
-                        <ServerIcon className="w-5 h-5" />
+                      <div className="w-10 h-10 rounded-lg bg-[#21242C] border border-white/10 flex items-center justify-center text-white shrink-0 group-hover:border-[#DC2626]/50 transition-colors">
+                        <ServerIcon className="w-5 h-5 text-[#DC2626]" />
                       </div>
                       <div className="truncate">
-                        <h3 className="text-sm font-bold text-white truncate group-hover:text-[#00D2FF] transition-colors">
+                        <h3 className="text-sm font-bold text-white truncate group-hover:text-[#DC2626] transition-colors">
                           {server.name}
                         </h3>
-                        {/* Copyable address pill */}
                         <button
                           onClick={e => copyToClipboard(addressString, server.id, e)}
-                          title="Click to copy address"
-                          className="mt-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] text-slate-300 font-mono border border-white/10 transition-colors cursor-pointer"
+                          title="Copy Address"
+                          className="mt-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#14161B] hover:bg-[#21242C] text-[11px] text-slate-300 font-mono border border-white/10 transition-colors cursor-pointer"
                         >
                           <span>{addressString}</span>
                           {copiedIp === server.id ? (
-                            <Check className="w-3 h-3 text-[#00D2FF]" />
+                            <Check className="w-3 h-3 text-[#DC2626]" />
                           ) : (
-                            <Copy className="w-3 h-3 text-slate-500 hover:text-white" />
+                            <Copy className="w-3 h-3 text-slate-500" />
                           )}
                         </button>
                       </div>
@@ -307,99 +253,86 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServer
                           togglePinServer(server.id);
                         }}
                         title={server.pinned ? 'Unpin Server' : 'Pin Server'}
-                        className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
-                          server.pinned
-                            ? 'text-amber-400 bg-amber-400/10 border border-amber-400/20'
-                            : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                        className={`p-1.5 rounded transition-colors cursor-pointer ${
+                          server.pinned ? 'text-amber-400 bg-amber-400/10' : 'text-slate-500 hover:text-white'
                         }`}
                       >
                         <Pin className="w-3.5 h-3.5 fill-current" />
                       </button>
 
-                      {/* Status indicator pill */}
                       <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider font-mono uppercase border ${
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold font-mono uppercase border ${
                           isOnline
-                            ? 'bg-[#00D2FF]/10 text-[#00D2FF] border-[#00D2FF]/30 shadow-[0_0_12px_rgba(0,210,255,0.2)]'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                             : 'bg-slate-800 text-slate-400 border-white/10'
                         }`}
                       >
-                        <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-[#00D2FF] animate-pulse' : 'bg-slate-500'}`} />
+                        <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
                         {server.status}
                       </span>
                     </div>
                   </div>
 
-                  {/* Egg details & Node info */}
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 mb-4 pb-3 border-b border-white/10">
-                    <span className="font-semibold text-slate-300">{server.egg_name}</span>
-                    <span className="font-mono text-slate-500 truncate max-w-[150px]">{server.node}</span>
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 mb-4 pb-2.5 border-b border-white/10 font-mono">
+                    <span className="text-slate-300 font-sans">{server.egg_name}</span>
+                    <span className="text-slate-500 truncate max-w-[140px]">{server.node}</span>
                   </div>
 
-                  {/* Telemetry Mini Progress Bars */}
-                  <div className="flex flex-col gap-2.5 mb-4">
-                    {/* CPU Usage */}
+                  {/* Telemetry Progress Bars */}
+                  <div className="flex flex-col gap-2 mb-4 font-mono text-[11px]">
                     <div>
-                      <div className="flex justify-between text-[11px] mb-1 font-mono">
+                      <div className="flex justify-between mb-1">
                         <span className="text-slate-400 flex items-center gap-1 font-sans">
-                          <Cpu className="w-3 h-3 text-[#00D2FF]" /> CPU
+                          <Cpu className="w-3 h-3 text-[#DC2626]" /> CPU
                         </span>
-                        <span className="font-semibold text-slate-200 tabular-nums">
+                        <span className="text-slate-200">
                           {isOnline ? `${cpuPct}%` : '0%'} / {server.limits.cpu}%
                         </span>
                       </div>
-                      <div className="h-1.5 w-full rounded-full bg-slate-900/90 overflow-hidden border border-white/5">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(100, (cpuPct / server.limits.cpu) * 100)}%` }}
-                          className="h-full rounded-full bg-[#00D2FF]"
+                      <div className="h-1.5 w-full rounded bg-[#14161B] overflow-hidden border border-white/5">
+                        <div
+                          style={{ width: `${Math.min(100, (cpuPct / server.limits.cpu) * 100)}%` }}
+                          className="h-full bg-[#DC2626]"
                         />
                       </div>
                     </div>
 
-                    {/* Memory Usage */}
                     <div>
-                      <div className="flex justify-between text-[11px] mb-1 font-mono">
+                      <div className="flex justify-between mb-1">
                         <span className="text-slate-400 flex items-center gap-1 font-sans">
                           <Activity className="w-3 h-3 text-white" /> Memory
                         </span>
-                        <span className="font-semibold text-slate-200 tabular-nums">
+                        <span className="text-slate-200">
                           {isOnline ? `${Math.round((server.limits.memory * ramPct) / 100)} MB` : '0 MB'} / {server.limits.memory} MB
                         </span>
                       </div>
-                      <div className="h-1.5 w-full rounded-full bg-slate-900/90 overflow-hidden border border-white/5">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${ramPct}%` }}
-                          className="h-full rounded-full bg-white"
-                        />
+                      <div className="h-1.5 w-full rounded bg-[#14161B] overflow-hidden border border-white/5">
+                        <div style={{ width: `${ramPct}%` }} className="h-full bg-white" />
                       </div>
                     </div>
 
-                    {/* Storage Usage */}
                     <div>
-                      <div className="flex justify-between text-[11px] mb-1 font-mono">
+                      <div className="flex justify-between mb-1">
                         <span className="text-slate-400 flex items-center gap-1 font-sans">
-                          <HardDrive className="w-3 h-3 text-slate-400" /> Storage
+                          <HardDrive className="w-3 h-3 text-slate-400" /> Disk
                         </span>
-                        <span className="font-semibold text-slate-200 tabular-nums">
+                        <span className="text-slate-200">
                           {Math.round((server.limits.disk * diskPct) / 100)} MB / {server.limits.disk} MB
                         </span>
                       </div>
-                      <div className="h-1.5 w-full rounded-full bg-slate-900/90 overflow-hidden border border-white/5">
-                        <div style={{ width: `${diskPct}%` }} className="h-full rounded-full bg-slate-400" />
+                      <div className="h-1.5 w-full rounded bg-[#14161B] overflow-hidden border border-white/5">
+                        <div style={{ width: `${diskPct}%` }} className="h-full bg-slate-500" />
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Bottom Card Actions: Quick Power Triggers & Deep Link */}
                 <div className="flex items-center justify-between pt-3 border-t border-white/10 mt-auto">
                   <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                     {!isOnline ? (
                       <button
                         onClick={() => sendPowerAction('start', server.id)}
-                        className="px-3 py-1.5 rounded-xl bg-[#00D2FF] hover:bg-[#00D2FF]/90 text-[#090D16] text-xs font-bold transition-all shadow-[0_0_12px_rgba(0,210,255,0.3)] cursor-pointer flex items-center gap-1"
+                        className="px-3 py-1 rounded bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
                       >
                         <Play className="w-3 h-3 fill-current" /> Start
                       </button>
@@ -407,15 +340,15 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServer
                       <>
                         <button
                           onClick={() => sendPowerAction('restart', server.id)}
-                          title="Restart Container"
-                          className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs transition-colors border border-white/10 cursor-pointer"
+                          title="Restart"
+                          className="p-1.5 rounded bg-[#21242C] hover:bg-[#2A2E38] text-white text-xs border border-white/10 cursor-pointer"
                         >
                           <RotateCcw className="w-3 h-3" />
                         </button>
                         <button
                           onClick={() => sendPowerAction('stop', server.id)}
-                          title="Stop Container"
-                          className="p-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs transition-colors border border-rose-500/30 cursor-pointer"
+                          title="Stop"
+                          className="p-1.5 rounded bg-[#991B1B] hover:bg-[#7F1D1D] text-white text-xs cursor-pointer"
                         >
                           <Square className="w-3 h-3 fill-current" />
                         </button>
@@ -423,8 +356,8 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServer
                     )}
                   </div>
 
-                  <span className="inline-flex items-center gap-1 text-xs font-bold text-[#00D2FF] group-hover:translate-x-1 transition-transform">
-                    Terminal Console <ArrowUpRight className="w-3.5 h-3.5" />
+                  <span className="inline-flex items-center gap-1 text-xs font-bold text-[#DC2626] group-hover:translate-x-1 transition-transform">
+                    Manage <ArrowUpRight className="w-3.5 h-3.5" />
                   </span>
                 </div>
               </motion.div>
@@ -445,18 +378,18 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServer
                   selectServer(server.id);
                   onSelectServerDetail(server.id);
                 }}
-                className="group p-3.5 rounded-2xl bg-[#090D16]/75 hover:bg-[#090D16]/90 border border-white/10 hover:border-[#00D2FF]/40 backdrop-blur-2xl transition-all duration-200 cursor-pointer flex items-center justify-between gap-4"
+                className="group p-3.5 rounded-xl bg-[#181A20] hover:bg-[#1E2028] border border-white/10 hover:border-[#DC2626]/50 transition-colors cursor-pointer flex items-center justify-between gap-4"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-white/5 border border-white/15 flex items-center justify-center text-[#00D2FF] shrink-0">
-                    <ServerIcon className="w-4 h-4" />
+                  <div className="w-9 h-9 rounded-lg bg-[#21242C] border border-white/10 flex items-center justify-center text-white shrink-0">
+                    <ServerIcon className="w-4 h-4 text-[#DC2626]" />
                   </div>
                   <div className="truncate">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-white group-hover:text-[#00D2FF] transition-colors truncate">
+                      <h3 className="text-sm font-bold text-white group-hover:text-[#DC2626] transition-colors truncate">
                         {server.name}
                       </h3>
-                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 text-slate-300 border border-white/10 font-mono">
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-[#21242C] text-slate-300 font-mono">
                         {server.egg_name}
                       </span>
                     </div>
@@ -466,13 +399,13 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServer
 
                 <div className="flex items-center gap-4 shrink-0">
                   <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase border ${
+                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold font-mono uppercase border ${
                       isOnline
-                        ? 'bg-[#00D2FF]/10 text-[#00D2FF] border-[#00D2FF]/30'
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                         : 'bg-slate-800 text-slate-400 border-white/10'
                     }`}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-[#00D2FF]' : 'bg-slate-500'}`} />
+                    <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-slate-500'}`} />
                     {server.status}
                   </span>
 
@@ -480,7 +413,7 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServer
                     {!isOnline ? (
                       <button
                         onClick={() => sendPowerAction('start', server.id)}
-                        className="p-1.5 rounded-lg bg-[#00D2FF] text-[#090D16] hover:bg-[#00D2FF]/90 cursor-pointer"
+                        className="p-1.5 rounded bg-[#DC2626] text-white hover:bg-[#B91C1C] cursor-pointer"
                         title="Start"
                       >
                         <Play className="w-3 h-3 fill-current" />
@@ -489,14 +422,14 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({ onSelectServer
                       <>
                         <button
                           onClick={() => sendPowerAction('restart', server.id)}
-                          className="p-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 border border-white/10 cursor-pointer"
+                          className="p-1.5 rounded bg-[#21242C] text-white hover:bg-[#2A2E38] border border-white/10 cursor-pointer"
                           title="Restart"
                         >
                           <RotateCcw className="w-3 h-3" />
                         </button>
                         <button
                           onClick={() => sendPowerAction('stop', server.id)}
-                          className="p-1.5 rounded-lg bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border border-rose-500/30 cursor-pointer"
+                          className="p-1.5 rounded bg-[#991B1B] text-white hover:bg-[#7F1D1D] cursor-pointer"
                           title="Stop"
                         >
                           <Square className="w-3 h-3 fill-current" />

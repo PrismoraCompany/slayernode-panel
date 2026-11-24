@@ -6,15 +6,10 @@ import {
   Eye,
   EyeOff,
   ArrowRight,
-  ShieldCheck,
-  ShieldAlert,
+  AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { GlassCard } from '../ui/GlassCard';
-import { GlassInput } from '../ui/GlassInput';
-import { GlassButton } from '../ui/GlassButton';
-import { AuroraShader } from './AuroraShader';
 import { TwoFactorModal } from './TwoFactorModal';
 
 interface LoginViewProps {
@@ -49,10 +44,10 @@ export const LoginView: React.FC<LoginViewProps> = ({
       if (res.requires2FA) {
         setShowTwoFactor(true);
       } else if (!res.success) {
-        setErrorMessage(res.error || 'Invalid username or password.');
+        setErrorMessage(res.error || 'Invalid email or password.');
       }
     } catch {
-      setErrorMessage('Network error: Unable to contact authentication daemon.');
+      setErrorMessage('Network error: Unable to contact authentication server.');
     } finally {
       setIsLoading(false);
     }
@@ -66,173 +61,167 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const isLockedOut = lockoutRemaining > 0;
 
   return (
-    <div className="relative min-h-screen w-full flex flex-col items-center justify-between p-4 z-10 overflow-hidden">
-      <AuroraShader />
-
+    <div className="min-h-screen w-full flex flex-col items-center justify-between p-4 bg-[#111216] text-[#F3F4F6] relative z-10">
       <div className="flex-1 flex items-center justify-center w-full my-auto">
         <motion.div
-          initial={{ opacity: 0, scale: 0.96, y: 15 }}
+          initial={{ opacity: 0, y: 12 }}
           animate={{
             opacity: 1,
-            scale: 1,
             y: 0,
-            x: errorMessage ? [0, -8, 8, -6, 6, -3, 3, 0] : 0,
+            x: errorMessage ? [0, -6, 6, -4, 4, 0] : 0,
           }}
-          transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-          className="w-full max-w-md z-10"
+          transition={{ duration: 0.2 }}
+          className="w-full max-w-md"
         >
-          <GlassCard
-            className={`p-7 sm:p-9 shadow-2xl transition-all duration-300 border border-white/15 ${
-              errorMessage ? 'border-rose-500/50 bg-rose-950/20' : ''
-            }`}
-          >
-            {/* Top Brand: Uploaded SlayerNode SN Logo */}
+          <div className="p-7 sm:p-9 rounded-xl bg-[#181A20] border border-white/10 shadow-2xl">
+            {/* Brand Logo & Heading (Zero Stack/Version Info!) */}
             <div className="flex flex-col items-center text-center mb-6">
               <img
                 src={previewTheme.logo_url || '/logo.jpg'}
                 alt="SlayerNode"
-                className="w-16 h-16 rounded-2xl object-cover border border-white/25 shadow-xl mb-3.5"
+                className="w-16 h-16 rounded-xl object-cover border border-white/10 shadow-lg mb-3"
               />
 
-              <h1 className="text-xl font-bold tracking-tight text-white">
+              <h1 className="text-xl font-black tracking-tight text-white">
                 {previewTheme.auth_heading || 'SlayerNode'}
               </h1>
-              <p className="text-xs text-slate-300 mt-1 max-w-xs leading-relaxed">
+              <p className="text-xs text-slate-400 mt-1">
                 {previewTheme.auth_subtitle || 'Game Server Management Portal'}
               </p>
-
-              {/* Security indicators */}
-              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/10 text-[11px] text-slate-400">
-                <span className="flex items-center gap-1 font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-400/20">
-                  <ShieldCheck className="w-3 h-3" /> TLS 1.3 / AES-256
-                </span>
-                <span className="text-slate-500">•</span>
-                <span className="font-mono text-[10px] text-slate-400">
-                  CSRF Protected
-                </span>
-              </div>
             </div>
 
-            {/* Brute-force lockout alert */}
+            {/* Lockout Warning in Bold Red */}
             {isLockedOut && (
-              <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold mb-5 flex items-center gap-2.5 animate-pulse">
-                <ShieldAlert className="w-4 h-4 shrink-0 text-rose-400" />
-                <span>Security lockout active. Retry in <strong>{lockoutRemaining}s</strong>.</span>
+              <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/40 text-red-500 font-bold text-xs mb-4 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>Security lockout active. Retry in {lockoutRemaining} seconds.</span>
               </div>
             )}
 
-            {/* Validation Error Message */}
+            {/* Form Error in BOLD RED FONT */}
             {errorMessage && !isLockedOut && (
-              <motion.div
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium mb-5 text-center"
-              >
-                {errorMessage}
-              </motion.div>
+              <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/40 text-red-500 font-bold text-xs mb-4 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+                <span>{errorMessage}</span>
+              </div>
             )}
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <input type="hidden" name="_csrf" value={csrfToken} />
 
-              <GlassInput
-                label="Email Address or Username"
-                type="text"
-                required
-                disabled={isLockedOut}
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="user@slayernode.xyz or username"
-                leftIcon={<Mail className="w-4 h-4 text-slate-400" />}
-              />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-slate-300">
+                  Email Address or Username
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="text"
+                    required
+                    disabled={isLockedOut}
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="user@slayernode.xyz"
+                    className="w-full pl-9 pr-3 py-2 rounded-lg bg-[#14161B] border border-white/10 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#DC2626] transition-colors"
+                  />
+                </div>
+              </div>
 
-              <GlassInput
-                label="Password"
-                type={showPassword ? 'text' : 'password'}
-                required
-                disabled={isLockedOut}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••••••"
-                leftIcon={<Lock className="w-4 h-4 text-slate-400" />}
-                rightIcon={
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-slate-300">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    disabled={isLockedOut}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="w-full pl-9 pr-10 py-2 rounded-lg bg-[#14161B] border border-white/10 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#DC2626] transition-colors"
+                  />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="hover:text-white transition-colors cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
-                }
-              />
+                </div>
+              </div>
 
-              <div className="flex items-center justify-between text-xs mt-0.5">
-                <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300">
+              <div className="flex items-center justify-between text-xs mt-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-slate-400 hover:text-slate-200">
                   <input
                     type="checkbox"
                     checked={rememberMe}
                     onChange={e => setRememberMe(e.target.checked)}
-                    className="rounded border-white/20 bg-slate-900 text-[#00D2FF] focus:ring-0"
+                    className="rounded border-white/20 bg-[#14161B] text-[#DC2626] focus:ring-0 cursor-pointer"
                   />
-                  Remember session
+                  <span>Remember me</span>
                 </label>
 
                 {onNavigateForgot && (
                   <button
                     type="button"
                     onClick={onNavigateForgot}
-                    className="text-[#00D2FF] hover:underline transition-colors cursor-pointer font-medium"
+                    className="text-xs text-slate-400 hover:text-[#DC2626] transition-colors cursor-pointer font-medium"
                   >
                     Forgot password?
                   </button>
                 )}
               </div>
 
-              <GlassButton
+              {/* Square Solid Red Submit Button */}
+              <button
                 type="submit"
-                variant="accent"
-                size="lg"
-                isLoading={isLoading}
-                disabled={isLockedOut}
-                className="mt-2 w-full text-sm font-bold bg-[#00D2FF] text-[#090D16] hover:bg-[#26dcff]"
-                rightIcon={<ArrowRight className="w-4 h-4" />}
+                disabled={isLoading || isLockedOut}
+                className="w-full mt-2 py-2.5 rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold transition-all shadow-md shadow-red-950/40 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                {isLockedOut ? `Locked (${lockoutRemaining}s)` : 'Sign In'}
-              </GlassButton>
+                <span>{isLoading ? 'Signing in...' : 'Sign In'}</span>
+                {!isLoading && <ArrowRight className="w-4 h-4" />}
+              </button>
             </form>
 
-            {/* Self Registration link if enabled */}
             {previewTheme.auth_allow_registration && onNavigateRegister && (
               <div className="mt-5 pt-4 border-t border-white/10 text-center text-xs text-slate-400">
-                Don't have an account?{' '}
+                <span>Don't have an account? </span>
                 <button
                   type="button"
                   onClick={onNavigateRegister}
-                  className="text-[#00D2FF] hover:underline font-semibold cursor-pointer ml-1"
+                  className="font-bold text-[#DC2626] hover:underline cursor-pointer"
                 >
-                  Create Account
+                  Create one
                 </button>
               </div>
             )}
-          </GlassCard>
+          </div>
         </motion.div>
       </div>
 
-      {/* Irremovable SlayerNode Copyright Footer */}
-      <footer className="w-full text-center py-3 text-xs text-slate-400 select-none z-10">
-        <span>© 2026 SlayerNode. All rights reserved. Version 1.0.0 — </span>
-        <a
-          href="https://slayernode.xyz"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[#00D2FF] hover:underline font-semibold"
-        >
-          https://slayernode.xyz
-        </a>
+      {/* Minimal Footer */}
+      <footer className="w-full max-w-md flex items-center justify-center gap-4 text-[11px] text-slate-500 py-3">
+        {(previewTheme.auth_footer_links || []).map((link, idx) => (
+          <React.Fragment key={idx}>
+            <a
+              href={link.url}
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-slate-300 transition-colors"
+            >
+              {link.label}
+            </a>
+            {idx < (previewTheme.auth_footer_links || []).length - 1 && (
+              <span>•</span>
+            )}
+          </React.Fragment>
+        ))}
       </footer>
 
-      {/* 2FA Segmented TOTP Modal */}
+      {/* 2FA Modal */}
       <TwoFactorModal
         isOpen={showTwoFactor}
         onClose={() => setShowTwoFactor(false)}

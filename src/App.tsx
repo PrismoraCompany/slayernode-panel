@@ -114,6 +114,10 @@ export const App: React.FC = () => {
           {currentTab === 'dashboard' && (
             <ServerDashboard
               onSelectServerDetail={() => setCurrentTab('server-detail')}
+              onNavigateAdminServer={() => {
+                setIsAdminView(true);
+                setCurrentTab('admin-servers');
+              }}
             />
           )}
 

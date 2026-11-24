@@ -1,12 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Mail, Lock, User as UserIcon, ArrowLeft, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, User as UserIcon, ArrowLeft, ArrowRight, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { GlassCard } from '../ui/GlassCard';
-import { GlassInput } from '../ui/GlassInput';
-import { GlassButton } from '../ui/GlassButton';
-import { AuroraShader } from './AuroraShader';
 
 interface RegisterViewProps {
   onNavigateLogin: () => void;
@@ -37,15 +33,14 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onNavigateLogin }) =
   };
 
   return (
-    <div className="relative min-h-screen w-full flex items-center justify-center p-4 z-10 overflow-hidden">
-      <AuroraShader />
-
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-[#111216] text-[#F3F4F6] relative z-10">
       <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="w-full max-w-lg z-10"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2 }}
+        className="w-full max-w-lg"
       >
-        <GlassCard className="p-8 sm:p-9 shadow-2xl">
+        <div className="p-7 sm:p-9 rounded-xl bg-[#181A20] border border-white/10 shadow-2xl">
           <div className="flex items-center justify-between mb-6">
             <button
               onClick={onNavigateLogin}
@@ -53,88 +48,109 @@ export const RegisterView: React.FC<RegisterViewProps> = ({ onNavigateLogin }) =
             >
               <ArrowLeft className="w-4 h-4" /> Back to Login
             </button>
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-400/20">
-              New Account
+            <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded bg-[#21242C] text-slate-300 border border-white/10">
+              CREATE ACCOUNT
             </span>
           </div>
 
-          <div className="mb-6">
-            <h2 className="text-2xl font-black text-white tracking-tight">Create your account</h2>
+          <div className="mb-5">
+            <h2 className="text-xl font-black text-white tracking-tight">Create your account</h2>
             <p className="text-xs text-slate-400 mt-1">
-              Join {previewTheme.panel_name} to launch and control dedicated game clusters.
+              Join {previewTheme.panel_name || 'SlayerNode'} to manage dedicated server instances.
             </p>
           </div>
 
+          {/* Error Message in Bold Red Font */}
           {errorMessage && (
-            <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium mb-4">
-              {errorMessage}
+            <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/40 text-red-500 font-bold text-xs mb-4 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+              <span>{errorMessage}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
             <div className="grid grid-cols-2 gap-3">
-              <GlassInput
-                label="First Name"
-                value={nameFirst}
-                onChange={e => setNameFirst(e.target.value)}
-                placeholder="Alex"
-                required
-              />
-              <GlassInput
-                label="Last Name"
-                value={nameLast}
-                onChange={e => setNameLast(e.target.value)}
-                placeholder="Mercer"
-                required
-              />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-slate-300">First Name</label>
+                <input
+                  type="text"
+                  required
+                  value={nameFirst}
+                  onChange={e => setNameFirst(e.target.value)}
+                  placeholder="First name"
+                  className="w-full px-3 py-2 rounded-lg bg-[#14161B] border border-white/10 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#DC2626] transition-colors"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-slate-300">Last Name</label>
+                <input
+                  type="text"
+                  required
+                  value={nameLast}
+                  onChange={e => setNameLast(e.target.value)}
+                  placeholder="Last name"
+                  className="w-full px-3 py-2 rounded-lg bg-[#14161B] border border-white/10 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#DC2626] transition-colors"
+                />
+              </div>
             </div>
 
-            <GlassInput
-              label="Username"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              placeholder="alexm"
-              leftIcon={<UserIcon className="w-4 h-4" />}
-              required
-            />
-
-            <GlassInput
-              label="Email Address"
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="alex@slayernode.xyz"
-              leftIcon={<Mail className="w-4 h-4" />}
-              required
-            />
-
-            <GlassInput
-              label="Password"
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••••••"
-              leftIcon={<Lock className="w-4 h-4" />}
-              required
-            />
-
-            <div className="flex items-center gap-2 text-xs text-slate-400 my-1">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Passwords are hashed with bcrypt (cost factor 12).</span>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-300">Username</label>
+              <div className="relative">
+                <UserIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  required
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  placeholder="username"
+                  className="w-full pl-9 pr-3 py-2 rounded-lg bg-[#14161B] border border-white/10 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#DC2626] transition-colors"
+                />
+              </div>
             </div>
 
-            <GlassButton
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-300">Email Address</label>
+              <div className="relative">
+                <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="email@example.com"
+                  className="w-full pl-9 pr-3 py-2 rounded-lg bg-[#14161B] border border-white/10 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#DC2626] transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-300">Password</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full pl-9 pr-3 py-2 rounded-lg bg-[#14161B] border border-white/10 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#DC2626] transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Square Red Submit Button */}
+            <button
               type="submit"
-              variant="accent"
-              size="lg"
-              isLoading={isLoading}
-              className="mt-2 w-full text-base font-semibold"
-              rightIcon={<ArrowRight className="w-4 h-4" />}
+              disabled={isLoading}
+              className="w-full mt-3 py-2.5 rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold transition-all shadow-md shadow-red-950/40 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              Complete Registration
-            </GlassButton>
+              <span>{isLoading ? 'Creating account...' : 'Create Account'}</span>
+              {!isLoading && <ArrowRight className="w-4 h-4" />}
+            </button>
           </form>
-        </GlassCard>
+        </div>
       </motion.div>
     </div>
   );

@@ -167,7 +167,7 @@ export const VisualConfigEditor: React.FC = () => {
 
         <div className="p-3.5 rounded-xl bg-slate-950/90 border border-white/10 flex items-center gap-3">
           <div className="w-12 h-12 rounded-lg bg-black/40 flex items-center justify-center border border-white/15">
-            <Sliders className="w-6 h-6 text-[#00D2FF]" />
+            <Sliders className="w-6 h-6 text-red-500" />
           </div>
           <div className="flex-1 truncate">
             <div className="text-xs font-bold text-white mb-0.5">SlayerCraft Network</div>

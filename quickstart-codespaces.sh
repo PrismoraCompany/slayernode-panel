@@ -4,8 +4,13 @@
 # ========================================================
 set -e
 
+# Always navigate to repository directory where script resides
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 echo "========================================================"
 echo "SlayerNode Panel v1.0.0 — Container Quickstart"
+echo "Working directory: $SCRIPT_DIR"
 echo "========================================================"
 
 # Reset ownership if previously altered
@@ -41,4 +46,4 @@ echo " Email: admin@slayernode.xyz"
 echo " Password: admin"
 echo "========================================================"
 
-exec npm run dev -- --host 0.0.0.0
+exec npm run dev -- --host 0.0.0.0 --port 3000

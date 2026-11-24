@@ -54,7 +54,7 @@ export const ADMIN_NAV_GROUPS = [
   {
     title: 'Customization Studio',
     items: [
-      { id: 'admin-studio', label: 'Appearance & Studio', icon: <Palette className="w-4 h-4 text-[#00D2FF]" /> },
+      { id: 'admin-studio', label: 'Appearance & Studio', icon: <Palette className="w-4 h-4 text-[#DC2626]" /> },
     ],
   },
 ];
@@ -65,12 +65,12 @@ export const AdminSidebarNav: React.FC<AdminSidebarNavProps> = ({
   onExitAdmin,
 }) => {
   return (
-    <div className="w-full lg:w-60 shrink-0 flex flex-col gap-5">
+    <div className="w-full lg:w-60 shrink-0 flex flex-col gap-4">
       <button
         onClick={onExitAdmin}
-        className="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer border border-white/10"
+        className="flex items-center gap-2 p-2.5 rounded-lg bg-[#181A20] hover:bg-[#21242C] text-xs font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer border border-white/10"
       >
-        <ArrowLeft className="w-4 h-4 text-[#00D2FF]" /> Exit to Client Area
+        <ArrowLeft className="w-4 h-4 text-[#DC2626]" /> Exit to Client Area
       </button>
 
       <div className="flex flex-col gap-4">
@@ -86,13 +86,13 @@ export const AdminSidebarNav: React.FC<AdminSidebarNavProps> = ({
                   <button
                     key={item.id}
                     onClick={() => onTabChange(item.id)}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer text-left ${
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer text-left ${
                       isActive
-                        ? 'bg-[#00D2FF]/20 text-white border border-[#00D2FF]/40 shadow-xs'
-                        : 'text-slate-400 hover:text-white hover:bg-white/5'
+                        ? 'bg-[#DC2626] text-white shadow-md shadow-red-950/40'
+                        : 'text-slate-400 hover:text-white hover:bg-[#181A20]'
                     }`}
                   >
-                    <span className={isActive ? 'text-[#00D2FF]' : 'text-slate-400'}>
+                    <span className={isActive ? 'text-white' : 'text-slate-400'}>
                       {item.icon}
                     </span>
                     <span>{item.label}</span>

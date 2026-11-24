@@ -438,7 +438,7 @@ export const FileManager: React.FC = () => {
             <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-white/10">
               <div className="min-w-0 pr-2">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">1-Click SFTP URI</span>
-                <span className="font-mono text-[11px] text-[#00D2FF] truncate block">
+                <span className="font-mono text-[11px] text-red-500 truncate block">
                   sftp://{user?.username || 'admin'}.{activeServer?.identifier}@{activeServer?.allocation.ip}:2022
                 </span>
               </div>

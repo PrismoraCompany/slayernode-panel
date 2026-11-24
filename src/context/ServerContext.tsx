@@ -2,151 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Server, ServerStats, ServerStatus } from '../types';
 import { useAuth } from './AuthContext';
 
-export const INITIAL_SERVERS: Server[] = [
-  {
-    id: '1',
-    uuid: '8a9c4b12-9844-42f0-9b45-ec7db715e45a',
-    identifier: '8a9c4b12',
-    name: 'SlayerCraft Network — Survival SMP',
-    description: 'High-performance Purpur 1.21.4 with Folia optimizations & anti-cheat',
-    owner_id: 1,
-    owner_username: 'admin',
-    node: 'Node-01 (Frankfurt Epyc 9654)',
-    node_id: 1,
-    status: 'running',
-    is_suspended: false,
-    is_transferring: false,
-    pinned: true,
-    limits: {
-      memory: 8192,
-      swap: 2048,
-      disk: 40960,
-      io: 500,
-      cpu: 400,
-    },
-    feature_limits: {
-      databases: 3,
-      allocations: 4,
-      backups: 5,
-      splitters: 2,
-    },
-    allocation: {
-      id: 101,
-      ip: '194.164.72.12',
-      port: 25565,
-      alias: 'play.slayercraft.net',
-      is_default: true,
-    },
-    allocations: [
-      { id: 101, ip: '194.164.72.12', port: 25565, alias: 'play.slayercraft.net', is_default: true },
-      { id: 102, ip: '194.164.72.12', port: 8100, notes: 'BlueMap 3D Web Render', is_default: false },
-      { id: 103, ip: '194.164.72.12', port: 24454, notes: 'Voice Chat UDP', is_default: false },
-    ],
-    egg_id: 1,
-    egg_name: 'Purpur / Paper Minecraft',
-    nest_id: 1,
-    docker_image: 'ghcr.io/slayernode/yolks:java_21',
-    startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}}',
-    variables: [
-      { name: 'Server Jar File', description: 'The executable jar', env_variable: 'SERVER_JARFILE', default_value: 'server.jar', server_value: 'purpur-1.21.4.jar', is_editable: true, rules: 'required|string' },
-      { name: 'Build Number', description: 'Purpur build version', env_variable: 'BUILD_NUMBER', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
-    ],
-    created_at: '2026-11-10T12:00:00Z',
-    updated_at: '2026-11-23T14:00:00Z',
-  },
-  {
-    id: '2',
-    uuid: '3f7a82c9-6a31-41db-9011-85b1a03977dc',
-    identifier: '3f7a82c9',
-    name: 'Velocity Proxy — Core Gateway',
-    description: 'BungeeCord / Velocity modern multi-threaded proxy gateway',
-    owner_id: 1,
-    owner_username: 'admin',
-    node: 'Node-01 (Frankfurt Epyc 9654)',
-    node_id: 1,
-    status: 'running',
-    is_suspended: false,
-    is_transferring: false,
-    pinned: true,
-    limits: {
-      memory: 2048,
-      swap: 512,
-      disk: 10240,
-      io: 500,
-      cpu: 150,
-    },
-    feature_limits: {
-      databases: 1,
-      allocations: 2,
-      backups: 2,
-    },
-    allocation: {
-      id: 104,
-      ip: '194.164.72.12',
-      port: 25577,
-      alias: 'proxy.slayercraft.net',
-      is_default: true,
-    },
-    allocations: [
-      { id: 104, ip: '194.164.72.12', port: 25577, alias: 'proxy.slayercraft.net', is_default: true },
-    ],
-    egg_id: 2,
-    egg_name: 'Velocity Proxy',
-    nest_id: 1,
-    docker_image: 'ghcr.io/slayernode/yolks:java_21',
-    startup: 'java -Xms512M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC -jar {{SERVER_JARFILE}}',
-    variables: [
-      { name: 'Server Jar File', description: 'Velocity Jar', env_variable: 'SERVER_JARFILE', default_value: 'velocity.jar', server_value: 'velocity.jar', is_editable: true, rules: 'required|string' },
-    ],
-    created_at: '2026-11-12T10:00:00Z',
-    updated_at: '2026-11-23T14:00:00Z',
-  },
-  {
-    id: '3',
-    uuid: '992a71d8-4f81-494b-a9a3-5e87a2027b14',
-    identifier: '992a71d8',
-    name: 'Rust Experimental — 2x Vanilla',
-    description: 'Wipe cycle: Bi-weekly on Thursdays, max 200 players',
-    owner_id: 2, // Owned by user ID 2 (Alex Mercer)
-    owner_username: 'alexm',
-    node: 'Node-02 (Helsinki Ryzen 9)',
-    node_id: 2,
-    status: 'offline',
-    is_suspended: false,
-    is_transferring: false,
-    pinned: false,
-    limits: {
-      memory: 16384,
-      swap: 4096,
-      disk: 61440,
-      io: 500,
-      cpu: 600,
-    },
-    feature_limits: {
-      databases: 2,
-      allocations: 3,
-      backups: 3,
-    },
-    allocation: {
-      id: 105,
-      ip: '65.109.112.45',
-      port: 28015,
-      alias: 'rust.slayercraft.net',
-      is_default: true,
-    },
-    allocations: [
-      { id: 105, ip: '65.109.112.45', port: 28015, alias: 'rust.slayercraft.net', is_default: true },
-    ],
-    egg_id: 5,
-    egg_name: 'Rust Dedicated',
-    nest_id: 2,
-    docker_image: 'ghcr.io/slayernode/games:rust',
-    startup: './RustDedicated -batchmode +server.port {{SERVER_PORT}}',
-    variables: [],
-    created_at: '2026-11-15T08:00:00Z',
-    updated_at: '2026-11-23T14:00:00Z',
-  },
-];
+export const INITIAL_SERVERS: Server[] = [];
 
 interface ServerContextType {
   servers: Server[];
@@ -168,8 +24,27 @@ const ServerContext = createContext<ServerContextType | undefined>(undefined);
 export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isAdmin } = useAuth();
   const [servers, setServers] = useState<Server[]>(INITIAL_SERVERS);
-  const [activeServerId, setActiveServerId] = useState<string>('1');
+  const [activeServerId, setActiveServerId] = useState<string>('');
   const [accessDeniedError, setAccessDeniedError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchServers = async () => {
+      try {
+        const res = await fetch('/api/client/servers');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.data)) {
+            const mapped = data.data.map((d: any) => d.attributes || d);
+            setServers(mapped);
+            if (mapped.length > 0) {
+              setActiveServerId(mapped[0].id);
+            }
+          }
+        }
+      } catch {}
+    };
+    fetchServers();
+  }, []);
 
   // Tenant Boundary Isolation: Non-admin users ONLY see servers they own!
   const visibleServers = servers.filter(s => {
@@ -180,16 +55,16 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const activeServer = visibleServers.find(s => s.id === activeServerId) || visibleServers[0] || null;
 
   const [stats, setStats] = useState<ServerStats>({
-    memory_bytes: 4428400000,
-    memory_limit_bytes: 8589934592,
-    cpu_absolute: 28.4,
+    memory_bytes: 0,
+    memory_limit_bytes: 1,
+    cpu_absolute: 0,
     network: {
-      rx_bytes: 148920000,
-      tx_bytes: 289410000,
+      rx_bytes: 0,
+      tx_bytes: 0,
     },
-    disk_bytes: 18450000000,
-    uptime_ms: 382410000,
-    state: 'running',
+    disk_bytes: 0,
+    uptime_ms: 0,
+    state: 'offline',
   });
 
   const [historyStats, setHistoryStats] = useState<{ time: string; cpu: number; ram: number; disk: number; netRx: number; netTx: number }[]>(() => {

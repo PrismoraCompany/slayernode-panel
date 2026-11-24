@@ -3,24 +3,24 @@ import { ThemeStudioSettings } from '../types';
 
 export const DEFAULT_THEME: ThemeStudioSettings = {
   id: 'default',
-  preset_name: 'SlayerNode Liquid Glass',
+  preset_name: 'SlayerNode Dark Charcoal & Red',
 
-  // 3 Primary Colors & Glass Physics
-  accent_primary: '#00D2FF',  // Slayer Cyan
-  accent_secondary: '#0084FF',
+  // 2 Primary Brand Colors: Blackish-Gray & Red
+  accent_primary: '#DC2626',  // Slayer Crimson Red
+  accent_secondary: '#991B1B',
   status_online: '#10B981',   // Emerald
   status_starting: '#F59E0B', // Amber
-  status_offline: '#EF4444',  // Rose
-  bg_canvas: '#090D16',       // Deep Space Navy
+  status_offline: '#DC2626',  // Red
+  bg_canvas: '#111216',       // Solid Blackish-Gray
   color_mode: 'dark',
-  glass_blur_px: 24,
-  card_opacity_pct: 50,
-  specular_border_opacity_pct: 14,
-  corner_roundness_px: 16,
+  glass_blur_px: 16,
+  card_opacity_pct: 90,
+  specular_border_opacity_pct: 10,
+  corner_roundness_px: 10,
   shadow_depth: 'deep',
 
   // Layout & Navigation
-  navigation_layout: 'floating_top',
+  navigation_layout: 'collapsible_sidebar',
   sidebar_collapsed_default: false,
   server_card_layout: 'grid',
   telemetry_detail_level: 'detailed',
@@ -30,32 +30,32 @@ export const DEFAULT_THEME: ThemeStudioSettings = {
     { id: '3', label: 'Status', url: 'https://status.slayernode.xyz', icon: 'Activity', external: true, order: 3 },
   ],
 
-  // Button & Component Styling
-  button_shape: 'pill',
-  button_style: 'liquid_glass',
+  // Button & Component Styling - Square, No Pills
+  button_shape: 'square',
+  button_style: 'solid_accent',
   hover_motion_intensity: 'normal',
 
-  // Login & Auth
-  auth_background_type: 'wallpaper',
-  auth_bg_url: '/wallpapers/slayernode-liquid-mesh.png',
-  auth_overlay_darkness: 45,
-  auth_overlay_blur: 6,
+  // Login & Auth - Solid, Minimal, Zero Stack/Version Info
+  auth_background_type: 'solid',
+  auth_bg_url: '',
+  auth_overlay_darkness: 60,
+  auth_overlay_blur: 0,
   auth_card_position: 'center',
   auth_heading: 'SlayerNode',
-  auth_subtitle: 'Enterprise Game Server Infrastructure',
+  auth_subtitle: 'Game Server Control Panel',
   auth_allow_registration: true,
   auth_footer_links: [
-    { label: 'SlayerNode Website', url: 'https://slayernode.xyz' },
-    { label: 'Terms of Service', url: 'https://slayernode.xyz/terms' },
-    { label: 'Privacy Policy', url: 'https://slayernode.xyz/privacy' },
+    { label: 'Website', url: 'https://slayernode.xyz' },
+    { label: 'Terms', url: 'https://slayernode.xyz/terms' },
+    { label: 'Privacy', url: 'https://slayernode.xyz/privacy' },
   ],
 
-  // Branding & Background Wallpapers
+  // Branding & Background - Solid Dark Charcoal, No Blue Mesh
   panel_name: 'SlayerNode',
   logo_url: '/logo.jpg',
-  custom_wallpaper_url: '/wallpapers/slayernode-liquid-mesh.png',
+  custom_wallpaper_url: '',
   wallpaper_blur: 0,
-  wallpaper_opacity: 85,
+  wallpaper_opacity: 100,
   favicon_url: '/favicon.jpg',
   font_family: 'Inter',
   announcement_banner: {

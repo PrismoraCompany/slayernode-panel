@@ -99,7 +99,7 @@ export const AdminSettings: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Settings className="w-5 h-5 text-[#00D2FF]" /> System Settings & Service Configuration
+            <Settings className="w-5 h-5 text-red-500" /> System Settings & Service Configuration
           </h2>
           <p className="text-xs text-slate-400 mt-1">
             Production panel configuration parameters, database connection, and mail services.
@@ -128,7 +128,7 @@ export const AdminSettings: React.FC = () => {
             onClick={() => setActiveTab(t.id as any)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
               activeTab === t.id
-                ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/30'
+                ? 'bg-red-600/20 text-red-500 border border-red-600/30'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
@@ -175,7 +175,7 @@ export const AdminSettings: React.FC = () => {
         <GlassCard className="p-5 sm:p-6 flex flex-col gap-4 max-w-2xl">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Mail className="w-4 h-4 text-[#00D2FF]" /> Outbound SMTP Email Gateway
+              <Mail className="w-4 h-4 text-red-500" /> Outbound SMTP Email Gateway
             </h3>
             <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-400/20">
               Live Socket Test

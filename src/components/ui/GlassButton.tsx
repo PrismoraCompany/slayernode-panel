@@ -25,29 +25,27 @@ export const GlassButton: React.FC<GlassButtonProps> = ({
 }) => {
   const { previewTheme } = useTheme();
 
-  // Dynamic button shape classes
+  // Button shape: Square (subtle rounded corners, no pills)
   const shapeClass =
-    previewTheme.button_shape === 'pill'
-      ? 'rounded-full'
-      : previewTheme.button_shape === 'squircle'
-      ? 'rounded-2xl'
+    previewTheme.button_shape === 'squircle'
+      ? 'rounded-xl'
       : 'rounded-lg';
 
   // Size variations
   const sizeClasses = {
-    sm: 'px-3 py-1.5 text-xs font-medium gap-1.5',
-    md: 'px-4 py-2 text-sm font-medium gap-2',
-    lg: 'px-6 py-3 text-base font-semibold gap-2.5',
-    icon: 'p-2.5 text-sm aspect-square flex items-center justify-center',
+    sm: 'px-3 py-1.5 text-xs font-semibold gap-1.5',
+    md: 'px-4 py-2 text-sm font-semibold gap-2',
+    lg: 'px-6 py-2.5 text-base font-bold gap-2.5',
+    icon: 'p-2 text-sm aspect-square flex items-center justify-center',
   };
 
-  // Color & Variant styles
+  // Color & Variant styles (Strict Blackish-Gray & Red)
   const variantStyles = {
-    glass: 'glass-button-pill text-slate-100 text-shadow-sm',
-    accent: 'glass-button-accent text-white shadow-lg',
-    danger: 'bg-gradient-to-b from-rose-500/80 to-rose-600/90 hover:from-rose-500 hover:to-rose-600 border border-rose-400/30 text-white shadow-lg shadow-rose-950/40',
-    success: 'bg-gradient-to-b from-emerald-500/80 to-emerald-600/90 hover:from-emerald-500 hover:to-emerald-600 border border-emerald-400/30 text-white shadow-lg shadow-emerald-950/40',
-    ghost: 'bg-transparent hover:bg-white/10 text-slate-300 hover:text-white border border-transparent hover:border-white/10',
+    glass: 'bg-[#21242C] hover:bg-[#2A2E38] text-slate-100 border border-white/10 shadow-sm',
+    accent: 'bg-[#DC2626] hover:bg-[#B91C1C] text-white font-bold border border-red-500/30 shadow-md shadow-red-950/30',
+    danger: 'bg-[#991B1B] hover:bg-[#7F1D1D] text-white font-bold border border-red-400/20 shadow-md',
+    success: 'bg-[#059669] hover:bg-[#047857] text-white font-bold border border-emerald-400/20 shadow-md',
+    ghost: 'bg-transparent hover:bg-white/5 text-slate-300 hover:text-white border border-transparent',
   };
 
   const motionScale =

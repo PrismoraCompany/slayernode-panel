@@ -229,7 +229,7 @@ export const NestsEggsManager: React.FC = () => {
             variant="glass"
             size="sm"
             onClick={() => setShowImportModal(true)}
-            leftIcon={<Upload className="w-4 h-4 text-[#00D2FF]" />}
+            leftIcon={<Upload className="w-4 h-4 text-red-500" />}
           >
             Import Egg JSON
           </GlassButton>
@@ -266,7 +266,7 @@ export const NestsEggsManager: React.FC = () => {
 
               <div className="p-3 rounded-xl bg-slate-950/50 border border-white/5 text-xs font-mono text-slate-300 my-2">
                 <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Startup Command:</div>
-                <div className="truncate text-[#00D2FF]">{egg.startup}</div>
+                <div className="truncate text-red-500">{egg.startup}</div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-2">
@@ -282,7 +282,7 @@ export const NestsEggsManager: React.FC = () => {
             <div className="flex items-center justify-between pt-4 border-t border-white/10 mt-4 text-xs">
               <button
                 onClick={() => exportEggJson(egg)}
-                className="text-[#00D2FF] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                className="text-red-500 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" /> Export Egg JSON
               </button>

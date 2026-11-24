@@ -33,58 +33,7 @@ import { GlassInput } from '../ui/GlassInput';
 import { Node, NodeAllocation, Server as ServerType } from '../../types';
 import { useServer } from '../../context/ServerContext';
 
-export const INITIAL_NODES: Node[] = [
-  {
-    id: 1,
-    uuid: 'node-9812-4412-ee98',
-    name: 'Node-01 (Frankfurt Epyc 9654)',
-    description: 'AMD EPYC 9654 96-Core Processor, 256GB DDR5 ECC, 2x 3.84TB NVMe RAID 1',
-    location_id: 1,
-    location_name: 'Frankfurt, Germany (Equinix FR5)',
-    fqdn: 'node1.slayernode.xyz',
-    scheme: 'https',
-    behind_proxy: false,
-    maintenance_mode: false,
-    allow_auto_allocation: true,
-    memory: 262144,
-    memory_overallocate: 0,
-    disk: 3840000,
-    disk_overallocate: 0,
-    upload_size: 500,
-    daemon_listen: 8443,
-    daemon_sftp: 2202,
-    daemon_base: '/var/lib/slayerwings/volumes',
-    servers_count: 2,
-    allocations_count: 6,
-    is_online: true,
-    daemon_version: 'v1.0.0-slayerwings',
-  },
-  {
-    id: 2,
-    uuid: 'node-7714-9912-bb12',
-    name: 'Node-02 (Helsinki Ryzen 9 7950X3D)',
-    description: 'AMD Ryzen 9 7950X3D 16-Core 5.7GHz, 128GB DDR5, 2x 2TB Gen4 NVMe',
-    location_id: 2,
-    location_name: 'Helsinki, Finland (Hetzner FSN1)',
-    fqdn: 'node2.slayernode.xyz',
-    scheme: 'https',
-    behind_proxy: false,
-    maintenance_mode: false,
-    allow_auto_allocation: true,
-    memory: 131072,
-    memory_overallocate: 0,
-    disk: 2048000,
-    disk_overallocate: 0,
-    upload_size: 500,
-    daemon_listen: 8443,
-    daemon_sftp: 2202,
-    daemon_base: '/var/lib/slayerwings/volumes',
-    servers_count: 1,
-    allocations_count: 3,
-    is_online: true,
-    daemon_version: 'v1.0.0-slayerwings',
-  },
-];
+export const INITIAL_NODES: Node[] = [];
 
 interface NodesManagerProps {
   onNavigateServer?: (serverId: string) => void;
@@ -130,6 +79,25 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
   const [vpsFqdn, setVpsFqdn] = useState('');
   const [vpsMemory, setVpsMemory] = useState('65536');
   const [vpsDisk, setVpsDisk] = useState('1024000');
+  const [vpsError, setVpsError] = useState<string | null>(null);
+  const [allocError, setAllocError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchNodes = async () => {
+      try {
+        const res = await fetch('/api/application/nodes');
+        if (res.ok) {
+          const json = await res.json();
+          if (Array.isArray(json.data)) {
+            setNodes(json.data.map((d: any) => d.attributes || d));
+          }
+        }
+      } catch (err) {
+        console.error('Failed fetching nodes:', err);
+      }
+    };
+    fetchNodes();
+  }, []);
 
   // When a node is selected, populate all settings fields & load allocations
   useEffect(() => {
@@ -159,21 +127,15 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
       const res = await fetch(`/api/application/nodes/${nodeId}/allocations`);
       if (res.ok) {
         const json = await res.json();
-        setNodeAllocations(json.data.map((d: any) => d.attributes));
-        return;
+        if (Array.isArray(json.data)) {
+          setNodeAllocations(json.data.map((d: any) => d.attributes || d));
+          return;
+        }
       }
     } catch (e) {
       // Fallback
     }
-    // Default allocations
-    setNodeAllocations([
-      { id: 101, node_id: nodeId, ip: selectedNode?.fqdn || '194.164.72.12', port: 25565, alias: 'play.slayercraft.net', server_id: 1, server_name: 'SlayerCraft Network — Survival SMP', is_default: true },
-      { id: 102, node_id: nodeId, ip: selectedNode?.fqdn || '194.164.72.12', port: 8100, alias: 'map.slayercraft.net', server_id: 1, server_name: 'SlayerCraft Network — Survival SMP', is_default: false },
-      { id: 103, node_id: nodeId, ip: selectedNode?.fqdn || '194.164.72.12', port: 24454, alias: '', server_id: 1, server_name: 'SlayerCraft Network — Survival SMP', is_default: false },
-      { id: 104, node_id: nodeId, ip: selectedNode?.fqdn || '194.164.72.12', port: 25577, alias: 'proxy.slayercraft.net', server_id: 2, server_name: 'Velocity Proxy — Core Gateway', is_default: true },
-      { id: 105, node_id: nodeId, ip: selectedNode?.fqdn || '194.164.72.12', port: 25566, alias: '', server_id: null, is_default: false },
-      { id: 106, node_id: nodeId, ip: selectedNode?.fqdn || '194.164.72.12', port: 25567, alias: '', server_id: null, is_default: false },
-    ]);
+    setNodeAllocations([]);
   };
 
   const handleSaveNodeSettings = async () => {
@@ -214,7 +176,16 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
 
   const handleAddAllocations = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedNode || !allocIp.trim() || !allocPorts.trim()) return;
+    if (!selectedNode) return;
+    if (!allocIp.trim()) {
+      setAllocError('IP address is required.');
+      return;
+    }
+    if (!allocPorts.trim()) {
+      setAllocError('Port range (e.g. 25565-25575) is required.');
+      return;
+    }
+    setAllocError(null);
 
     try {
       const res = await fetch(`/api/application/nodes/${selectedNode.id}/allocations`, {
@@ -226,8 +197,13 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
         loadAllocations(selectedNode.id);
         setAllocPorts('');
         setAllocAlias('');
+      } else {
+        const d = await res.json();
+        setAllocError(d.error || 'Failed adding allocations.');
       }
-    } catch {}
+    } catch {
+      setAllocError('Network error adding allocations.');
+    }
   };
 
   const handleDeleteAllocation = async (allocId: number) => {
@@ -336,7 +312,7 @@ docker:
               onClick={() => testPingVPS(selectedNode.id)}
               className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 transition-colors flex items-center gap-1.5 cursor-pointer border border-white/10"
             >
-              <Wifi className="w-3.5 h-3.5 text-[#00D2FF]" />
+              <Wifi className="w-3.5 h-3.5 text-red-500" />
               {pingStatus[selectedNode.id] === 'testing' ? 'Testing...' : pingStatus[selectedNode.id] === 'online' ? 'Ping: 1.1ms (OK)' : 'Ping Daemon'}
             </button>
           </div>
@@ -356,7 +332,7 @@ docker:
               onClick={() => setNodeTab(tab.id as any)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition-all shrink-0 cursor-pointer ${
                 nodeTab === tab.id
-                  ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40 shadow-xs'
+                  ? 'bg-red-600/20 text-red-500 border border-red-600/40 shadow-xs'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
@@ -378,7 +354,7 @@ docker:
                   16,384 <span className="text-xs font-normal text-slate-400">/ {selectedNode.memory.toLocaleString()} MiB</span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden mt-1">
-                  <div className="h-full bg-[#00D2FF] rounded-full" style={{ width: '6.2%' }} />
+                  <div className="h-full bg-red-600 rounded-full" style={{ width: '6.2%' }} />
                 </div>
                 <span className="text-[11px] text-slate-400">6.2% of node memory assigned</span>
               </GlassCard>
@@ -408,7 +384,7 @@ docker:
 
             <GlassCard className="p-5 flex flex-col gap-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-[#00D2FF]" /> Physical Host Hardware & Daemon Telemetry
+                <Cpu className="w-4 h-4 text-red-500" /> Physical Host Hardware & Daemon Telemetry
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
                 <div className="flex justify-between p-3 rounded-xl bg-slate-900/60 border border-white/5">
@@ -417,7 +393,7 @@ docker:
                 </div>
                 <div className="flex justify-between p-3 rounded-xl bg-slate-900/60 border border-white/5">
                   <span className="text-slate-400 font-sans">Daemon Engine:</span>
-                  <span className="text-[#00D2FF]">Wings {selectedNode.daemon_version}</span>
+                  <span className="text-red-500">Wings {selectedNode.daemon_version}</span>
                 </div>
                 <div className="flex justify-between p-3 rounded-xl bg-slate-900/60 border border-white/5">
                   <span className="text-slate-400 font-sans">Docker Daemon Runtime:</span>
@@ -455,7 +431,7 @@ docker:
                     className="glass-input w-full px-3 py-2 text-xs font-mono"
                   />
                   <span className="text-[11px] text-slate-400 block mt-1">
-                    Character limits: <code className="text-[#00D2FF]">a-zA-Z0-9_.-</code> and <code className="text-[#00D2FF]">[Space]</code> (min 1, max 100 characters).
+                    Character limits: <code className="text-red-500">a-zA-Z0-9_.-</code> and <code className="text-red-500">[Space]</code> (min 1, max 100 characters).
                   </span>
                 </div>
 
@@ -498,7 +474,7 @@ docker:
                         name="autoAlloc"
                         checked={editAllowAutoAlloc === true}
                         onChange={() => setEditAllowAutoAlloc(true)}
-                        className="accent-[#00D2FF]"
+                        className="accent-red-600"
                       />
                       <span>Yes</span>
                     </label>
@@ -508,7 +484,7 @@ docker:
                         name="autoAlloc"
                         checked={editAllowAutoAlloc === false}
                         onChange={() => setEditAllowAutoAlloc(false)}
-                        className="accent-[#00D2FF]"
+                        className="accent-red-600"
                       />
                       <span>No</span>
                     </label>
@@ -526,7 +502,7 @@ docker:
                     className="glass-input w-full px-3 py-2 text-xs font-mono"
                   />
                   <span className="text-[11px] text-slate-400 block mt-1 leading-relaxed">
-                    Please enter domain name (e.g. <code className="text-[#00D2FF]">node.example.com</code>) to be used for connecting to the daemon. An IP address may only be used if you are not using SSL for this node. <a href="https://slayernode.xyz" target="_blank" rel="noreferrer" className="text-[#00D2FF] hover:underline">Why?</a>
+                    Please enter domain name (e.g. <code className="text-red-500">node.example.com</code>) to be used for connecting to the daemon. An IP address may only be used if you are not using SSL for this node. <a href="https://slayernode.xyz" target="_blank" rel="noreferrer" className="text-red-500 hover:underline">Why?</a>
                   </span>
                 </div>
 
@@ -542,7 +518,7 @@ docker:
                         name="scheme"
                         checked={editScheme === 'https'}
                         onChange={() => setEditScheme('https')}
-                        className="accent-[#00D2FF]"
+                        className="accent-red-600"
                       />
                       <span>Use SSL Connection</span>
                     </label>
@@ -552,7 +528,7 @@ docker:
                         name="scheme"
                         checked={editScheme === 'http'}
                         onChange={() => setEditScheme('http')}
-                        className="accent-[#00D2FF]"
+                        className="accent-red-600"
                       />
                       <span>Use HTTP Connection</span>
                     </label>
@@ -574,7 +550,7 @@ docker:
                         name="proxy"
                         checked={editBehindProxy === false}
                         onChange={() => setEditBehindProxy(false)}
-                        className="accent-[#00D2FF]"
+                        className="accent-red-600"
                       />
                       <span>Not Behind Proxy</span>
                     </label>
@@ -584,7 +560,7 @@ docker:
                         name="proxy"
                         checked={editBehindProxy === true}
                         onChange={() => setEditBehindProxy(true)}
-                        className="accent-[#00D2FF]"
+                        className="accent-red-600"
                       />
                       <span>Behind Proxy</span>
                     </label>
@@ -606,7 +582,7 @@ docker:
                         name="maintenance"
                         checked={editMaintenanceMode === false}
                         onChange={() => setEditMaintenanceMode(false)}
-                        className="accent-[#00D2FF]"
+                        className="accent-red-600"
                       />
                       <span>Disabled</span>
                     </label>
@@ -616,7 +592,7 @@ docker:
                         name="maintenance"
                         checked={editMaintenanceMode === true}
                         onChange={() => setEditMaintenanceMode(true)}
-                        className="accent-[#00D2FF]"
+                        className="accent-red-600"
                       />
                       <span>Enabled</span>
                     </label>
@@ -765,7 +741,7 @@ docker:
                     type="checkbox"
                     checked={resetMasterKey}
                     onChange={e => setResetMasterKey(e.target.checked)}
-                    className="rounded border-white/20 bg-slate-900 text-[#00D2FF]"
+                    className="rounded border-white/20 bg-slate-900 text-red-500"
                   />
                   <span>Reset Daemon Master Key</span>
                 </label>
@@ -796,7 +772,7 @@ docker:
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Terminal className="w-4 h-4 text-[#00D2FF]" /> Auto-Deploy Command (1-Click)
+                    <Terminal className="w-4 h-4 text-red-500" /> Auto-Deploy Command (1-Click)
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5">
                     Run this single command on your target VPS terminal to automatically authenticate and provision Wings.
@@ -812,7 +788,7 @@ docker:
                 </GlassButton>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-950 font-mono text-xs text-[#00D2FF] select-all border border-white/5 break-all">
+              <div className="p-3.5 rounded-xl bg-slate-950 font-mono text-xs text-red-500 select-all border border-white/5 break-all">
                 {generateAutoDeployCommand(selectedNode)}
               </div>
             </GlassCard>
@@ -821,7 +797,7 @@ docker:
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <FileCode className="w-4 h-4 text-[#00D2FF]" /> Daemon Configuration (<code className="text-xs text-sky-300">/etc/slayerwings/config.yml</code>)
+                    <FileCode className="w-4 h-4 text-red-500" /> Daemon Configuration (<code className="text-xs text-sky-300">/etc/slayerwings/config.yml</code>)
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5">
                     Alternatively, place this configuration directly into <code className="text-slate-300">/etc/slayerwings/config.yml</code> on your remote server.
@@ -855,7 +831,7 @@ docker:
                 </div>
               </div>
 
-              <pre className="p-4 rounded-xl bg-slate-950 font-mono text-xs text-slate-300 overflow-x-auto max-h-96 border border-white/5 leading-relaxed selection:bg-[#00D2FF]/30">
+              <pre className="p-4 rounded-xl bg-slate-950 font-mono text-xs text-slate-300 overflow-x-auto max-h-96 border border-white/5 leading-relaxed selection:bg-red-600/30">
                 {generateWingsConfigYaml(selectedNode)}
               </pre>
             </GlassCard>
@@ -870,8 +846,16 @@ docker:
             {/* Add Allocation Form */}
             <GlassCard className="p-5 flex flex-col gap-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Plus className="w-4 h-4 text-[#00D2FF]" /> Assign New IP Allocations & Port Ranges
+                <Plus className="w-4 h-4 text-red-500" /> Assign New IP Allocations & Port Ranges
               </h3>
+
+              {allocError && (
+                <div className="p-3 rounded-lg bg-red-950/40 border border-red-600/40 text-red-500 font-bold text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                  <span>{allocError}</span>
+                </div>
+              )}
+
               <form onSubmit={handleAddAllocations} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
                 <div>
                   <GlassInput
@@ -919,7 +903,7 @@ docker:
                       key={f}
                       onClick={() => setAllocFilter(f)}
                       className={`px-2.5 py-1 rounded-lg capitalize cursor-pointer transition-colors ${
-                        allocFilter === f ? 'bg-[#00D2FF]/20 text-[#00D2FF] font-semibold' : 'text-slate-400 hover:text-white'
+                        allocFilter === f ? 'bg-red-600/20 text-red-500 font-semibold' : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       {f}
@@ -948,7 +932,7 @@ docker:
                     .map(a => (
                       <tr key={a.id} className="hover:bg-white/5 transition-colors">
                         <td className="p-3 font-mono text-slate-200">{a.ip}</td>
-                        <td className="p-3 font-mono text-[#00D2FF] font-bold">{a.port}</td>
+                        <td className="p-3 font-mono text-red-500 font-bold">{a.port}</td>
                         <td className="p-3 text-slate-400 font-mono hidden sm:table-cell">{a.alias || '—'}</td>
                         <td className="p-3">
                           {a.server_id ? (
@@ -976,6 +960,14 @@ docker:
                     ))}
                 </tbody>
               </table>
+
+              {nodeAllocations.length === 0 && (
+                <div className="p-8 text-center text-slate-400">
+                  <Network className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                  <p className="font-semibold text-white">No port allocations assigned to this node.</p>
+                  <p className="text-xs text-slate-500 mt-1">Use the form above to assign IP addresses and port ranges for game servers.</p>
+                </div>
+              )}
             </GlassCard>
           </div>
         )}
@@ -1015,7 +1007,7 @@ docker:
                         <span className="font-mono text-[10px] text-slate-400">{s.identifier}</span>
                       </td>
                       <td className="p-3 text-slate-300 hidden sm:table-cell">@{s.owner_username}</td>
-                      <td className="p-3 font-mono text-[#00D2FF]">{s.allocation.ip}:{s.allocation.port}</td>
+                      <td className="p-3 font-mono text-red-500">{s.allocation.ip}:{s.allocation.port}</td>
                       <td className="p-3 text-slate-300 font-mono hidden md:table-cell">
                         {s.limits.memory} MB / {s.limits.cpu}%
                       </td>
@@ -1052,7 +1044,7 @@ docker:
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <HardDrive className="w-5 h-5 text-[#00D2FF]" /> Infrastructure Nodes & External VPS Daemons
+            <HardDrive className="w-5 h-5 text-red-500" /> Infrastructure Nodes & External VPS Daemons
           </h2>
           <p className="text-xs text-slate-400 mt-1">
             Click on any node to configure Wings daemon parameters, settings, allocations, and servers.
@@ -1070,85 +1062,108 @@ docker:
       </div>
 
       {/* Nodes List */}
-      <div className="flex flex-col gap-4">
-        {nodes.map(node => {
-          const ping = pingStatus[node.id];
+      {nodes.length === 0 ? (
+        <div className="p-12 rounded-lg bg-[#181A20] border border-white/10 text-center flex flex-col items-center justify-center">
+          <div className="p-3.5 rounded-lg bg-red-600/10 text-red-500 mb-3 border border-red-600/20">
+            <HardDrive className="w-8 h-8" />
+          </div>
+          <h3 className="text-base font-bold text-white mb-1">No Hypervisor Nodes Configured</h3>
+          <p className="text-xs text-slate-400 max-w-md mb-5">
+            You don't have any SlayerWings nodes configured yet. Click the button below to add your first Linux VPS node and generate the daemon configuration.
+          </p>
+          <GlassButton
+            variant="accent"
+            size="md"
+            onClick={() => {
+              setVpsError(null);
+              setShowDeployWizard(true);
+            }}
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
+            Add External VPS Node
+          </GlassButton>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {nodes.map(node => {
+            const ping = pingStatus[node.id];
 
-          return (
-            <GlassCard
-              key={node.id}
-              className="p-5 flex flex-col gap-4 hover:border-[#00D2FF]/40 transition-all cursor-pointer group"
-              onClick={() => {
-                setSelectedNode(node);
-                setNodeTab('settings');
-              }}
-            >
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-[#00D2FF] group-hover:scale-105 transition-transform">
-                    <HardDrive className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-bold text-white group-hover:text-[#00D2FF] transition-colors">
-                        {node.name}
-                      </h3>
-                      <GlassBadge status={node.is_online ? 'running' : 'offline'}>
-                        {node.is_online ? 'CONNECTED' : 'OFFLINE'}
-                      </GlassBadge>
+            return (
+              <GlassCard
+                key={node.id}
+                className="p-5 flex flex-col gap-4 hover:border-red-600/40 transition-all cursor-pointer group"
+                onClick={() => {
+                  setSelectedNode(node);
+                  setNodeTab('settings');
+                }}
+              >
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-red-500 group-hover:scale-105 transition-transform">
+                      <HardDrive className="w-6 h-6" />
                     </div>
-                    <p className="text-xs text-slate-400 font-mono mt-0.5">
-                      {node.scheme}://{node.fqdn}:{node.daemon_listen} • SFTP Port: {node.daemon_sftp}
-                    </p>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-bold text-white group-hover:text-red-500 transition-colors">
+                          {node.name}
+                        </h3>
+                        <GlassBadge status={node.is_online ? 'running' : 'offline'}>
+                          {node.is_online ? 'CONNECTED' : 'OFFLINE'}
+                        </GlassBadge>
+                      </div>
+                      <p className="text-xs text-slate-400 font-mono mt-0.5">
+                        {node.scheme}://{node.fqdn}:{node.daemon_listen} • SFTP Port: {node.daemon_sftp}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={() => testPingVPS(node.id)}
+                      className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 transition-colors flex items-center gap-1.5 cursor-pointer border border-white/10"
+                    >
+                      <Wifi className="w-3.5 h-3.5 text-red-500" />
+                      {ping === 'testing' ? 'Testing...' : ping === 'online' ? 'Ping: 1.2ms (OK)' : 'Ping VPS'}
+                    </button>
+
+                    <GlassButton
+                      variant="glass"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedNode(node);
+                        setNodeTab('settings');
+                      }}
+                      leftIcon={<Settings className="w-3.5 h-3.5 text-red-500" />}
+                    >
+                      Node Settings
+                    </GlassButton>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
-                  <button
-                    onClick={() => testPingVPS(node.id)}
-                    className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 transition-colors flex items-center gap-1.5 cursor-pointer border border-white/10"
-                  >
-                    <Wifi className="w-3.5 h-3.5 text-[#00D2FF]" />
-                    {ping === 'testing' ? 'Testing...' : ping === 'online' ? 'Ping: 1.2ms (OK)' : 'Ping VPS'}
-                  </button>
-
-                  <GlassButton
-                    variant="glass"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedNode(node);
-                      setNodeTab('settings');
-                    }}
-                    leftIcon={<Settings className="w-3.5 h-3.5 text-[#00D2FF]" />}
-                  >
-                    Node Settings
-                  </GlassButton>
+                {/* Hardware & Capacity Badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/5">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Memory Capacity</span>
+                    <span className="font-mono text-white font-semibold">{(node.memory / 1024).toFixed(0)} GB DDR5</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/5">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">NVMe Disk Capacity</span>
+                    <span className="font-mono text-white font-semibold">{(node.disk / 1024).toFixed(0)} GB NVMe</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/5">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Hosted Servers</span>
+                    <span className="font-mono text-white font-semibold">{node.servers_count} Containers</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/5">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Allocations</span>
+                    <span className="font-mono text-red-500 font-semibold">{node.allocations_count} Ports Configured</span>
+                  </div>
                 </div>
-              </div>
-
-              {/* Hardware & Capacity Badges */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                <div className="p-3 rounded-xl bg-slate-900/60 border border-white/5">
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Memory Capacity</span>
-                  <span className="font-mono text-white font-semibold">{(node.memory / 1024).toFixed(0)} GB DDR5</span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-900/60 border border-white/5">
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">NVMe Disk Capacity</span>
-                  <span className="font-mono text-white font-semibold">{(node.disk / 1024).toFixed(0)} GB NVMe</span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-900/60 border border-white/5">
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Hosted Servers</span>
-                  <span className="font-mono text-white font-semibold">{node.servers_count} Containers</span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-900/60 border border-white/5">
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Allocations</span>
-                  <span className="font-mono text-[#00D2FF] font-semibold">{node.allocations_count} Ports Configured</span>
-                </div>
-              </div>
-            </GlassCard>
-          );
-        })}
-      </div>
+              </GlassCard>
+            );
+          })}
+        </div>
+      )}
 
       {/* Deploy External VPS Wizard Modal */}
       <GlassModal
@@ -1159,6 +1174,13 @@ docker:
         maxWidth="lg"
       >
         <div className="flex flex-col gap-4 py-2">
+          {vpsError && (
+            <div className="p-3 rounded-lg bg-red-950/40 border border-red-600/40 text-red-500 font-bold text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+              <span>{vpsError}</span>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <GlassInput
               label="Node Display Name"
@@ -1201,7 +1223,16 @@ docker:
               variant="accent"
               size="sm"
               onClick={async () => {
-                if (!vpsName.trim() || !vpsFqdn.trim()) return;
+                if (!vpsName.trim()) {
+                  setVpsError('Node display name is required.');
+                  return;
+                }
+                if (!vpsFqdn.trim()) {
+                  setVpsError('Fully Qualified Domain Name or IP is required.');
+                  return;
+                }
+                setVpsError(null);
+
                 const newNode: Node = {
                   id: Date.now(),
                   uuid: crypto.randomUUID(),
@@ -1223,7 +1254,7 @@ docker:
                   daemon_sftp: 2202,
                   daemon_base: '/var/lib/slayerwings/volumes',
                   servers_count: 0,
-                  allocations_count: 10,
+                  allocations_count: 0,
                   is_online: true,
                   daemon_version: 'v1.0.0-slayerwings',
                 };

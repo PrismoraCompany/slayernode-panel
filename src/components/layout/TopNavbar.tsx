@@ -67,7 +67,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                     : 'text-slate-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                <Layers className="w-3.5 h-3.5 text-[#00D2FF]" />
+                <Layers className="w-3.5 h-3.5 text-red-500" />
                 Servers
               </button>
 
@@ -79,13 +79,13 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                     : 'text-slate-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                <Terminal className="w-3.5 h-3.5 text-[#00D2FF]" />
+                <Terminal className="w-3.5 h-3.5 text-red-500" />
                 Console
               </button>
             </>
           ) : (
             <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1 rounded-full border border-white/15">
-              <Shield className="w-3.5 h-3.5 text-[#00D2FF]" />
+              <Shield className="w-3.5 h-3.5 text-red-500" />
               <span className="text-xs font-bold text-slate-200 tracking-wide uppercase">
                 Admin Area
               </span>
@@ -114,7 +114,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               variant={isAdminView ? 'accent' : 'glass'}
               size="sm"
               onClick={onToggleAdminView}
-              leftIcon={isAdminView ? <Layers className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5 text-[#00D2FF]" />}
+              leftIcon={isAdminView ? <Layers className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5 text-red-500" />}
             >
               {isAdminView ? 'Client Area' : 'Admin Panel'}
             </GlassButton>
@@ -159,7 +159,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                       }}
                       className="w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-slate-200 hover:bg-white/10 transition-colors flex items-center gap-2 cursor-pointer"
                     >
-                      <Palette className="w-3.5 h-3.5 text-[#00D2FF]" />
+                      <Palette className="w-3.5 h-3.5 text-red-500" />
                       Theme & Wallpaper
                     </button>
                   )}

@@ -50,21 +50,48 @@ export const AppearanceStudio: React.FC = () => {
   } = useTheme();
 
   const [activeSection, setActiveSection] = useState<'colors' | 'layout' | 'buttons' | 'auth' | 'branding' | 'blueprint' | 'addons'>('colors');
-  const [blueprintExtensions, setBlueprintExtensions] = useState<BlueprintExtension[]>([]);
+  const [blueprintExtensions, setBlueprintExtensions] = useState<BlueprintExtension[]>([
+    {
+      id: 'slayernode-theme',
+      name: 'SlayerNode Liquid Theme Engine',
+      version: '1.0.0',
+      author: 'SlayerNode',
+      description: 'Official Blackish-Gray & Red customization engine.',
+      target: 'v1.0.0',
+      icon: 'Palette',
+      enabled: true,
+      installed_at: '2026-11-20',
+    },
+    {
+      id: 'player-manager',
+      name: 'Player Manager Addon',
+      version: '1.0.0',
+      author: 'SlayerNode',
+      description: 'Live player controls, avatars, and gamemode switches.',
+      target: 'v1.0.0',
+      icon: 'Users',
+      enabled: true,
+      installed_at: '2026-11-20',
+    },
+  ]);
   const [uploadingBlueprint, setUploadingBlueprint] = useState(false);
   const [blueprintNotice, setBlueprintNotice] = useState<string | null>(null);
 
   React.useEffect(() => {
+    let isMounted = true;
     const loadBlueprint = async () => {
       try {
         const res = await fetch('/api/blueprint/extensions');
         if (res.ok) {
           const d = await res.json();
-          setBlueprintExtensions(d.extensions);
+          if (isMounted && Array.isArray(d?.extensions)) {
+            setBlueprintExtensions(d.extensions);
+          }
         }
       } catch {}
     };
     loadBlueprint();
+    return () => { isMounted = false; };
   }, []);
 
   const toggleBlueprintExtension = async (id: string, current: boolean) => {
@@ -593,7 +620,7 @@ export const AppearanceStudio: React.FC = () => {
                         onClick={() => updatePreview({ auth_background_type: bg.id as any })}
                         className={`p-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                           previewTheme.auth_background_type === bg.id
-                            ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40'
+                            ? 'bg-red-600/20 text-red-500 border border-red-600/40'
                             : 'bg-white/5 text-slate-400 hover:text-white'
                         }`}
                       >
@@ -607,9 +634,9 @@ export const AppearanceStudio: React.FC = () => {
                 <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/10 flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5 text-[#00D2FF]" /> Login Background Wallpaper
+                      <ImageIcon className="w-3.5 h-3.5 text-red-500" /> Login Background Wallpaper
                     </label>
-                    <label className="text-[11px] font-semibold text-[#00D2FF] hover:underline cursor-pointer flex items-center gap-1">
+                    <label className="text-[11px] font-semibold text-red-500 hover:underline cursor-pointer flex items-center gap-1">
                       <Upload className="w-3 h-3" /> Upload File
                       <input
                         type="file"
@@ -641,7 +668,7 @@ export const AppearanceStudio: React.FC = () => {
                     <div>
                       <div className="flex justify-between text-[11px] mb-1">
                         <span className="text-slate-300 font-semibold">Overlay Darkness</span>
-                        <span className="font-mono text-[#00D2FF]">{previewTheme.auth_overlay_darkness}%</span>
+                        <span className="font-mono text-red-500">{previewTheme.auth_overlay_darkness}%</span>
                       </div>
                       <input
                         type="range"
@@ -649,13 +676,13 @@ export const AppearanceStudio: React.FC = () => {
                         max={90}
                         value={previewTheme.auth_overlay_darkness}
                         onChange={e => updatePreview({ auth_overlay_darkness: parseInt(e.target.value) })}
-                        className="w-full accent-[#00D2FF] cursor-pointer"
+                        className="w-full accent-red-600 cursor-pointer"
                       />
                     </div>
                     <div>
                       <div className="flex justify-between text-[11px] mb-1">
                         <span className="text-slate-300 font-semibold">Wallpaper Blur</span>
-                        <span className="font-mono text-[#00D2FF]">{previewTheme.auth_overlay_blur}px</span>
+                        <span className="font-mono text-red-500">{previewTheme.auth_overlay_blur}px</span>
                       </div>
                       <input
                         type="range"
@@ -663,7 +690,7 @@ export const AppearanceStudio: React.FC = () => {
                         max={24}
                         value={previewTheme.auth_overlay_blur}
                         onChange={e => updatePreview({ auth_overlay_blur: parseInt(e.target.value) })}
-                        className="w-full accent-[#00D2FF] cursor-pointer"
+                        className="w-full accent-red-600 cursor-pointer"
                       />
                     </div>
                   </div>
@@ -682,7 +709,7 @@ export const AppearanceStudio: React.FC = () => {
                         onClick={() => updatePreview({ auth_card_position: pos.id as any })}
                         className={`p-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                           previewTheme.auth_card_position === pos.id
-                            ? 'bg-[#00D2FF]/20 text-[#00D2FF] border border-[#00D2FF]/40'
+                            ? 'bg-red-600/20 text-red-500 border border-red-600/40'
                             : 'bg-white/5 text-slate-400 hover:text-white'
                         }`}
                       >
@@ -732,9 +759,9 @@ export const AppearanceStudio: React.FC = () => {
                 <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/10 flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5 text-[#00D2FF]" /> Official Brand Logo
+                      <ImageIcon className="w-3.5 h-3.5 text-red-500" /> Official Brand Logo
                     </label>
-                    <label className="text-[11px] font-semibold text-[#00D2FF] hover:underline cursor-pointer flex items-center gap-1">
+                    <label className="text-[11px] font-semibold text-red-500 hover:underline cursor-pointer flex items-center gap-1">
                       <Upload className="w-3 h-3" /> Upload Logo
                       <input
                         type="file"
@@ -776,9 +803,9 @@ export const AppearanceStudio: React.FC = () => {
                 <div className="p-3.5 rounded-xl bg-slate-900/60 border border-white/10 flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5 text-[#00D2FF]" /> Dashboard & Home Background Wallpaper
+                      <ImageIcon className="w-3.5 h-3.5 text-red-500" /> Dashboard & Home Background Wallpaper
                     </label>
-                    <label className="text-[11px] font-semibold text-[#00D2FF] hover:underline cursor-pointer flex items-center gap-1">
+                    <label className="text-[11px] font-semibold text-red-500 hover:underline cursor-pointer flex items-center gap-1">
                       <Upload className="w-3 h-3" /> Upload Wallpaper
                       <input
                         type="file"
@@ -818,7 +845,7 @@ export const AppearanceStudio: React.FC = () => {
                     <div>
                       <div className="flex justify-between text-[11px] mb-1">
                         <span className="text-slate-300 font-semibold">Wallpaper Blur</span>
-                        <span className="font-mono text-[#00D2FF]">{previewTheme.wallpaper_blur ?? 0}px</span>
+                        <span className="font-mono text-red-500">{previewTheme.wallpaper_blur ?? 0}px</span>
                       </div>
                       <input
                         type="range"
@@ -826,13 +853,13 @@ export const AppearanceStudio: React.FC = () => {
                         max={30}
                         value={previewTheme.wallpaper_blur ?? 0}
                         onChange={e => updatePreview({ wallpaper_blur: parseInt(e.target.value) })}
-                        className="w-full accent-[#00D2FF] cursor-pointer"
+                        className="w-full accent-red-600 cursor-pointer"
                       />
                     </div>
                     <div>
                       <div className="flex justify-between text-[11px] mb-1">
                         <span className="text-slate-300 font-semibold">Wallpaper Opacity</span>
-                        <span className="font-mono text-[#00D2FF]">{previewTheme.wallpaper_opacity ?? 85}%</span>
+                        <span className="font-mono text-red-500">{previewTheme.wallpaper_opacity ?? 85}%</span>
                       </div>
                       <input
                         type="range"
@@ -840,7 +867,7 @@ export const AppearanceStudio: React.FC = () => {
                         max={100}
                         value={previewTheme.wallpaper_opacity ?? 85}
                         onChange={e => updatePreview({ wallpaper_opacity: parseInt(e.target.value) })}
-                        className="w-full accent-[#00D2FF] cursor-pointer"
+                        className="w-full accent-red-600 cursor-pointer"
                       />
                     </div>
                   </div>
@@ -904,29 +931,29 @@ export const AppearanceStudio: React.FC = () => {
             <GlassCard className="p-5 flex flex-col gap-4">
               <div className="flex items-center justify-between pb-2 border-b border-white/10">
                 <div className="flex items-center gap-2">
-                  <Boxes className="w-4 h-4 text-[#00D2FF]" />
+                  <Boxes className="w-4 h-4 text-[#DC2626]" />
                   <h3 className="text-sm font-bold text-white">Blueprint Framework Engine</h3>
                 </div>
-                <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-400/20">
+                <span className="text-[10px] font-mono font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
                   v2.4.0 ACTIVE
                 </span>
               </div>
 
               {blueprintNotice && (
-                <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2">
-                  <Check className="w-4 h-4 text-emerald-400" />
+                <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs font-semibold flex items-center gap-2">
+                  <Check className="w-4 h-4 text-red-400" />
                   <span>{blueprintNotice}</span>
                 </div>
               )}
 
               {/* Upload Dropzone */}
               <div className="p-4 rounded-xl border border-dashed border-white/20 bg-slate-900/40 text-center flex flex-col items-center justify-center gap-2">
-                <Boxes className="w-8 h-8 text-[#00D2FF] opacity-80" />
+                <Boxes className="w-8 h-8 text-[#DC2626] opacity-80" />
                 <div>
                   <span className="text-xs font-bold text-white block">Install Blueprint Extension</span>
-                  <span className="text-[11px] text-slate-400">Drag and drop or select a <code className="text-[#00D2FF]">.blueprint</code> or <code className="text-[#00D2FF]">.zip</code> package archive</span>
+                  <span className="text-[11px] text-slate-400">Drag and drop or select a <code className="text-[#DC2626]">.blueprint</code> or <code className="text-[#DC2626]">.zip</code> package archive</span>
                 </div>
-                <label className="mt-1 px-3 py-1.5 rounded-lg bg-[#00D2FF] hover:bg-[#26dcff] text-[#090D16] text-xs font-bold cursor-pointer transition-colors">
+                <label className="mt-1 px-3 py-1.5 rounded bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold cursor-pointer transition-colors">
                   {uploadingBlueprint ? 'Verifying Package...' : 'Select Extension File'}
                   <input
                     type="file"
@@ -940,25 +967,27 @@ export const AppearanceStudio: React.FC = () => {
               {/* Installed Extensions List */}
               <div className="flex flex-col gap-2.5">
                 <span className="text-xs font-bold text-slate-300">
-                  Installed Extensions ({blueprintExtensions.length})
+                  Installed Extensions ({(blueprintExtensions || []).length})
                 </span>
 
-                {blueprintExtensions.map(ext => (
+                {(blueprintExtensions || []).map(ext => (
                   <div
                     key={ext.id}
-                    className="p-3.5 rounded-xl bg-slate-900/60 border border-white/10 flex flex-col gap-2"
+                    className="p-3.5 rounded-xl bg-[#181A20] border border-white/10 flex flex-col gap-2"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Package className="w-4 h-4 text-[#00D2FF]" />
+                        <Package className="w-4 h-4 text-[#DC2626]" />
                         <span className="text-xs font-bold text-white">{ext.name}</span>
                         <span className="text-[10px] font-mono text-slate-400 bg-white/5 px-1.5 py-0.2 rounded">
                           v{ext.version}
                         </span>
                       </div>
-                      <GlassBadge status={ext.enabled ? 'running' : 'default'}>
+                      <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                        ext.enabled ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-slate-800 text-slate-400 border-white/10'
+                      }`}>
                         {ext.enabled ? 'ENABLED' : 'DISABLED'}
-                      </GlassBadge>
+                      </span>
                     </div>
 
                     <p className="text-[11px] text-slate-400 leading-relaxed">
@@ -970,7 +999,7 @@ export const AppearanceStudio: React.FC = () => {
                       <button
                         onClick={() => toggleBlueprintExtension(ext.id, ext.enabled)}
                         className={`font-semibold cursor-pointer transition-colors ${
-                          ext.enabled ? 'text-amber-400 hover:text-amber-300' : 'text-emerald-400 hover:text-emerald-300'
+                          ext.enabled ? 'text-slate-400 hover:text-white' : 'text-red-400 hover:text-red-300'
                         }`}
                       >
                         {ext.enabled ? 'Disable Extension' : 'Enable Extension'}

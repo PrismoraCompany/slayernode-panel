@@ -63,7 +63,7 @@ export const UsersManager: React.FC = () => {
         return;
       }
     } catch {}
-    // Fallback if backend unreachable
+    // Fallback if backend unreachable: Only the 1 protected root admin account
     setUsers([
       {
         id: 1,
@@ -76,18 +76,6 @@ export const UsersManager: React.FC = () => {
         is_admin: true,
         two_factor_enabled: true,
         created_at: '2026-11-01',
-      },
-      {
-        id: 2,
-        uuid: 'd91837c5-32d9-4831-b7aa-95be2e32247c',
-        username: 'alexm',
-        email: 'alex@slayernode.xyz',
-        name_first: 'Alex',
-        name_last: 'Mercer',
-        language: 'en',
-        is_admin: false,
-        two_factor_enabled: false,
-        created_at: '2026-11-15',
       },
     ]);
     setIsLoading(false);
@@ -225,7 +213,7 @@ export const UsersManager: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Users className="w-5 h-5 text-[#00D2FF]" /> User Accounts & RBAC Permissions
+            <Users className="w-5 h-5 text-red-500" /> User Accounts & RBAC Permissions
           </h2>
           <p className="text-xs text-slate-400 mt-1">
             Manage panel users, administrator elevations, and account credentials.
@@ -276,7 +264,7 @@ export const UsersManager: React.FC = () => {
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-white block">{u.name_first} {u.name_last}</span>
                         {isMainAdmin && (
-                          <span className="text-[9px] font-mono font-bold bg-[#00D2FF]/20 text-[#00D2FF] px-1.5 py-0.2 rounded border border-[#00D2FF]/30 flex items-center gap-1">
+                          <span className="text-[9px] font-mono font-bold bg-red-600/20 text-red-500 px-1.5 py-0.5 rounded border border-red-600/30 flex items-center gap-1">
                             <Lock className="w-2.5 h-2.5" /> ROOT
                           </span>
                         )}
@@ -354,8 +342,8 @@ export const UsersManager: React.FC = () => {
       >
         <form onSubmit={handleCreateUser} className="flex flex-col gap-4 py-2">
           {createError && (
-            <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            <div className="p-3 rounded-lg bg-red-950/40 border border-red-600/40 text-red-500 font-bold text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
               <span>{createError}</span>
             </div>
           )}
@@ -442,14 +430,14 @@ export const UsersManager: React.FC = () => {
         {editingUser && (
           <form onSubmit={handleSaveEdit} className="flex flex-col gap-4 py-2">
             {editError && (
-              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <div className="p-3 rounded-lg bg-red-950/40 border border-red-600/40 text-red-500 font-bold text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
                 <span>{editError}</span>
               </div>
             )}
 
             {editingUser.id === 1 && (
-              <div className="p-3 rounded-xl bg-[#00D2FF]/10 border border-[#00D2FF]/25 text-[#00D2FF] text-xs flex items-center gap-2">
+              <div className="p-3 rounded-lg bg-red-600/10 border border-red-600/25 text-red-400 text-xs flex items-center gap-2">
                 <Lock className="w-4 h-4 shrink-0" />
                 <span>Primary Root Administrator account. Root privileges are permanent and cannot be revoked.</span>
               </div>
