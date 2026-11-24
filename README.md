@@ -23,13 +23,18 @@ SlayerNode comes out-of-the-box with **7 production-grade Minecraft Eggs** pre-c
 | **Velocity Proxy** | Next-Gen Minecraft Proxy | `java -Xms512M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC -jar {{SERVER_JARFILE}}` | `ghcr.io/pterodactyl/yolks:java_25` (Default) / `java_21` |
 | **BungeeCord** | Multi-Server Network Proxy | `java -Xms512M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}` | `ghcr.io/pterodactyl/yolks:java_25` (Default) / `java_21` |
 
-### ⚡ Real-Time `server.jar` Dynamic Fetching
+### ⚡ Real-Time `server.jar` Dynamic Fetching & OpenJDK 25 Engine
 When starting a server instance on a SlayerWings node:
-1. **Dynamic Download**: If `server.jar` does not exist on disk, SlayerWings automatically fetches the official release jar directly from PaperMC API, Purpur API, or Mojang official releases.
-2. **Live Console Telemetry**: Emits live byte-stream progress over the interactive WebSocket terminal (`Downloading server.jar: 15.2MB / 45.8MB (33%)`).
-3. **Engine Caching**: Downloaded binaries are verified and cached in `~/.slayerwings/cache` so future instances on that node boot instantly in < 1 second.
-4. **Automated EULA & Properties**: Automatically creates `eula.txt` (`eula=true`) and binds `server.properties` with the container's allocated port and host IP.
-5. **Real OpenJDK 25 Process**: Executes `/usr/bin/java` (OpenJDK 25 Runtime Environment) with piped interactive standard I/O (type `help`, `list`, `say`, or op commands in the terminal).
+1. **Dynamic Multi-Mirror Download**: If `server.jar` does not exist on disk, SlayerWings automatically fetches the official release jar directly using prioritized live mirrors with automatic failover:
+   - **Purpur MC API**: `https://api.purpurmc.org/v2/purpur/1.20.4/latest/download`
+   - **PaperMC v3 Fill API**: `https://fill-data.papermc.io/v1/objects/.../paper-1.20.4-499.jar`
+   - **Mojang Vanilla Piston CDN**: `https://piston-data.mojang.com/v1/objects/.../server.jar`
+   - **Fabric Meta CDN**: `https://meta.fabricmc.net/v2/versions/loader/.../server/jar`
+2. **Zero Dummy Simulator Policy**: Any fallback dummy console runner (`run.js` / simulated stdout) has been permanently eradicated from the daemon engine. If a jar cannot be retrieved, the engine halts with a clear error and strictly refuses to run dummy fake output.
+3. **Live Console Telemetry**: Emits live byte-stream progress over the interactive WebSocket terminal (`Downloading server.jar: 15.2MB / 45.8MB (33%)`).
+4. **Engine Caching**: Downloaded binaries are verified and cached in `/slayerwings/cache` so future instances on that node boot instantly in < 1 second.
+5. **Automated EULA & Properties**: Automatically creates `eula.txt` (`eula=true`) and binds `server.properties` with the container's allocated port and host IP.
+6. **Real OpenJDK 25 Process**: Executes `/usr/bin/java` (OpenJDK 25 Runtime Environment) with real process monitoring (`/proc/<pid>/status`), memory metrics, and piped interactive standard I/O (type `help`, `list`, `say`, `tps`, or op commands in the terminal).
 
 ### 📤 Custom Egg JSON Import
 You can add any custom game egg by importing a standard Pterodactyl v1 / v2 `.json` file:
