@@ -368,10 +368,15 @@ launch_codespaces() {
   log_info "Building production client bundle..."
   npm run build
 
-  log_info "Stopping any previous background processes on ports 3001, 8443, 3000..."
+  log_info "Stopping any previous background processes..."
+  pkill -9 -f "server/index.js" 2>/dev/null || true
+  pkill -9 -f "sandbox-wing/daemon.js" 2>/dev/null || true
+  pkill -9 -f "vite" 2>/dev/null || true
   fuser -k 3001/tcp 2>/dev/null || true
   fuser -k 8443/tcp 2>/dev/null || true
   fuser -k 3000/tcp 2>/dev/null || true
+  fuser -k 2202/tcp 2>/dev/null || true
+  sleep 1
 
   log_info "Starting SlayerNode Backend API on port 3001..."
   node server/index.js &
@@ -404,6 +409,9 @@ if detect_container; then
   echo -e "${C_YELLOW}[NOTICE] Container / Codespaces detected (No systemd overhead).${C_RESET}"
   echo -e "${C_GRAY}Quickstart mode [4] is recommended for Codespaces.${C_RESET}"
   echo ""
+  DEFAULT_CHOICE=4
+else
+  DEFAULT_CHOICE=1
 fi
 
 echo -e "Please select an installation mode:"
@@ -414,8 +422,8 @@ echo -e "  ${C_BOLD_RED}[4]${C_RESET} GitHub Codespaces / Dev Container Launcher
 echo -e "  ${C_BOLD_RED}[0]${C_RESET} Exit"
 echo ""
 
-read -r -p "Enter choice [1-4, default: 1]: " CHOICE
-CHOICE=${CHOICE:-1}
+read -r -p "Enter choice [1-4, default: $DEFAULT_CHOICE]: " CHOICE
+CHOICE=${CHOICE:-$DEFAULT_CHOICE}
 
 case "$CHOICE" in
   1)

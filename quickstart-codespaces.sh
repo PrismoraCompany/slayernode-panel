@@ -25,10 +25,15 @@ echo "2/4 Building production client assets..."
 npm run build
 
 echo "3/4 Launching SlayerNode Backend & SlayerWings Daemon..."
-# Kill any existing background processes on ports 3001, 8443, 3000
+# Aggressively kill any existing background processes on ports 3001, 8443, 3000, 2202
+pkill -9 -f "server/index.js" 2>/dev/null || true
+pkill -9 -f "sandbox-wing/daemon.js" 2>/dev/null || true
+pkill -9 -f "vite" 2>/dev/null || true
 fuser -k 3001/tcp 2>/dev/null || true
 fuser -k 8443/tcp 2>/dev/null || true
 fuser -k 3000/tcp 2>/dev/null || true
+fuser -k 2202/tcp 2>/dev/null || true
+sleep 1
 
 node server/index.js &
 BACKEND_PID=$!

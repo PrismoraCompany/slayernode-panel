@@ -11,7 +11,7 @@
     <meta name="keywords" content="slayernode, slayerwings, game server panel, minecraft hosting, docker game server, liquid glass, server management" />
     <meta name="author" content="SlayerNode (https://slayernode.xyz)" />
     <meta name="robots" content="index, follow" />
-    <meta name="theme-color" content="#090D16" />
+    <meta name="theme-color" content="#111216" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
@@ -19,15 +19,15 @@
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://slayernode.xyz/" />
     <meta property="og:site_name" content="SlayerNode" />
-    <meta property="og:title" content="SlayerNode Panel v1.0.0 — Game Server Management" />
-    <meta property="og:description" content="Production-grade game server management with pure Apple Liquid Glass UI/UX, SlayerWings daemon engine, and external VPS clustering." />
+    <meta property="og:title" content="SlayerNode Panel — Game Server Management" />
+    <meta property="og:description" content="Production-grade game server management powered by the SlayerWings daemon engine." />
     <meta property="og:image" content="/logo.jpg" />
 
     <!-- Twitter Cards -->
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:url" content="https://slayernode.xyz/" />
-    <meta name="twitter:title" content="SlayerNode Panel v1.0.0" />
-    <meta name="twitter:description" content="Next-gen game server control panel. Production SlayerWings integration with SlayerNode Liquid Glass." />
+    <meta name="twitter:title" content="SlayerNode Panel" />
+    <meta name="twitter:description" content="Next-gen game server control panel powered by SlayerWings." />
     <meta name="twitter:image" content="/logo.jpg" />
 
     <!-- Favicon & Icons using uploaded SlayerNode logo -->
@@ -44,7 +44,7 @@
       #initial-loader {
         position: fixed;
         inset: 0;
-        background: #090D16;
+        background: #111216;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -55,21 +55,21 @@
       .loader-logo {
         width: 72px;
         height: 72px;
-        border-radius: 18px;
+        border-radius: 12px;
         object-fit: cover;
-        box-shadow: 0 0 30px rgba(0, 210, 255, 0.4);
-        border: 1px solid rgba(0, 210, 255, 0.5);
+        box-shadow: 0 0 30px rgba(220, 38, 38, 0.4);
+        border: 1px solid rgba(220, 38, 38, 0.5);
         animation: pulseLogo 2s infinite ease-in-out;
       }
       @keyframes pulseLogo {
-        0%, 100% { transform: scale(1); box-shadow: 0 0 25px rgba(0, 210, 255, 0.3); }
-        50% { transform: scale(1.05); box-shadow: 0 0 40px rgba(0, 210, 255, 0.7); }
+        0%, 100% { transform: scale(1); box-shadow: 0 0 25px rgba(220, 38, 38, 0.3); }
+        50% { transform: scale(1.04); box-shadow: 0 0 40px rgba(220, 38, 38, 0.7); }
       }
       .loader-bar {
         width: 140px;
-        height: 3px;
+        height: 4px;
         background: rgba(255, 255, 255, 0.1);
-        border-radius: 9999px;
+        border-radius: 4px;
         overflow: hidden;
         margin-top: 20px;
         position: relative;
@@ -80,9 +80,9 @@
         top: 0;
         left: 0;
         height: 100%;
-        width: 40%;
-        background: #00D2FF;
-        border-radius: 9999px;
+        width: 45%;
+        background: #DC2626;
+        border-radius: 4px;
         animation: barSlide 1.2s infinite ease-in-out;
       }
       @keyframes barSlide {
@@ -91,15 +91,15 @@
       }
     </style>
   </head>
-  <body class="bg-[#090D16] text-slate-100 min-h-screen antialiased selection:bg-[#00D2FF]/25 selection:text-[#00D2FF] overflow-x-hidden">
+  <body class="bg-[#111216] text-[#F3F4F6] min-h-screen antialiased selection:bg-red-600/30 selection:text-white overflow-x-hidden">
     <div id="root">
       <div id="initial-loader">
         <img src="/logo.jpg" alt="SlayerNode Logo" class="loader-logo" />
-        <div style="margin-top: 16px; font-weight: 800; font-size: 15px; color: #FFFFFF; letter-spacing: -0.02em;">
-          SlayerNode Panel <span style="font-size: 11px; font-family: monospace; color: #00D2FF; margin-left: 4px;">v1.0.0</span>
+        <div style="margin-top: 16px; font-weight: 800; font-size: 16px; color: #FFFFFF; letter-spacing: -0.02em;">
+          SlayerNode Control Panel
         </div>
-        <div style="font-size: 11px; color: #64748B; margin-top: 4px;">
-          Initializing Liquid Glass Interface...
+        <div style="font-size: 12px; color: #9CA3AF; margin-top: 4px;">
+          Initializing secure cluster environment...
         </div>
         <div class="loader-bar"></div>
       </div>

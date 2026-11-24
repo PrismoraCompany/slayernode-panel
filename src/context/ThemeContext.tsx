@@ -84,56 +84,56 @@ export const DEFAULT_THEME: ThemeStudioSettings = {
 };
 
 export const PRESET_THEMES: Record<string, Partial<ThemeStudioSettings>> = {
-  'SlayerNode Official': {
-    preset_name: 'SlayerNode Official',
-    accent_primary: '#00D2FF',
-    accent_secondary: '#0084FF',
-    bg_canvas: '#090D16',
-    custom_wallpaper_url: '/wallpapers/slayernode-liquid-mesh.png',
+  'SlayerNode Crimson': {
+    preset_name: 'SlayerNode Crimson',
+    accent_primary: '#DC2626',
+    accent_secondary: '#991B1B',
+    bg_canvas: '#111216',
+    custom_wallpaper_url: '',
     wallpaper_blur: 0,
-    wallpaper_opacity: 85,
-    glass_blur_px: 24,
-    card_opacity_pct: 50,
-    specular_border_opacity_pct: 14,
-    corner_roundness_px: 16,
-    button_shape: 'pill',
-    button_style: 'liquid_glass',
-    navigation_layout: 'floating_top',
-    auth_background_type: 'wallpaper',
-  },
-  'Ultra Frost Clear Glass': {
-    preset_name: 'Ultra Frost Clear Glass',
-    accent_primary: '#00D2FF',
-    accent_secondary: '#38bdf8',
-    bg_canvas: '#06080F',
-    custom_wallpaper_url: '/wallpapers/slayernode-liquid-mesh.png',
-    wallpaper_blur: 4,
-    wallpaper_opacity: 90,
-    glass_blur_px: 28,
-    card_opacity_pct: 40,
-    specular_border_opacity_pct: 22,
-    corner_roundness_px: 18,
-    button_shape: 'pill',
-    button_style: 'liquid_glass',
-    navigation_layout: 'floating_top',
-    auth_background_type: 'wallpaper',
-  },
-  'Midnight Obsidian Glass': {
-    preset_name: 'Midnight Obsidian Glass',
-    accent_primary: '#00D2FF',
-    accent_secondary: '#60a5fa',
-    bg_canvas: '#04060A',
-    custom_wallpaper_url: '/wallpapers/slayernode-liquid-mesh.png',
-    wallpaper_blur: 8,
-    wallpaper_opacity: 70,
-    glass_blur_px: 20,
-    card_opacity_pct: 60,
-    specular_border_opacity_pct: 12,
-    corner_roundness_px: 16,
-    button_shape: 'squircle',
-    button_style: 'liquid_glass',
+    wallpaper_opacity: 100,
+    glass_blur_px: 16,
+    card_opacity_pct: 90,
+    specular_border_opacity_pct: 10,
+    corner_roundness_px: 10,
+    button_shape: 'square',
+    button_style: 'solid_accent',
     navigation_layout: 'collapsible_sidebar',
-    auth_background_type: 'wallpaper',
+    auth_background_type: 'solid',
+  },
+  'Charcoal Stealth': {
+    preset_name: 'Charcoal Stealth',
+    accent_primary: '#EF4444',
+    accent_secondary: '#B91C1C',
+    bg_canvas: '#0D0E12',
+    custom_wallpaper_url: '',
+    wallpaper_blur: 0,
+    wallpaper_opacity: 100,
+    glass_blur_px: 12,
+    card_opacity_pct: 95,
+    specular_border_opacity_pct: 8,
+    corner_roundness_px: 8,
+    button_shape: 'square',
+    button_style: 'solid_accent',
+    navigation_layout: 'collapsible_sidebar',
+    auth_background_type: 'solid',
+  },
+  'Bloodline Red': {
+    preset_name: 'Bloodline Red',
+    accent_primary: '#B91C1C',
+    accent_secondary: '#7F1D1D',
+    bg_canvas: '#15161C',
+    custom_wallpaper_url: '',
+    wallpaper_blur: 0,
+    wallpaper_opacity: 100,
+    glass_blur_px: 16,
+    card_opacity_pct: 90,
+    specular_border_opacity_pct: 12,
+    corner_roundness_px: 10,
+    button_shape: 'square',
+    button_style: 'solid_accent',
+    navigation_layout: 'collapsible_sidebar',
+    auth_background_type: 'solid',
   },
 };
 
@@ -149,12 +149,16 @@ interface ThemeContextType {
   importThemeJson: (jsonString: string) => boolean;
 }
 
+const THEME_STORAGE_KEY = 'slayernode_theme_v2';
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setTheme] = useState<ThemeStudioSettings>(() => {
     try {
-      const saved = localStorage.getItem('slayernode_theme_settings');
+      // Purge any legacy cached theme settings from localStorage
+      localStorage.removeItem('slayernode_theme_settings');
+      localStorage.removeItem('slayer_theme_v1');
+      const saved = localStorage.getItem(THEME_STORAGE_KEY);
       return saved ? { ...DEFAULT_THEME, ...JSON.parse(saved) } : DEFAULT_THEME;
     } catch {
       return DEFAULT_THEME;
@@ -204,14 +208,16 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const saveTheme = () => {
     setTheme(previewTheme);
-    localStorage.setItem('slayernode_theme_settings', JSON.stringify(previewTheme));
+    localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(previewTheme));
     setIsDirty(false);
   };
 
   const resetDefaults = () => {
     setPreviewTheme(DEFAULT_THEME);
     setTheme(DEFAULT_THEME);
+    localStorage.removeItem(THEME_STORAGE_KEY);
     localStorage.removeItem('slayernode_theme_settings');
+    localStorage.removeItem('slayer_theme_v1');
     setIsDirty(false);
   };
 
