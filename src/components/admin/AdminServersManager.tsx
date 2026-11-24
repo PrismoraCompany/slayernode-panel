@@ -1,0 +1,398 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Server,
+  Plus,
+  Play,
+  RotateCcw,
+  Square,
+  Search,
+  Filter,
+  Check,
+  AlertTriangle,
+  HardDrive,
+  Cpu,
+  Layers,
+  ExternalLink,
+  Trash2,
+} from 'lucide-react';
+import { GlassCard } from '../ui/GlassCard';
+import { GlassButton } from '../ui/GlassButton';
+import { GlassModal } from '../ui/GlassModal';
+import { GlassInput } from '../ui/GlassInput';
+import { GlassBadge } from '../ui/GlassBadge';
+import { GlassToggle } from '../ui/GlassToggle';
+import { Server as ServerType, Node, User, Nest, Egg } from '../../types';
+import { useServer } from '../../context/ServerContext';
+
+interface AdminServersManagerProps {
+  onSelectServerDetail: (serverId: string) => void;
+}
+
+export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSelectServerDetail }) => {
+  const { servers, sendPowerAction } = useServer();
+  const [serverList, setServerList] = useState<ServerType[]>(servers);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  // External data for wizard
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [nests, setNests] = useState<Nest[]>([]);
+  const [eggs, setEggs] = useState<Egg[]>([]);
+
+  // Wizard Form State
+  const [serverName, setServerName] = useState('');
+  const [serverDesc, setServerDesc] = useState('');
+  const [selectedOwnerId, setSelectedOwnerId] = useState('1');
+  const [selectedNodeId, setSelectedNodeId] = useState('1');
+  const [selectedNestId, setSelectedNestId] = useState('1');
+  const [selectedEggId, setSelectedEggId] = useState('1');
+  const [memoryMb, setMemoryMb] = useState('4096');
+  const [diskMb, setDiskMb] = useState('20480');
+  const [cpuPct, setCpuPct] = useState('200');
+  const [swapMb, setSwapMb] = useState('512');
+  const [customPort, setCustomPort] = useState('25565');
+  const [startOnDeploy, setStartOnDeploy] = useState(true);
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [deployError, setDeployError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setServerList(servers);
+  }, [servers]);
+
+  useEffect(() => {
+    // Load metadata for wizard
+    const loadWizardData = async () => {
+      try {
+        const [nodesRes, usersRes, nestsRes] = await Promise.all([
+          fetch('/api/application/nodes'),
+          fetch('/api/application/users'),
+          fetch('/api/application/nests'),
+        ]);
+
+        if (nodesRes.ok) {
+          const d = await nodesRes.json();
+          setNodes(d.data.map((x: any) => x.attributes));
+        }
+        if (usersRes.ok) {
+          const d = await usersRes.json();
+          setUsers(d.data.map((x: any) => x.attributes));
+        }
+        if (nestsRes.ok) {
+          const d = await nestsRes.json();
+          setNests(d.data.map((x: any) => x.attributes));
+        }
+      } catch {}
+    };
+
+    loadWizardData();
+  }, []);
+
+  const handleCreateServer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!serverName.trim()) {
+      setDeployError('Server name is required.');
+      return;
+    }
+
+    setIsDeploying(true);
+    setDeployError(null);
+
+    try {
+      const res = await fetch('/api/application/servers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: serverName.trim(),
+          description: serverDesc.trim(),
+          owner_id: parseInt(selectedOwnerId) || 1,
+          node_id: parseInt(selectedNodeId) || 1,
+          egg_id: parseInt(selectedEggId) || 1,
+          nest_id: parseInt(selectedNestId) || 1,
+          memory: parseInt(memoryMb) || 2048,
+          disk: parseInt(diskMb) || 10240,
+          cpu: parseInt(cpuPct) || 100,
+          swap: parseInt(swapMb) || 512,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setDeployError(data.error || 'Failed provisioning server container.');
+        setIsDeploying(false);
+        return;
+      }
+
+      setShowCreateModal(false);
+      setServerName('');
+      setServerDesc('');
+      setActionNotice(`Server "${data.attributes.name}" provisioned successfully on ${data.attributes.node}!`);
+      setTimeout(() => setActionNotice(null), 4000);
+
+      // Auto start if selected
+      if (startOnDeploy) {
+        setTimeout(() => {
+          sendPowerAction('start');
+        }, 500);
+      }
+    } catch (err: any) {
+      setDeployError(err?.message || 'Network error.');
+    } finally {
+      setIsDeploying(false);
+    }
+  };
+
+  const filtered = serverList.filter(s =>
+    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    s.identifier.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    s.owner_username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    s.node.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+            <Server className="w-5 h-5 text-[#00D2FF]" /> Infrastructure Servers & Provisioning
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">
+            Global view of all Docker game containers hosted across your entire Wings node fleet.
+          </p>
+        </div>
+
+        <GlassButton
+          variant="accent"
+          size="sm"
+          onClick={() => setShowCreateModal(true)}
+          leftIcon={<Plus className="w-4 h-4" />}
+        >
+          Create New Server
+        </GlassButton>
+      </div>
+
+      {actionNotice && (
+        <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2">
+          <Check className="w-4 h-4 text-emerald-400" />
+          <span>{actionNotice}</span>
+        </div>
+      )}
+
+      {/* Search Bar */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 max-w-md">
+          <GlassInput
+            placeholder="Search servers by name, uuid, node, or owner..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            leftIcon={<Search className="w-4 h-4 text-slate-400" />}
+          />
+        </div>
+      </div>
+
+      {/* Global Servers Table */}
+      <GlassCard className="overflow-hidden">
+        <table className="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/5 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+              <th className="p-3.5">Server Container</th>
+              <th className="p-3.5 hidden sm:table-cell">Owner</th>
+              <th className="p-3.5 hidden md:table-cell">Node Host</th>
+              <th className="p-3.5">Allocation</th>
+              <th className="p-3.5 hidden lg:table-cell">Limits (RAM / CPU)</th>
+              <th className="p-3.5">Status</th>
+              <th className="p-3.5 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/5">
+            {filtered.map(s => (
+              <tr key={s.id} className="hover:bg-white/5 transition-colors">
+                <td className="p-3.5">
+                  <span className="font-bold text-white block">{s.name}</span>
+                  <span className="font-mono text-slate-400 text-[11px]">{s.identifier}</span>
+                </td>
+
+                <td className="p-3.5 text-slate-300 hidden sm:table-cell">
+                  <span className="font-mono text-xs">@{s.owner_username}</span>
+                </td>
+
+                <td className="p-3.5 text-slate-300 hidden md:table-cell font-mono">
+                  {s.node.split(' ')[0]}
+                </td>
+
+                <td className="p-3.5 font-mono text-[#00D2FF]">
+                  {s.allocation.ip}:{s.allocation.port}
+                </td>
+
+                <td className="p-3.5 font-mono text-slate-300 hidden lg:table-cell">
+                  {(s.limits.memory / 1024).toFixed(1)} GB / {s.limits.cpu}%
+                </td>
+
+                <td className="p-3.5">
+                  <GlassBadge status={s.status}>{s.status.toUpperCase()}</GlassBadge>
+                </td>
+
+                <td className="p-3.5 text-right">
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      onClick={() => onSelectServerDetail(s.id)}
+                      className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-semibold text-[#00D2FF] cursor-pointer border border-white/10"
+                    >
+                      Console
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </GlassCard>
+
+      {/* CREATE SERVER PROVISIONING WIZARD MODAL */}
+      <GlassModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Provision New Game Server Instance"
+        description="Configure Docker container limits, node host, allocation, and game egg"
+        maxWidth="lg"
+      >
+        <form onSubmit={handleCreateServer} className="flex flex-col gap-4 py-2">
+          {deployError && (
+            <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{deployError}</span>
+            </div>
+          )}
+
+          {/* Section 1: Basic Information */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <GlassInput
+              label="Server Display Name"
+              value={serverName}
+              onChange={e => setServerName(e.target.value)}
+              placeholder="e.g. SlayerCraft Survival SMP"
+              required
+            />
+
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">Server Owner</label>
+              <select
+                value={selectedOwnerId}
+                onChange={e => setSelectedOwnerId(e.target.value)}
+                className="glass-input w-full px-3 py-2 text-xs bg-slate-900 text-white cursor-pointer"
+              >
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.name_first} {u.name_last} (@{u.username})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <GlassInput
+            label="Server Description (Optional)"
+            value={serverDesc}
+            onChange={e => setServerDesc(e.target.value)}
+            placeholder="High-performance game instance running on SlayerNode"
+          />
+
+          {/* Section 2: Node & Host Infrastructure */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-white/10">
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">Target Infrastructure Node</label>
+              <select
+                value={selectedNodeId}
+                onChange={e => setSelectedNodeId(e.target.value)}
+                className="glass-input w-full px-3 py-2 text-xs bg-slate-900 text-white cursor-pointer"
+              >
+                {nodes.map(n => (
+                  <option key={n.id} value={n.id}>
+                    {n.name} ({n.fqdn})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">Game Engine / Egg</label>
+              <select
+                value={selectedEggId}
+                onChange={e => setSelectedEggId(e.target.value)}
+                className="glass-input w-full px-3 py-2 text-xs bg-slate-900 text-white cursor-pointer"
+              >
+                <option value="1">Minecraft: Purpur / Paper (Java 21)</option>
+                <option value="2">Minecraft: Velocity Modern Proxy</option>
+                <option value="3">Steam: Rust Dedicated Server</option>
+                <option value="4">Discord: Node.js 22 Bot Worker</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Section 3: Hardware & Container Limits */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-white/10">
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">RAM Limit (MiB)</label>
+              <input
+                type="number"
+                value={memoryMb}
+                onChange={e => setMemoryMb(e.target.value)}
+                className="glass-input w-full px-3 py-2 text-xs font-mono"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">Disk Limit (MiB)</label>
+              <input
+                type="number"
+                value={diskMb}
+                onChange={e => setDiskMb(e.target.value)}
+                className="glass-input w-full px-3 py-2 text-xs font-mono"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">CPU Cores (%)</label>
+              <input
+                type="number"
+                value={cpuPct}
+                onChange={e => setCpuPct(e.target.value)}
+                className="glass-input w-full px-3 py-2 text-xs font-mono"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1">Swap Space (MiB)</label>
+              <input
+                type="number"
+                value={swapMb}
+                onChange={e => setSwapMb(e.target.value)}
+                className="glass-input w-full px-3 py-2 text-xs font-mono"
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-white/10">
+            <GlassToggle
+              label="Boot Container on Deploy"
+              description="Immediately start the server container upon creation"
+              checked={startOnDeploy}
+              onChange={setStartOnDeploy}
+            />
+          </div>
+
+          <div className="pt-2 flex justify-end gap-2">
+            <GlassButton variant="ghost" size="sm" type="button" onClick={() => setShowCreateModal(false)}>
+              Cancel
+            </GlassButton>
+            <GlassButton variant="accent" size="sm" type="submit" isLoading={isDeploying}>
+              Deploy Server Instance
+            </GlassButton>
+          </div>
+        </form>
+      </GlassModal>
+    </div>
+  );
+};

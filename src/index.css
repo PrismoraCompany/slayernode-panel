@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+:root {
+  /* 3 Strict Primary Brand Colors for SlayerNode */
+  --color-primary: #00D2FF;        /* Slayer Cyan */
+  --color-dark: #090D16;           /* Deep Space Navy */
+  --color-surface: rgba(13, 19, 34, 0.50); /* Ultra-Transparent Real Glass */
+  --color-border: rgba(255, 255, 255, 0.12);
+
+  /* Semantic Status Indicators */
+  --status-online: #10B981;
+  --status-starting: #F59E0B;
+  --status-offline: #EF4444;
+
+  /* Glass Physics */
+  --glass-blur: 24px;
+  --card-opacity: 0.50;
+  --specular-opacity: 0.12;
+  --radius-corner: 16px;
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --button-radius: 9999px;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--color-dark);
+  color: #f1f5f9;
+}
+
+/* Authentic Transparent Liquid Glass Primitives */
+.glass-panel {
+  background: var(--color-surface);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-corner);
+  box-shadow: 0 16px 36px -12px rgba(0, 0, 0, 0.65), inset 0 1px 0 0 rgba(255, 255, 255, 0.15);
+}
+
+.glass-card {
+  background: var(--color-surface);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-corner);
+  box-shadow: 0 14px 30px -10px rgba(0, 0, 0, 0.55), inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.22s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: 0 20px 42px -10px rgba(0, 0, 0, 0.75), inset 0 1px 0 0 rgba(255, 255, 255, 0.25);
+}
+
+.glass-input {
+  background: rgba(9, 13, 22, 0.65);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: calc(var(--radius-corner) * 0.65);
+  color: #f8fafc;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+
+.glass-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(0, 210, 255, 0.20), inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.glass-button-pill {
+  border-radius: var(--button-radius);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  color: #f8fafc;
+}
+
+.glass-button-pill:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.30);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.glass-button-pill:active {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.glass-button-accent {
+  border-radius: var(--button-radius);
+  background: #00D2FF;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 4px 18px rgba(0, 210, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  color: #090D16;
+  font-weight: 700;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-button-accent:hover {
+  background: #26dcff;
+  box-shadow: 0 8px 24px rgba(0, 210, 255, 0.50), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+.glass-button-accent:active {
+  background: #00bce6;
+  box-shadow: 0 2px 8px rgba(0, 210, 255, 0.35), inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.25);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.30);
+}
+
+/* Tabular numbers for live metrics */
+.tabular-metrics {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Terminal ANSI Lines */
+.terminal-line {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

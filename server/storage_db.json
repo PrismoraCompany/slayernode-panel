@@ -1,0 +1,588 @@
+{
+  "theme": null,
+  "locations": [
+    {
+      "id": 1,
+      "short": "DE",
+      "long": "Frankfurt, Germany (Equinix FR5)",
+      "nodes_count": 1,
+      "servers_count": 2
+    },
+    {
+      "id": 2,
+      "short": "FI",
+      "long": "Helsinki, Finland (Hetzner FSN1)",
+      "nodes_count": 1,
+      "servers_count": 1
+    },
+    {
+      "id": 3,
+      "short": "IN",
+      "long": "Mumbai, India (CtrlS DC2)",
+      "nodes_count": 0,
+      "servers_count": 0
+    },
+    {
+      "id": 4,
+      "short": "US",
+      "long": "Ashburn, VA (Equinix DC21)",
+      "nodes_count": 0,
+      "servers_count": 0
+    }
+  ],
+  "users": [
+    {
+      "id": 1,
+      "uuid": "c82736b4-21c8-4720-a6ff-84ad1f21136b",
+      "username": "admin",
+      "email": "admin@slayernode.xyz",
+      "name_first": "System",
+      "name_last": "Administrator",
+      "language": "en",
+      "root_admin": true,
+      "two_factor_enabled": true,
+      "created_at": "2026-11-01T00:00:00Z"
+    },
+    {
+      "id": 2,
+      "uuid": "d91837c5-32d9-4831-b7aa-95be2e32247c",
+      "username": "alexm",
+      "email": "alex@slayernode.xyz",
+      "name_first": "Alex",
+      "name_last": "Mercer",
+      "language": "en",
+      "root_admin": false,
+      "two_factor_enabled": false,
+      "created_at": "2026-11-15T08:00:00Z"
+    },
+    {
+      "id": 1795449019304,
+      "uuid": "187d4d78-d6b1-45e5-ba4a-891a8b962e5d",
+      "username": "qa_tester",
+      "email": "qa@slayernode.xyz",
+      "name_first": "QA",
+      "name_last": "Engineer",
+      "language": "en",
+      "root_admin": false,
+      "two_factor_enabled": false,
+      "created_at": "2026-11-23T15:50:19.305Z"
+    }
+  ],
+  "nodes": [
+    {
+      "id": 1,
+      "uuid": "node-9812-4412-ee98",
+      "name": "Node-01 (Frankfurt Epyc 9654)",
+      "description": "AMD EPYC 9654 96-Core Processor, 256GB DDR5 ECC, 2x 3.84TB NVMe RAID 1",
+      "location_id": 1,
+      "location_name": "Frankfurt, Germany (Equinix FR5)",
+      "fqdn": "node1.slayernode.xyz",
+      "scheme": "https",
+      "behind_proxy": false,
+      "maintenance_mode": false,
+      "allow_auto_allocation": true,
+      "memory": 262144,
+      "memory_overallocate": 0,
+      "disk": 3840000,
+      "disk_overallocate": 0,
+      "upload_size": 500,
+      "daemon_listen": 8443,
+      "daemon_sftp": 2202,
+      "daemon_base": "/var/lib/slayerwings/volumes",
+      "servers_count": 3,
+      "allocations_count": 7,
+      "is_online": true,
+      "daemon_version": "v1.0.0-slayerwings"
+    },
+    {
+      "id": 2,
+      "uuid": "node-7714-9912-bb12",
+      "name": "Node-02 (Helsinki Ryzen 9 7950X3D)",
+      "description": "AMD Ryzen 9 7950X3D, 128GB DDR5, 2x 2TB Gen4 NVMe",
+      "location_id": 2,
+      "location_name": "Helsinki, Finland (Hetzner FSN1)",
+      "fqdn": "node2.slayernode.xyz",
+      "scheme": "https",
+      "behind_proxy": false,
+      "maintenance_mode": false,
+      "allow_auto_allocation": true,
+      "memory": 131072,
+      "memory_overallocate": 0,
+      "disk": 2048000,
+      "disk_overallocate": 0,
+      "upload_size": 500,
+      "daemon_listen": 8443,
+      "daemon_sftp": 2202,
+      "daemon_base": "/var/lib/slayerwings/volumes",
+      "servers_count": 1,
+      "allocations_count": 4,
+      "is_online": true,
+      "daemon_version": "v1.0.0-slayerwings"
+    },
+    {
+      "id": 1795449932557,
+      "uuid": "a73e6fb7-e43c-4720-9a42-35c3a5c8ad12",
+      "name": "nod-3 test",
+      "description": "External VPS Daemon at node3.slayernode.xyz",
+      "location_id": 1,
+      "location_name": "Custom VPS Provider",
+      "fqdn": "node3.slayernode.xyz",
+      "scheme": "https",
+      "behind_proxy": false,
+      "maintenance_mode": false,
+      "allow_auto_allocation": true,
+      "memory": 65536,
+      "memory_overallocate": 0,
+      "disk": 1024000,
+      "disk_overallocate": 0,
+      "upload_size": 500,
+      "daemon_listen": 8443,
+      "daemon_sftp": 2202,
+      "daemon_base": "/var/lib/slayerwings/volumes",
+      "servers_count": 0,
+      "allocations_count": 0,
+      "is_online": true,
+      "daemon_version": "v1.0.0-slayerwings"
+    }
+  ],
+  "allocations": [
+    {
+      "id": 101,
+      "node_id": 1,
+      "ip": "194.164.72.12",
+      "port": 25565,
+      "alias": "play.slayercraft.net",
+      "server_id": 1,
+      "is_default": true
+    },
+    {
+      "id": 102,
+      "node_id": 1,
+      "ip": "194.164.72.12",
+      "port": 8100,
+      "alias": "map.slayercraft.net",
+      "server_id": 1,
+      "is_default": false
+    },
+    {
+      "id": 103,
+      "node_id": 1,
+      "ip": "194.164.72.12",
+      "port": 24454,
+      "alias": "",
+      "server_id": 1,
+      "is_default": false
+    },
+    {
+      "id": 104,
+      "node_id": 1,
+      "ip": "194.164.72.12",
+      "port": 25577,
+      "alias": "proxy.slayercraft.net",
+      "server_id": 2,
+      "is_default": true
+    },
+    {
+      "id": 105,
+      "node_id": 1,
+      "ip": "194.164.72.12",
+      "port": 25566,
+      "alias": "",
+      "server_id": 4,
+      "is_default": false
+    },
+    {
+      "id": 106,
+      "node_id": 1,
+      "ip": "194.164.72.12",
+      "port": 25567,
+      "alias": "",
+      "server_id": null,
+      "is_default": false
+    },
+    {
+      "id": 201,
+      "node_id": 2,
+      "ip": "65.109.112.45",
+      "port": 28015,
+      "alias": "rust.slayercraft.net",
+      "server_id": 3,
+      "is_default": true
+    },
+    {
+      "id": 202,
+      "node_id": 2,
+      "ip": "65.109.112.45",
+      "port": 28016,
+      "alias": "",
+      "server_id": null,
+      "is_default": false
+    },
+    {
+      "id": 203,
+      "node_id": 2,
+      "ip": "65.109.112.45",
+      "port": 28017,
+      "alias": "",
+      "server_id": null,
+      "is_default": false
+    },
+    {
+      "id": 1795449020027,
+      "node_id": 1,
+      "ip": "194.164.72.12",
+      "port": 25590,
+      "alias": "test.slayercraft.net",
+      "server_id": null,
+      "is_default": false
+    }
+  ],
+  "nests": [
+    {
+      "id": 1,
+      "uuid": "nest-minecraft",
+      "author": "engine@slayernode.xyz",
+      "name": "Minecraft",
+      "description": "Minecraft Java Edition & Bedrock server engines.",
+      "eggs_count": 2,
+      "servers_count": 2,
+      "created_at": "2026-11-01"
+    },
+    {
+      "id": 2,
+      "uuid": "nest-steam",
+      "author": "engine@slayernode.xyz",
+      "name": "Steam Dedicated Games",
+      "description": "Popular games using SteamCMD runtime such as Rust, ARK, CS2, Palworld.",
+      "eggs_count": 1,
+      "servers_count": 1,
+      "created_at": "2026-11-01"
+    },
+    {
+      "id": 3,
+      "uuid": "nest-bots",
+      "author": "engine@slayernode.xyz",
+      "name": "Voice & Discord Bots",
+      "description": "Node.js, Python, and Go generic application workers.",
+      "eggs_count": 2,
+      "servers_count": 0,
+      "created_at": "2026-11-01"
+    }
+  ],
+  "eggs": [
+    {
+      "id": 1,
+      "uuid": "egg-purpur-mc",
+      "nest_id": 1,
+      "nest_name": "Minecraft",
+      "author": "admin@slayernode.xyz",
+      "name": "Purpur / Paper Minecraft",
+      "description": "High performance fork with Folia/Aikar flags and JLine ANSI terminal support.",
+      "docker_images": {
+        "Java 21 (Default)": "ghcr.io/slayernode/yolks:java_21",
+        "Java 17 (Legacy)": "ghcr.io/slayernode/yolks:java_17"
+      },
+      "startup": "java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}}",
+      "config": {
+        "files": {
+          "server.properties": {
+            "parser": "properties",
+            "find": {
+              "server-ip": "0.0.0.0",
+              "server-port": "{{server.build.default.port}}"
+            }
+          }
+        },
+        "startup": {
+          "done": ")! For help, type "
+        },
+        "stop": "stop"
+      },
+      "variables": [
+        {
+          "name": "Server Jar File",
+          "description": "Executable jar",
+          "env_variable": "SERVER_JARFILE",
+          "default_value": "purpur.jar",
+          "server_value": "purpur-1.21.4.jar",
+          "is_editable": true,
+          "rules": "required|string"
+        },
+        {
+          "name": "Build Number",
+          "description": "Purpur build version",
+          "env_variable": "BUILD_NUMBER",
+          "default_value": "latest",
+          "server_value": "latest",
+          "is_editable": true,
+          "rules": "required|string"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "uuid": "egg-velocity-proxy",
+      "nest_id": 1,
+      "nest_name": "Minecraft",
+      "author": "admin@slayernode.xyz",
+      "name": "Velocity Proxy",
+      "description": "Next-generation Minecraft proxy with high packet throughput and modern DDoS mitigations.",
+      "docker_images": {
+        "Java 21": "ghcr.io/slayernode/yolks:java_21"
+      },
+      "startup": "java -Xms512M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC -jar {{SERVER_JARFILE}}",
+      "config": {
+        "files": {},
+        "startup": {
+          "done": "Booting Velocity"
+        },
+        "stop": "end"
+      },
+      "variables": [
+        {
+          "name": "Server Jar File",
+          "description": "Velocity Jar",
+          "env_variable": "SERVER_JARFILE",
+          "default_value": "velocity.jar",
+          "server_value": "velocity.jar",
+          "is_editable": true,
+          "rules": "required|string"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "uuid": "egg-rust-dedicated",
+      "nest_id": 2,
+      "nest_name": "Steam Dedicated Games",
+      "author": "admin@slayernode.xyz",
+      "name": "Rust Dedicated",
+      "description": "Facepunch Rust experimental survival multi-threaded server instance.",
+      "docker_images": {
+        "Rust Yolks": "ghcr.io/slayernode/games:rust"
+      },
+      "startup": "./RustDedicated -batchmode +server.port {{SERVER_PORT}} +server.level \"Procedural Map\" +server.seed {{MAP_SEED}} +server.worldsize {{WORLD_SIZE}} +server.maxplayers {{MAX_PLAYERS}}",
+      "config": {
+        "files": {},
+        "startup": {
+          "done": "Server startup complete"
+        },
+        "stop": "quit"
+      },
+      "variables": [
+        {
+          "name": "Map Seed",
+          "description": "Procedural map seed",
+          "env_variable": "MAP_SEED",
+          "default_value": "1337",
+          "server_value": "1337",
+          "is_editable": true,
+          "rules": "numeric"
+        },
+        {
+          "name": "World Size",
+          "description": "World map size in meters",
+          "env_variable": "WORLD_SIZE",
+          "default_value": "4000",
+          "server_value": "4000",
+          "is_editable": true,
+          "rules": "numeric"
+        },
+        {
+          "name": "Max Players",
+          "description": "Player slots",
+          "env_variable": "MAX_PLAYERS",
+          "default_value": "200",
+          "server_value": "200",
+          "is_editable": true,
+          "rules": "numeric"
+        }
+      ]
+    }
+  ],
+  "servers": [
+    {
+      "id": "1",
+      "uuid": "8a9c4b12-9844-42f0-9b45-ec7db715e45a",
+      "identifier": "8a9c4b12",
+      "name": "SlayerCraft Network \u2014 Survival SMP",
+      "description": "High-performance Purpur 1.21.4 with Folia optimizations & anti-cheat",
+      "owner_id": 1,
+      "owner_username": "admin",
+      "node": "Node-01 (Frankfurt Epyc 9654)",
+      "node_id": 1,
+      "status": "running",
+      "is_suspended": false,
+      "is_transferring": false,
+      "pinned": true,
+      "limits": {
+        "memory": 8192,
+        "swap": 2048,
+        "disk": 40960,
+        "io": 500,
+        "cpu": 400
+      },
+      "allocation": {
+        "id": 101,
+        "ip": "194.164.72.12",
+        "port": 25565,
+        "alias": "play.slayercraft.net",
+        "is_default": true
+      },
+      "egg_id": 1,
+      "nest_id": 1
+    },
+    {
+      "id": "2",
+      "uuid": "3f7a82c9-6a31-41db-9011-85b1a03977dc",
+      "identifier": "3f7a82c9",
+      "name": "Velocity Proxy \u2014 Core Gateway",
+      "description": "BungeeCord / Velocity modern multi-threaded proxy gateway",
+      "owner_id": 1,
+      "owner_username": "admin",
+      "node": "Node-01 (Frankfurt Epyc 9654)",
+      "node_id": 1,
+      "status": "running",
+      "is_suspended": false,
+      "is_transferring": false,
+      "pinned": true,
+      "limits": {
+        "memory": 2048,
+        "swap": 512,
+        "disk": 10240,
+        "io": 500,
+        "cpu": 150
+      },
+      "allocation": {
+        "id": 104,
+        "ip": "194.164.72.12",
+        "port": 25577,
+        "alias": "proxy.slayercraft.net",
+        "is_default": true
+      },
+      "egg_id": 2,
+      "nest_id": 1
+    },
+    {
+      "id": "3",
+      "uuid": "992a71d8-4f81-494b-a9a3-5e87a2027b14",
+      "identifier": "992a71d8",
+      "name": "Rust Experimental \u2014 2x Vanilla",
+      "description": "Wipe cycle: Bi-weekly on Thursdays, max 200 players",
+      "owner_id": 2,
+      "owner_username": "alexm",
+      "node": "Node-02 (Helsinki Ryzen 9 7950X3D)",
+      "node_id": 2,
+      "status": "offline",
+      "is_suspended": false,
+      "is_transferring": false,
+      "pinned": false,
+      "limits": {
+        "memory": 16384,
+        "swap": 4096,
+        "disk": 61440,
+        "io": 500,
+        "cpu": 600
+      },
+      "allocation": {
+        "id": 201,
+        "ip": "65.109.112.45",
+        "port": 28015,
+        "alias": "rust.slayercraft.net",
+        "is_default": true
+      },
+      "egg_id": 3,
+      "nest_id": 2
+    },
+    {
+      "id": "4",
+      "uuid": "6d74255b-f740-4948-8ada-90aa85ebedb5",
+      "identifier": "6d74255b",
+      "name": "QA Minecraft Hub",
+      "description": "Automated test container",
+      "owner_id": 1,
+      "owner_username": "admin",
+      "node": "Node-01 (Frankfurt Epyc 9654)",
+      "node_id": 1,
+      "status": "offline",
+      "is_suspended": false,
+      "is_transferring": false,
+      "pinned": false,
+      "limits": {
+        "memory": 4096,
+        "swap": 512,
+        "disk": 20480,
+        "io": 500,
+        "cpu": 200
+      },
+      "allocation": {
+        "id": 105,
+        "ip": "194.164.72.12",
+        "port": 25566,
+        "alias": "6d74255b.node1.slayernode.xyz",
+        "is_default": true
+      },
+      "egg_id": 1,
+      "nest_id": 1,
+      "created_at": "2026-11-23T15:50:19.315Z"
+    }
+  ],
+  "blueprint_extensions": [
+    {
+      "id": "slayernode-theme",
+      "name": "SlayerNode Liquid Glass Theme",
+      "version": "1.0.0",
+      "author": "SlayerNode (https://slayernode.xyz)",
+      "description": "Official production-grade Apple Liquid Glass design framework with 3-color palette and translucent depth.",
+      "target": "v1.0.0",
+      "icon": "Palette",
+      "enabled": true,
+      "installed_at": "2026-11-20"
+    },
+    {
+      "id": "nebula-studio",
+      "name": "Nebula Theme & Customization Studio",
+      "version": "2.4.0",
+      "author": "SlayerNode Systems",
+      "description": "Full-control real-time visual appearance editor with live split-screen preview, physics sliders, and CSS injection.",
+      "target": "v1.0.0",
+      "icon": "Sliders",
+      "enabled": true,
+      "installed_at": "2026-11-21"
+    },
+    {
+      "id": "player-manager",
+      "name": "Live Player Manager & Avatars",
+      "version": "3.1.0",
+      "author": "SlayerNode Addons",
+      "description": "Real-time player monitoring, 2D/3D avatars, kick, ban, whitelist, and gamemode controls.",
+      "target": "v1.0.0",
+      "icon": "UserCheck",
+      "enabled": false,
+      "installed_at": "2026-11-22"
+    },
+    {
+      "id": "modpack-installer",
+      "name": "Modrinth & CurseForge Auto-Resolver",
+      "version": "2.0.0",
+      "author": "SlayerNode Addons",
+      "description": "One-click mod and plugin repository browser with automatic dependency resolution and loader filtering.",
+      "target": "v1.0.0",
+      "icon": "Package",
+      "enabled": true,
+      "installed_at": "2026-11-22"
+    },
+    {
+      "id": "server-splitter",
+      "name": "Dynamic Server Resource Splitter",
+      "version": "1.5.0",
+      "author": "SlayerNode Addons",
+      "description": "Allows allocating resource limits across multiple child server instances without modifying node quotas.",
+      "target": "v1.0.0",
+      "icon": "Split",
+      "enabled": true,
+      "installed_at": "2026-11-23"
+    }
+  ],
+  "subdomains": []
+}
