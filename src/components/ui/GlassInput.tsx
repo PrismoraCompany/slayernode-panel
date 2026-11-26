@@ -6,6 +6,7 @@ interface GlassInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
   helperText?: string;
+  description?: string;
 }
 
 export const GlassInput = forwardRef<HTMLInputElement, GlassInputProps>(({
@@ -14,6 +15,7 @@ export const GlassInput = forwardRef<HTMLInputElement, GlassInputProps>(({
   leftIcon,
   rightIcon,
   helperText,
+  description,
   className = '',
   id,
   ...props
@@ -53,8 +55,8 @@ export const GlassInput = forwardRef<HTMLInputElement, GlassInputProps>(({
         <span className="text-xs text-rose-400 font-medium tracking-tight mt-0.5 animate-fadeIn">
           {error}
         </span>
-      ) : helperText ? (
-        <span className="text-[11px] text-slate-400 tracking-tight">{helperText}</span>
+      ) : (description || helperText) ? (
+        <span className="text-[11px] text-slate-400 tracking-tight">{description || helperText}</span>
       ) : null}
     </div>
   );

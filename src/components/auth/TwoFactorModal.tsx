@@ -80,7 +80,7 @@ export const TwoFactorModal: React.FC<TwoFactorModalProps> = ({
           {digits.map((digit, idx) => (
             <input
               key={idx}
-              ref={el => (inputsRef.current[idx] = el)}
+              ref={el => { inputsRef.current[idx] = el; }}
               type="text"
               inputMode="numeric"
               maxLength={1}

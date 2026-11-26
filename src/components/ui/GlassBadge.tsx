@@ -3,7 +3,7 @@ import { ServerStatus } from '../../types';
 
 interface GlassBadgeProps {
   status?: ServerStatus | 'info' | 'warning' | 'default';
-  children: React.ReactNode;
+  children?: React.ReactNode;
   dot?: boolean;
   className?: string;
 }
@@ -78,7 +78,7 @@ export const GlassBadge: React.FC<GlassBadgeProps> = ({
       className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium backdrop-blur-md border ${style.bg} ${style.border} ${style.text} ${className}`}
     >
       {dot && <span className={`w-1.5 h-1.5 rounded-full ${style.dotColor}`} />}
-      {children}
+      {children ?? status.toUpperCase()}
     </span>
   );
 };

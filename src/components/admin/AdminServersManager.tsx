@@ -23,11 +23,12 @@ import { GlassBadge } from '../ui/GlassBadge';
 import { GlassToggle } from '../ui/GlassToggle';
 import { Server as ServerType, Node, User, Nest, Egg } from '../../types';
 import { useServer } from '../../context/ServerContext';
+import { apiFetch, apiJson } from '../../lib/api';
 import { AdminServerDetailView } from './server-edit/AdminServerDetailView';
 import { CreateServerView } from './CreateServerView';
 
 interface AdminServersManagerProps {
-  onSelectServerDetail: (serverId: string) => void;
+  onSelectServerDetail: (serverId: string, subTab?: string) => void;
 }
 
 export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSelectServerDetail }) => {
@@ -64,19 +65,29 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
     setServerList(servers);
   }, [servers]);
 
+  const fetchAdminServers = async () => {
+    try {
+      const res = await apiJson<{ data: ServerType[] }>('/api/application/servers');
+      if (Array.isArray(res?.data)) {
+        setServerList(res.data);
+      }
+    } catch {}
+  };
+
   useEffect(() => {
+    fetchAdminServers();
     // Load metadata for wizard
     const loadWizardData = async () => {
       try {
         const [nodesRes, usersRes, nestsRes] = await Promise.all([
-          fetch('/api/application/nodes'),
-          fetch('/api/application/users'),
-          fetch('/api/application/nests'),
+          apiFetch('/api/application/nodes'),
+          apiFetch('/api/application/users'),
+          apiFetch('/api/application/nests'),
         ]);
 
         if (nodesRes.ok) {
           const d = await nodesRes.json();
-          const loadedNodes = d.data.map((x: any) => x.attributes);
+          const loadedNodes = (d.data || []).map((x: any) => x.attributes || x);
           setNodes(loadedNodes);
           if (loadedNodes.length > 0) {
             setSelectedNodeId(String(loadedNodes[0].id));
@@ -84,7 +95,7 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
         }
         if (usersRes.ok) {
           const d = await usersRes.json();
-          const loadedUsers = d.data.map((x: any) => x.attributes);
+          const loadedUsers = (d.data || []).map((x: any) => x.attributes || x);
           setUsers(loadedUsers);
           if (loadedUsers.length > 0) {
             setSelectedOwnerId(String(loadedUsers[0].id));
@@ -92,7 +103,7 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
         }
         if (nestsRes.ok) {
           const d = await nestsRes.json();
-          const loadedNests = d.data.map((x: any) => x.attributes);
+          const loadedNests = (d.data || []).map((x: any) => x.attributes || x);
           setNests(loadedNests);
           if (loadedNests.length > 0) {
             setSelectedNestId(String(loadedNests[0].id));
@@ -106,7 +117,7 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
 
   useEffect(() => {
     if (!selectedNestId) return;
-    fetch(`/api/application/nests/${selectedNestId}/eggs`)
+    apiFetch(`/api/application/nests/${selectedNestId}/eggs`)
       .then(res => res.json())
       .then(data => {
         if (data && Array.isArray(data.data)) {
@@ -149,9 +160,8 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
     const targetUserId = targetUser ? targetUser.id : selectedOwnerId;
 
     try {
-      const res = await fetch('/api/application/servers', {
+      const res = await apiFetch('/api/application/servers', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: serverName.trim(),
           description: serverDesc.trim(),
@@ -200,12 +210,17 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
     }
   };
 
-  const filtered = serverList.filter(s =>
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.identifier.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.owner_username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.node.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filtered = serverList.filter(s => {
+    const q = searchTerm.toLowerCase();
+    const ownerName = (s as any).relationships?.user?.username || s.owner_username || '';
+    const nodeLabel = (s as any).node_name || s.node || '';
+    return (
+      s.name.toLowerCase().includes(q) ||
+      s.identifier.toLowerCase().includes(q) ||
+      ownerName.toLowerCase().includes(q) ||
+      nodeLabel.toLowerCase().includes(q)
+    );
+  });
 
   if (showCreateModal) {
     return (
@@ -213,8 +228,9 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
         onBack={() => setShowCreateModal(false)}
         onServerCreated={(newServer) => {
           setShowCreateModal(false);
+          fetchAdminServers();
           if (refreshServers) refreshServers();
-          setActionNotice(`Server "${newServer.name}" provisioned successfully on ${newServer.node}!`);
+          setActionNotice(`Server "${newServer.name}" provisioned successfully on ${newServer.node_name || newServer.node || 'node'}!`);
           setTimeout(() => setActionNotice(null), 4000);
         }}
       />
@@ -225,10 +241,14 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
     return (
       <AdminServerDetailView
         serverId={editingServerId}
-        onBack={() => setEditingServerId(null)}
-        onOpenConsole={onSelectServerDetail}
+        onBack={() => {
+          setEditingServerId(null);
+          fetchAdminServers();
+        }}
+        onOpenConsole={(srvId) => onSelectServerDetail(srvId, 'console')}
         onServerDeleted={() => {
           setEditingServerId(null);
+          fetchAdminServers();
           if (refreshServers) refreshServers();
         }}
       />
@@ -292,11 +312,16 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {filtered.map(s => (
-              <tr key={s.id} className="hover:bg-white/5 transition-colors">
+            {filtered.map(s => {
+              const ownerLabel = (s as any).relationships?.user?.username || s.owner_username || 'admin';
+              const nodeLabel = ((s as any).node_name || s.node || 'Local-Node').split(' ')[0];
+              const serverKey = s.uuid || s.id;
+              return (
+              <tr key={serverKey} className="hover:bg-white/5 transition-colors">
                 <td className="p-3.5">
                   <button
-                    onClick={() => setEditingServerId(s.id)}
+                    type="button"
+                    onClick={() => setEditingServerId(serverKey)}
                     className="font-bold text-white hover:text-red-400 block text-left cursor-pointer transition-colors"
                   >
                     {s.name}
@@ -305,19 +330,19 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
                 </td>
 
                 <td className="p-3.5 text-slate-300 hidden sm:table-cell">
-                  <span className="font-mono text-xs">@{s.owner_username}</span>
+                  <span className="font-mono text-xs">@{ownerLabel}</span>
                 </td>
 
                 <td className="p-3.5 text-slate-300 hidden md:table-cell font-mono">
-                  {s.node.split(' ')[0]}
+                  {nodeLabel}
                 </td>
 
                 <td className="p-3.5 font-mono text-red-400 font-medium">
-                  {s.allocation.ip}:{s.allocation.port}
+                  {s.allocation?.ip}:{s.allocation?.port}
                 </td>
 
                 <td className="p-3.5 font-mono text-slate-300 hidden lg:table-cell">
-                  {(s.limits.memory / 1024).toFixed(1)} GB / {s.limits.cpu}%
+                  {((s.limits?.memory || 0) / 1024).toFixed(1)} GB / {s.limits?.cpu || 100}%
                 </td>
 
                 <td className="p-3.5">
@@ -327,13 +352,15 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
                 <td className="p-3.5 text-right">
                   <div className="flex items-center justify-end gap-1.5">
                     <button
-                      onClick={() => setEditingServerId(s.id)}
+                      type="button"
+                      onClick={() => setEditingServerId(serverKey)}
                       className="px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-200 hover:text-white cursor-pointer border border-white/10"
                     >
                       Manage
                     </button>
                     <button
-                      onClick={() => onSelectServerDetail(s.id)}
+                      type="button"
+                      onClick={() => onSelectServerDetail(serverKey, 'console')}
                       className="px-2.5 py-1 rounded bg-red-950/40 hover:bg-red-900/40 text-xs font-semibold text-red-400 hover:text-red-300 cursor-pointer border border-red-800/40"
                     >
                       Console
@@ -341,7 +368,8 @@ export const AdminServersManager: React.FC<AdminServersManagerProps> = ({ onSele
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
 

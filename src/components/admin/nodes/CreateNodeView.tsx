@@ -12,6 +12,7 @@ import {
   Radio,
 } from 'lucide-react';
 import { Location } from '../../../types';
+import { apiFetch } from '../../../lib/api';
 
 interface CreateNodeViewProps {
   onBack: () => void;
@@ -31,7 +32,7 @@ export const CreateNodeView: React.FC<CreateNodeViewProps> = ({ onBack, onNodeCr
   const [behindProxy, setBehindProxy] = useState(false);
 
   // Configuration State
-  const [daemonBase, setDaemonBase] = useState('/home/xan/.slayerwings/volumes');
+  const [daemonBase, setDaemonBase] = useState('/var/lib/slayerwings/volumes');
   const [memory, setMemory] = useState('32768');
   const [memoryOverallocate, setMemoryOverallocate] = useState('0');
   const [disk, setDisk] = useState('512000');
@@ -43,7 +44,7 @@ export const CreateNodeView: React.FC<CreateNodeViewProps> = ({ onBack, onNodeCr
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/application/locations')
+    apiFetch('/api/application/locations')
       .then(res => res.json())
       .then(d => {
         if (d && Array.isArray(d.data)) {
@@ -73,12 +74,12 @@ export const CreateNodeView: React.FC<CreateNodeViewProps> = ({ onBack, onNodeCr
     setIsSubmitting(true);
 
     try {
-      const selectedLoc = locations.find(l => String(l.id) === String(selectedLocationId));
+      const selectedLoc = locations.find(l => String(l.id) === String(selectedLocationId)) as any;
       const payload = {
         name: name.trim(),
         description: description.trim(),
         location_id: parseInt(selectedLocationId) || 1,
-        location_name: selectedLoc?.short_code || selectedLoc?.description || 'Local Datacenter',
+        location_name: selectedLoc?.short || selectedLoc?.short_code || selectedLoc?.long || 'Local Datacenter',
         public: visibility === 'public',
         fqdn: fqdn.trim(),
         scheme,
@@ -93,9 +94,8 @@ export const CreateNodeView: React.FC<CreateNodeViewProps> = ({ onBack, onNodeCr
         daemon_base: daemonBase.trim(),
       };
 
-      const res = await fetch('/api/application/nodes', {
+      const res = await apiFetch('/api/application/nodes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -346,7 +346,7 @@ export const CreateNodeView: React.FC<CreateNodeViewProps> = ({ onBack, onNodeCr
                   className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white font-mono text-sm focus:outline-none focus:border-cyan-400/80 transition-colors"
                 />
                 <p className="mt-1 text-[11px] text-white/40 leading-relaxed">
-                  Enter the directory where server files should be stored. Default: <code className="bg-black/30 px-1 py-0.5 rounded text-cyan-300">/home/xan/.slayerwings/volumes</code>
+                  Enter the directory where server files should be stored. Default: <code className="bg-black/30 px-1 py-0.5 rounded text-cyan-300">/var/lib/slayerwings/volumes</code>
                 </p>
               </div>
 

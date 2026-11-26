@@ -1,26 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Server as ServerIcon,
   Search,
-  Pin,
-  Play,
-  RotateCcw,
-  Square,
+  Server as ServerIcon,
+  Star,
   Cpu,
   HardDrive,
-  Activity,
+  MemoryStick,
+  Power,
+  RotateCw,
+  Square,
+  Globe,
   ArrowUpRight,
-  Copy,
-  Check,
-  Grid,
-  List,
   Plus,
 } from 'lucide-react';
-import { useServer } from '../../context/ServerContext';
+import { useServers } from '../../context/ServerContext';
 import { useAuth } from '../../context/AuthContext';
 import { GlassCard } from '../ui/GlassCard';
+import { GlassBadge } from '../ui/GlassBadge';
+import { GlassInput } from '../ui/GlassInput';
 import { GlassButton } from '../ui/GlassButton';
+import { SegmentedControl } from '../ui/SegmentedControl';
 
 interface ServerDashboardProps {
   onSelectServerDetail: (serverId: string) => void;
@@ -31,432 +31,290 @@ export const ServerDashboard: React.FC<ServerDashboardProps> = ({
   onSelectServerDetail,
   onNavigateAdminServer,
 }) => {
-  const { servers, selectServer, togglePinServer, sendPowerAction } = useServer();
+  const {
+    visibleServers,
+    serverStatsMap,
+    selectServer,
+    togglePinServer,
+    sendPowerAction,
+  } = useServers();
   const { isAdmin } = useAuth();
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'running' | 'offline' | 'pinned'>('all');
-  const [copiedIp, setCopiedIp] = useState<string | null>(null);
-  const [layoutMode, setLayoutMode] = useState<'grid' | 'list'>('grid');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterMode, setFilterMode] = useState<'all' | 'running' | 'offline' | 'pinned'>('all');
+  const [sortBy, setSortBy] = useState<'name' | 'status' | 'memory'>('name');
 
-  const runningCount = servers.filter(s => s.status === 'running').length;
-  const offlineCount = servers.filter(s => s.status === 'offline').length;
-  const pinnedCount = servers.filter(s => s.pinned).length;
+  const filteredServers = useMemo(() => {
+    let list = [...visibleServers];
 
-  const copyToClipboard = (text: string, id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(text);
-    setCopiedIp(id);
-    setTimeout(() => setCopiedIp(null), 1800);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        s =>
+          s.name.toLowerCase().includes(q) ||
+          s.identifier.toLowerCase().includes(q) ||
+          s.egg_name.toLowerCase().includes(q) ||
+          String(s.allocation?.port || '').includes(q)
+      );
+    }
+
+    if (filterMode === 'running') {
+      list = list.filter(s => s.status === 'running' || s.status === 'starting');
+    } else if (filterMode === 'offline') {
+      list = list.filter(s => s.status === 'offline');
+    } else if (filterMode === 'pinned') {
+      list = list.filter(s => s.pinned);
+    }
+
+    list.sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      if (sortBy === 'status') return a.status.localeCompare(b.status);
+      if (sortBy === 'memory') return b.limits.memory - a.limits.memory;
+      return 0;
+    });
+
+    return list;
+  }, [visibleServers, searchQuery, filterMode, sortBy]);
+
+  const handleOpenServer = (serverUuid: string) => {
+    selectServer(serverUuid);
+    onSelectServerDetail(serverUuid);
   };
 
-  // Filter & sort
-  const filteredServers = servers
-    .filter(s => {
-      const matchSearch =
-        (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (s.identifier || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (s.node || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (s.allocation?.ip || '').includes(searchTerm) ||
-        String(s.allocation?.port || '').includes(searchTerm) ||
-        (s.egg_name || '').toLowerCase().includes(searchTerm.toLowerCase());
-
-      if (!matchSearch) return false;
-      if (filterStatus === 'running') return s.status === 'running';
-      if (filterStatus === 'offline') return s.status === 'offline';
-      if (filterStatus === 'pinned') return s.pinned;
-      return true;
-    })
-    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
-
-  // ========================================================
-  // FRESH INSTALL / ZERO-SERVER EMPTY STATE
-  // ========================================================
-  if (servers.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[55vh] p-6 text-center">
-        <div className="p-5 rounded-xl bg-[#181A20] border border-white/10 text-slate-400 mb-4 shadow-xl">
-          <ServerIcon className="w-10 h-10 text-[#DC2626]" />
-        </div>
-        <h2 className="text-xl font-bold text-white tracking-tight">
-          There are no servers linked to your account.
-        </h2>
-        <p className="text-xs text-slate-400 mt-1.5 max-w-md leading-relaxed">
-          {isAdmin
-            ? 'Your panel is freshly installed. As an administrator, you can configure your first node hypervisor and provision game server instances.'
-            : 'No game server containers are currently assigned to your account. Contact an administrator to allocate a server.'}
-        </p>
-
-        {isAdmin && onNavigateAdminServer && (
-          <button
-            onClick={onNavigateAdminServer}
-            className="mt-6 px-4 py-2.5 rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold transition-all shadow-md shadow-red-950/40 flex items-center gap-2 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" /> Provision First Server
-          </button>
-        )}
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-5">
-      {/* 1. Header & Controls */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="flex flex-col gap-6">
+      {/* Header Banner */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
-            <span>Servers</span>
-            <span className="text-xs px-2 py-0.5 rounded bg-[#21242C] text-slate-300 font-mono font-medium border border-white/10">
-              {servers.length}
+          <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+            <span className="p-2 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400">
+              <ServerIcon className="w-6 h-6" />
             </span>
+            <span>Game &amp; Application Servers</span>
           </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Select a server to access live console, file manager, and configuration.
+          <p className="text-sm text-slate-400 mt-1">
+            Isolated per-container instances managed across SlayerWings nodes.
           </p>
         </div>
 
-        {/* Quick status counter */}
-        <div className="flex items-center gap-2 text-xs font-mono">
-          <span className="px-3 py-1.5 rounded-lg bg-[#181A20] border border-white/10 text-slate-300 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <strong className="text-white">{runningCount}</strong> Online
-          </span>
-          <span className="px-3 py-1.5 rounded-lg bg-[#181A20] border border-white/10 text-slate-400 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-slate-600" />
-            <span>{offlineCount}</span> Offline
-          </span>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="glass-card px-4 py-2 flex items-center gap-3">
+            <div className="text-xs text-slate-400">Online</div>
+            <div className="text-sm font-bold text-emerald-400 tabular-metrics">
+              {visibleServers.filter(s => s.status === 'running').length} / {visibleServers.length}
+            </div>
+          </div>
+
+          {isAdmin && onNavigateAdminServer && (
+            <GlassButton variant="primary" size="md" onClick={onNavigateAdminServer}>
+              <Plus className="w-4 h-4 mr-1.5" /> Deploy Instance
+            </GlassButton>
+          )}
         </div>
       </div>
 
-      {/* 2. Filter Bar & Search */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-2 rounded-xl bg-[#181A20] border border-white/10">
-        <div className="flex items-center gap-1 overflow-x-auto">
-          {[
-            { id: 'all', label: 'All', count: servers.length },
-            { id: 'running', label: 'Running', count: runningCount },
-            { id: 'offline', label: 'Offline', count: offlineCount },
-            { id: 'pinned', label: 'Pinned', count: pinnedCount },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setFilterStatus(tab.id as any)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
-                filterStatus === tab.id
-                  ? 'bg-[#DC2626] text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-[#21242C]'
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
-                filterStatus === tab.id ? 'bg-black/20 text-white' : 'bg-white/10 text-slate-300'
-              }`}>
-                {tab.count}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 sm:w-64">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input
-              type="text"
-              placeholder="Search servers..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-[#14161B] border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#DC2626] transition-colors"
+      {/* Filter & Sort Bar */}
+      <GlassCard className="p-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+          <div className="flex-1 max-w-md">
+            <GlassInput
+              placeholder="Search server name, UUID, port..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              leftIcon={<Search className="w-4 h-4" />}
             />
           </div>
 
-          <div className="flex items-center bg-[#14161B] p-0.5 rounded-lg border border-white/10">
-            <button
-              onClick={() => setLayoutMode('grid')}
-              className={`p-1.5 rounded transition-colors cursor-pointer ${
-                layoutMode === 'grid' ? 'bg-[#DC2626] text-white' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Grid View"
-            >
-              <Grid className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setLayoutMode('list')}
-              className={`p-1.5 rounded transition-colors cursor-pointer ${
-                layoutMode === 'list' ? 'bg-[#DC2626] text-white' : 'text-slate-400 hover:text-white'
-              }`}
-              title="List View"
-            >
-              <List className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <SegmentedControl
+            value={filterMode}
+            onChange={v => setFilterMode(v as any)}
+            layoutId="dashboard-filter"
+            options={[
+              { label: 'All', value: 'all', badge: visibleServers.length },
+              { label: 'Running', value: 'running', badge: visibleServers.filter(s => s.status === 'running').length },
+              { label: 'Offline', value: 'offline', badge: visibleServers.filter(s => s.status === 'offline').length },
+              { label: 'Pinned', value: 'pinned' },
+            ]}
+          />
         </div>
-      </div>
 
-      {/* 3. Server Grid / List */}
-      {servers.length === 0 ? (
-        <div className="p-12 rounded-xl bg-[#181A20] border border-white/10 text-center flex flex-col items-center justify-center">
-          <div className="p-4 rounded-xl bg-[#21242C] text-slate-400 mb-3 border border-white/10">
-            <Server className="w-8 h-8 text-[#DC2626]" />
-          </div>
-          <h3 className="text-base font-bold text-white mb-1">No Servers Linked</h3>
-          <p className="text-xs text-slate-400 max-w-sm mb-4">
-            There are no servers linked to your account.
-          </p>
-          {isAdmin && onNavigateAdminServer && (
-            <button
-              onClick={onNavigateAdminServer}
-              className="px-4 py-2 rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold transition-all shadow-md shadow-red-950/40 cursor-pointer"
-            >
-              Deploy First Server
-            </button>
-          )}
-        </div>
-      ) : filteredServers.length === 0 ? (
-        <div className="p-8 rounded-xl bg-[#181A20] border border-white/10 text-center flex flex-col items-center justify-center">
-          <p className="text-xs text-slate-400">No servers match your current filter.</p>
-          <button
-            onClick={() => { setSearchTerm(''); setFilterStatus('all'); }}
-            className="mt-3 px-3 py-1 rounded-lg bg-[#21242C] text-slate-200 text-xs font-semibold hover:bg-[#2A2E38] transition-colors"
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-slate-400 font-medium">Sort:</span>
+          <select
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value as any)}
+            className="bg-slate-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-red-500/40"
           >
-            Clear Filters
-          </button>
+            <option value="name">Name (A-Z)</option>
+            <option value="status">Status</option>
+            <option value="memory">Allocated RAM</option>
+          </select>
         </div>
-      ) : layoutMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      </GlassCard>
+
+      {/* Server Grid */}
+      {filteredServers.length === 0 ? (
+        <GlassCard className="p-12 text-center flex flex-col items-center gap-3">
+          <div className="p-3 rounded-2xl bg-white/5 border border-white/10 text-slate-400">
+            <ServerIcon className="w-8 h-8" />
+          </div>
+          <h3 className="text-lg font-semibold text-white">No servers found</h3>
+          <p className="text-sm text-slate-400 max-w-md">
+            {searchQuery
+              ? `No instances match "${searchQuery}".`
+              : 'Deploy your first Minecraft, Node.js, or Python container via Admin Panel -> Servers Fleet.'}
+          </p>
+        </GlassCard>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {filteredServers.map(server => {
             const isOnline = server.status === 'running';
-            const ramPct = isOnline ? 52 : 0;
-            const cpuPct = isOnline ? 34 : 0;
-            const diskPct = 42;
-            const addressString = server.allocation?.alias || (server.allocation ? `${server.allocation.ip}:${server.allocation.port}` : '127.0.0.1:25565');
+            const telemetry = serverStatsMap[server.uuid] || server.telemetry;
+            const memLimitMb = server.limits?.memory || 1024;
+            const ramUsedMb = telemetry ? Math.round((telemetry.memory_bytes || 0) / (1024 * 1024)) : 0;
+            const ramPct = isOnline && memLimitMb > 0 ? Math.min(100, Math.round((ramUsedMb / memLimitMb) * 100)) : 0;
+            const cpuPct = isOnline ? Math.min(100, Math.round(telemetry?.cpu_absolute || 0)) : 0;
+            const diskUsedMb = telemetry ? Math.round((telemetry.disk_bytes || 0) / (1024 * 1024)) : 0;
+            const diskLimitMb = server.limits?.disk || 10240;
+            const diskPct = diskLimitMb > 0 ? Math.min(100, Math.round((diskUsedMb / diskLimitMb) * 100)) : 0;
 
             return (
               <motion.div
-                key={server.id}
+                key={server.uuid}
                 layout
-                onClick={() => {
-                  selectServer(server.id);
-                  onSelectServerDetail(server.id);
-                }}
-                className="group relative p-5 rounded-xl bg-[#181A20] hover:bg-[#1E2028] border border-white/10 hover:border-[#DC2626]/50 transition-all duration-200 shadow-lg cursor-pointer flex flex-col justify-between"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.16 }}
               >
-                <div>
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <div className="w-10 h-10 rounded-lg bg-[#21242C] border border-white/10 flex items-center justify-center text-white shrink-0 group-hover:border-[#DC2626]/50 transition-colors">
-                        <ServerIcon className="w-5 h-5 text-[#DC2626]" />
-                      </div>
-                      <div className="truncate">
-                        <h3 className="text-sm font-bold text-white truncate group-hover:text-[#DC2626] transition-colors">
+                <GlassCard hoverable className="p-5 flex flex-col gap-4 h-full">
+                  {/* Top Row */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div
+                      className="flex-1 min-w-0 cursor-pointer"
+                      onClick={() => handleOpenServer(server.uuid)}
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-base font-bold text-white truncate hover:text-red-400 transition-colors">
                           {server.name}
                         </h3>
-                        <button
-                          onClick={e => copyToClipboard(addressString, server.id, e)}
-                          title="Copy Address"
-                          className="mt-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#14161B] hover:bg-[#21242C] text-[11px] text-slate-300 font-mono border border-white/10 transition-colors cursor-pointer"
-                        >
-                          <span>{addressString}</span>
-                          {copiedIp === server.id ? (
-                            <Check className="w-3 h-3 text-[#DC2626]" />
-                          ) : (
-                            <Copy className="w-3 h-3 text-slate-500" />
-                          )}
-                        </button>
+                        <GlassBadge status={server.status} />
                       </div>
+                      <p className="text-xs text-slate-400 font-mono truncate mt-0.5 flex items-center gap-1.5">
+                        <span>{server.identifier}</span>
+                        <span>•</span>
+                        <span className="truncate">{server.egg_name}</span>
+                      </p>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        togglePinServer(server.uuid);
+                      }}
+                      className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                        server.pinned
+                          ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                          : 'text-slate-500 hover:text-slate-300 border-white/5 hover:border-white/15'
+                      }`}
+                      title={server.pinned ? 'Unpin' : 'Pin to top'}
+                    >
+                      <Star className={`w-3.5 h-3.5 ${server.pinned ? 'fill-current' : ''}`} />
+                    </button>
+                  </div>
+
+                  {/* Endpoint & Node */}
+                  <div className="flex items-center justify-between text-xs px-3 py-2 rounded-xl bg-slate-950/60 border border-white/5 text-slate-300 font-mono">
+                    <span className="flex items-center gap-1.5 truncate">
+                      <Globe className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                      {server.allocation.ip}:{server.allocation.port}
+                    </span>
+                    <span className="text-[11px] text-slate-400 shrink-0">
+                      {server.node_name || server.node || 'Local-Node-01'}
+                    </span>
+                  </div>
+
+                  {/* Live Per-Server Telemetry Bars */}
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5 flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between text-[11px] text-slate-400">
+                        <span className="flex items-center gap-1"><Cpu className="w-3 h-3 text-red-400" /> CPU</span>
+                        <span className="text-white font-semibold tabular-metrics">{cpuPct}%</span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div className="h-full bg-red-500 transition-all duration-500" style={{ width: `${cpuPct}%` }} />
+                      </div>
+                      <div className="text-[10px] text-slate-500">Max {server.limits.cpu}%</div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5 flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between text-[11px] text-slate-400">
+                        <span className="flex items-center gap-1"><MemoryStick className="w-3 h-3 text-emerald-400" /> RAM</span>
+                        <span className="text-white font-semibold tabular-metrics">{ramPct}%</span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div className="h-full bg-emerald-400 transition-all duration-500" style={{ width: `${ramPct}%` }} />
+                      </div>
+                      <div className="text-[10px] text-slate-500 truncate">{ramUsedMb}/{memLimitMb} MB</div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-950/50 border border-white/5 flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between text-[11px] text-slate-400">
+                        <span className="flex items-center gap-1"><HardDrive className="w-3 h-3 text-amber-400" /> Disk</span>
+                        <span className="text-white font-semibold tabular-metrics">{diskPct}%</span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div className="h-full bg-amber-400 transition-all duration-500" style={{ width: `${diskPct}%` }} />
+                      </div>
+                      <div className="text-[10px] text-slate-500 truncate">{diskUsedMb} MB</div>
+                    </div>
+                  </div>
+
+                  {/* Quick Actions Footer */}
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10 mt-auto">
+                    <div className="flex items-center gap-1.5">
                       <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          togglePinServer(server.id);
-                        }}
-                        title={server.pinned ? 'Unpin Server' : 'Pin Server'}
-                        className={`p-1.5 rounded transition-colors cursor-pointer ${
-                          server.pinned ? 'text-amber-400 bg-amber-400/10' : 'text-slate-500 hover:text-white'
-                        }`}
-                      >
-                        <Pin className="w-3.5 h-3.5 fill-current" />
-                      </button>
-
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold font-mono uppercase border ${
-                          isOnline
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                            : 'bg-slate-800 text-slate-400 border-white/10'
-                        }`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-                        {server.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 mb-4 pb-2.5 border-b border-white/10 font-mono">
-                    <span className="text-slate-300 font-sans">{server.egg_name}</span>
-                    <span className="text-slate-500 truncate max-w-[140px]">{server.node}</span>
-                  </div>
-
-                  {/* Telemetry Progress Bars */}
-                  <div className="flex flex-col gap-2 mb-4 font-mono text-[11px]">
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span className="text-slate-400 flex items-center gap-1 font-sans">
-                          <Cpu className="w-3 h-3 text-[#DC2626]" /> CPU
-                        </span>
-                        <span className="text-slate-200">
-                          {isOnline ? `${cpuPct}%` : '0%'} / {server.limits?.cpu || 100}%
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full rounded bg-[#14161B] overflow-hidden border border-white/5">
-                        <div
-                          style={{ width: `${Math.min(100, (cpuPct / (server.limits?.cpu || 100)) * 100)}%` }}
-                          className="h-full bg-[#DC2626]"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span className="text-slate-400 flex items-center gap-1 font-sans">
-                          <Activity className="w-3 h-3 text-white" /> Memory
-                        </span>
-                        <span className="text-slate-200">
-                          {isOnline ? `${Math.round(((server.limits?.memory || 2048) * ramPct) / 100)} MB` : '0 MB'} / {server.limits?.memory || 2048} MB
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full rounded bg-[#14161B] overflow-hidden border border-white/5">
-                        <div style={{ width: `${ramPct}%` }} className="h-full bg-white" />
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span className="text-slate-400 flex items-center gap-1 font-sans">
-                          <HardDrive className="w-3 h-3 text-slate-400" /> Disk
-                        </span>
-                        <span className="text-slate-200">
-                          {Math.round(((server.limits?.disk || 10240) * diskPct) / 100)} MB / {server.limits?.disk || 10240} MB
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full rounded bg-[#14161B] overflow-hidden border border-white/5">
-                        <div style={{ width: `${diskPct}%` }} className="h-full bg-slate-500" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-3 border-t border-white/10 mt-auto">
-                  <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                    {!isOnline ? (
-                      <button
-                        onClick={() => sendPowerAction('start', server.id)}
-                        className="px-3 py-1 rounded bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
-                      >
-                        <Play className="w-3 h-3 fill-current" /> Start
-                      </button>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => sendPowerAction('restart', server.id)}
-                          title="Restart"
-                          className="p-1.5 rounded bg-[#21242C] hover:bg-[#2A2E38] text-white text-xs border border-white/10 cursor-pointer"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => sendPowerAction('stop', server.id)}
-                          title="Stop"
-                          className="p-1.5 rounded bg-[#991B1B] hover:bg-[#7F1D1D] text-white text-xs cursor-pointer"
-                        >
-                          <Square className="w-3 h-3 fill-current" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-
-                  <span className="inline-flex items-center gap-1 text-xs font-bold text-[#DC2626] group-hover:translate-x-1 transition-transform">
-                    Manage <ArrowUpRight className="w-3.5 h-3.5" />
-                  </span>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      ) : (
-        /* List View */
-        <div className="flex flex-col gap-2">
-          {filteredServers.map(server => {
-            const isOnline = server.status === 'running';
-            const addressString = server.allocation?.alias || (server.allocation ? `${server.allocation.ip}:${server.allocation.port}` : '127.0.0.1:25565');
-
-            return (
-              <div
-                key={server.id}
-                onClick={() => {
-                  selectServer(server.id);
-                  onSelectServerDetail(server.id);
-                }}
-                className="group p-3.5 rounded-xl bg-[#181A20] hover:bg-[#1E2028] border border-white/10 hover:border-[#DC2626]/50 transition-colors cursor-pointer flex items-center justify-between gap-4"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-lg bg-[#21242C] border border-white/10 flex items-center justify-center text-white shrink-0">
-                    <ServerIcon className="w-4 h-4 text-[#DC2626]" />
-                  </div>
-                  <div className="truncate">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-white group-hover:text-[#DC2626] transition-colors truncate">
-                        {server.name}
-                      </h3>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-[#21242C] text-slate-300 font-mono">
-                        {server.egg_name}
-                      </span>
-                    </div>
-                    <span className="text-xs text-slate-400 font-mono">{addressString}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4 shrink-0">
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold font-mono uppercase border ${
-                      isOnline
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                        : 'bg-slate-800 text-slate-400 border-white/10'
-                    }`}
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-slate-500'}`} />
-                    {server.status}
-                  </span>
-
-                  <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                    {!isOnline ? (
-                      <button
-                        onClick={() => sendPowerAction('start', server.id)}
-                        className="p-1.5 rounded bg-[#DC2626] text-white hover:bg-[#B91C1C] cursor-pointer"
+                        type="button"
+                        disabled={isOnline}
+                        onClick={() => sendPowerAction('start', server.uuid)}
+                        className="p-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-40 text-emerald-400 border border-emerald-500/20 transition-colors cursor-pointer"
                         title="Start"
                       >
-                        <Play className="w-3 h-3 fill-current" />
+                        <Power className="w-3.5 h-3.5" />
                       </button>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => sendPowerAction('restart', server.id)}
-                          className="p-1.5 rounded bg-[#21242C] text-white hover:bg-[#2A2E38] border border-white/10 cursor-pointer"
-                          title="Restart"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => sendPowerAction('stop', server.id)}
-                          className="p-1.5 rounded bg-[#991B1B] text-white hover:bg-[#7F1D1D] cursor-pointer"
-                          title="Stop"
-                        >
-                          <Square className="w-3 h-3 fill-current" />
-                        </button>
-                      </>
-                    )}
+                      <button
+                        type="button"
+                        disabled={!isOnline}
+                        onClick={() => sendPowerAction('restart', server.uuid)}
+                        className="p-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-40 text-amber-400 border border-amber-500/20 transition-colors cursor-pointer"
+                        title="Restart"
+                      >
+                        <RotateCw className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={server.status === 'offline'}
+                        onClick={() => sendPowerAction('stop', server.uuid)}
+                        className="p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-40 text-rose-400 border border-rose-500/20 transition-colors cursor-pointer"
+                        title="Stop"
+                      >
+                        <Square className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <GlassButton
+                      variant="primary"
+                      size="sm"
+                      onClick={() => handleOpenServer(server.uuid)}
+                    >
+                      <span>Manage</span>
+                      <ArrowUpRight className="w-3.5 h-3.5 ml-1" />
+                    </GlassButton>
                   </div>
-                </div>
-              </div>
+                </GlassCard>
+              </motion.div>
             );
           })}
         </div>

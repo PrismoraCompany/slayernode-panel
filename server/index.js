@@ -1,2124 +1,2914 @@
-import express from 'express';
+/**
+ * SlayerNode Game & Application Control Panel — Express + WebSocket API Server
+ * Strict per-server isolation, scrypt authentication, CSRF & CSWSH protection,
+ * RBAC enforcement, real SlayerWings daemon bridge, and persisted CRUD stores.
+ */
+
 import http from 'http';
-import { WebSocketServer, WebSocket } from 'ws';
-import cors from 'cors';
-import path from 'path';
-import fs from 'fs';
+import os from 'os';
 import crypto from 'crypto';
-import { fileURLToPath } from 'url';
+import fs from 'fs';
+import path from 'path';
+import express from 'express';
 import nodemailer from 'nodemailer';
+import { WebSocketServer, WebSocket } from 'ws';
+import { fileURLToPath } from 'url';
+
+import {
+  assertSafeExternalUrl,
+  buildOtpAuthUri,
+  containsDangerousCss,
+  createCsrfToken,
+  createRateLimiter,
+  createSessionCookieToken,
+  createWsToken,
+  generateTotpSecret,
+  getSharedDaemonToken,
+  hashApiToken,
+  hashPassword,
+  hasSqlInjection,
+  isAllowedOrigin,
+  parseCookies,
+  stripHtmlTags,
+  validateSafeMediaUrl,
+  verifyCsrfToken,
+  verifyPassword,
+  verifySessionCookieToken,
+  verifyTotpCode,
+  verifyWsToken,
+} from './lib/security.js';
+import {
+  daemonRequest,
+  getNodeBaseUrl,
+  getServerNode,
+  probeNodeHealth,
+  resolveNodeAuthToken,
+} from './lib/daemonBridge.js';
+import { createDefaultTheme, loadState, nextId, saveState } from './lib/store.js';
+import { executeScheduleTasks, startScheduleLoop } from './lib/scheduler.js';
+import { registerAddonRoutes } from './lib/addons.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const PORT = parseInt(process.env.PORT || '3001', 10);
+const IS_PROD = process.env.NODE_ENV === 'production';
 
-const app = express();
-const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
+// Ensure shared daemon token exists on startup
+getSharedDaemonToken();
 
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-
-// Persistent state store file
-const DB_PATH = path.join(__dirname, 'storage_db.json');
-
-const DEFAULT_DB = {
-  theme: null,
-  locations: [
-    { id: 1, short: 'DE', long: 'Frankfurt, Germany (Equinix FR5)', nodes_count: 1, servers_count: 2 },
-    { id: 2, short: 'FI', long: 'Helsinki, Finland (Hetzner FSN1)', nodes_count: 1, servers_count: 1 },
-    { id: 3, short: 'IN', long: 'Mumbai, India (CtrlS DC2)', nodes_count: 0, servers_count: 0 },
-    { id: 4, short: 'US', long: 'Ashburn, VA (Equinix DC21)', nodes_count: 0, servers_count: 0 },
-  ],
-  users: [
-    {
-      id: 1,
-      uuid: 'c82736b4-21c8-4720-a6ff-84ad1f21136b',
-      username: 'admin',
-      email: 'admin@slayernode.xyz',
-      name_first: 'System',
-      name_last: 'Administrator',
-      language: 'en',
-      root_admin: true,
-      two_factor_enabled: false,
-      created_at: '2026-11-01T00:00:00Z',
-    },
-  ],
-  nodes: [],
-  allocations: [],
-  nests: [
-    {
-      id: 1,
-      uuid: 'nest-minecraft',
-      author: 'engine@slayernode.xyz',
-      name: 'Minecraft',
-      description: 'Minecraft Java Edition & Bedrock server engines.',
-      eggs_count: 2,
-      servers_count: 2,
-      created_at: '2026-11-01',
-    },
-    {
-      id: 2,
-      uuid: 'nest-steam',
-      author: 'engine@slayernode.xyz',
-      name: 'Steam Dedicated Games',
-      description: 'Popular games using SteamCMD runtime such as Rust, ARK, CS2, Palworld.',
-      eggs_count: 1,
-      servers_count: 1,
-      created_at: '2026-11-01',
-    },
-    {
-      id: 3,
-      uuid: 'nest-bots',
-      author: 'engine@slayernode.xyz',
-      name: 'Voice & Discord Bots',
-      description: 'Node.js, Python, and Go generic application workers.',
-      eggs_count: 2,
-      servers_count: 0,
-      created_at: '2026-11-01',
-    },
-  ],
-  eggs: [
-    {
-      id: 1,
-      uuid: 'egg-paper-mc',
-      nest_id: 1,
-      nest_name: 'Minecraft',
-      author: 'admin@slayernode.xyz',
-      name: 'Paper (PaperMC)',
-      description: 'High performance Spigot-compatible Minecraft server that fixes gameplay and mechanics inconsistencies with optimal tick efficiency.',
-      docker_images: {
-        'Java 25 (Recommended - Minecraft 1.21+)': 'ghcr.io/pterodactyl/yolks:java_25',
-        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
-        'Java 17 (Legacy)': 'ghcr.io/pterodactyl/yolks:java_17',
-        'Java 8 (Legacy)': 'ghcr.io/pterodactyl/yolks:java_8',
-      },
-      startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui',
-      config: {
-        files: {
-          'server.properties': { parser: 'properties', find: { 'server-ip': '0.0.0.0', 'server-port': '{{server.build.default.port}}' } },
-        },
-        startup: { done: ')! For help, type ' },
-        stop: 'stop',
-      },
-      variables: [
-        { name: 'Server Jar File', description: 'Executable jar file', env_variable: 'SERVER_JARFILE', default_value: 'server.jar', server_value: 'server.jar', is_editable: true, rules: 'required|string' },
-        { name: 'Minecraft Version', description: 'Minecraft release version', env_variable: 'MINECRAFT_VERSION', default_value: 'latest', server_value: '1.20.4', is_editable: true, rules: 'required|string' },
-        { name: 'Build Number', description: 'Paper release build', env_variable: 'BUILD_NUMBER', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
-        { name: 'Download Path', description: 'Optional custom URL download path', env_variable: 'DL_PATH', default_value: '', server_value: '', is_editable: true, rules: 'nullable|string' },
-      ],
-    },
-    {
-      id: 2,
-      uuid: 'egg-purpur-mc',
-      nest_id: 1,
-      nest_name: 'Minecraft',
-      author: 'admin@slayernode.xyz',
-      name: 'Purpur',
-      description: 'Drop-in replacement for Paper servers designed for high configurability, extreme performance optimizations, and customizable mob mechanics.',
-      docker_images: {
-        'Java 25 (Recommended - Default)': 'ghcr.io/pterodactyl/yolks:java_25',
-        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
-        'Java 17 (Legacy)': 'ghcr.io/pterodactyl/yolks:java_17',
-      },
-      startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -Dterminal.jline=false -Dterminal.ansi=true -jar {{SERVER_JARFILE}} nogui',
-      config: {
-        files: {
-          'server.properties': { parser: 'properties', find: { 'server-ip': '0.0.0.0', 'server-port': '{{server.build.default.port}}' } },
-        },
-        startup: { done: ')! For help, type ' },
-        stop: 'stop',
-      },
-      variables: [
-        { name: 'Server Jar File', description: 'Executable jar', env_variable: 'SERVER_JARFILE', default_value: 'server.jar', server_value: 'server.jar', is_editable: true, rules: 'required|string' },
-        { name: 'Minecraft Version', description: 'Minecraft release version', env_variable: 'MINECRAFT_VERSION', default_value: 'latest', server_value: '1.20.4', is_editable: true, rules: 'required|string' },
-        { name: 'Build Number', description: 'Purpur build version', env_variable: 'BUILD_NUMBER', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
-      ],
-    },
-    {
-      id: 3,
-      uuid: 'egg-vanilla-mc',
-      nest_id: 1,
-      nest_name: 'Minecraft',
-      author: 'admin@slayernode.xyz',
-      name: 'Vanilla Minecraft',
-      description: 'Official Mojang Vanilla server software without mods or third-party patches. Pure unadulterated Minecraft experience.',
-      docker_images: {
-        'Java 25 (Recommended - Default)': 'ghcr.io/pterodactyl/yolks:java_25',
-        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
-        'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
-      },
-      startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui',
-      config: {
-        files: {
-          'server.properties': { parser: 'properties', find: { 'server-ip': '0.0.0.0', 'server-port': '{{server.build.default.port}}' } },
-        },
-        startup: { done: ')! For help, type ' },
-        stop: 'stop',
-      },
-      variables: [
-        { name: 'Server Jar File', description: 'Executable jar', env_variable: 'SERVER_JARFILE', default_value: 'server.jar', server_value: 'server.jar', is_editable: true, rules: 'required|string' },
-        { name: 'Vanilla Version', description: 'Vanilla version release', env_variable: 'VANILLA_VERSION', default_value: 'latest', server_value: '1.20.4', is_editable: true, rules: 'required|string' },
-      ],
-    },
-    {
-      id: 4,
-      uuid: 'egg-forge-mc',
-      nest_id: 1,
-      nest_name: 'Minecraft',
-      author: 'admin@slayernode.xyz',
-      name: 'Forge Minecraft',
-      description: 'Minecraft Forge mod loader engine enabling players and server administrators to run custom modpacks and community mods.',
-      docker_images: {
-        'Java 25 (Recommended - Default)': 'ghcr.io/pterodactyl/yolks:java_25',
-        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
-        'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
-        'Java 8': 'ghcr.io/pterodactyl/yolks:java_8',
-      },
-      startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui',
-      config: {
-        files: {
-          'server.properties': { parser: 'properties', find: { 'server-ip': '0.0.0.0', 'server-port': '{{server.build.default.port}}' } },
-        },
-        startup: { done: ')! For help, type ' },
-        stop: 'stop',
-      },
-      variables: [
-        { name: 'Server Jar File', description: 'Forge executable jar', env_variable: 'SERVER_JARFILE', default_value: 'forge-run.jar', server_value: 'forge-run.jar', is_editable: true, rules: 'required|string' },
-        { name: 'MC Version', description: 'Minecraft release version', env_variable: 'MC_VERSION', default_value: '1.20.4', server_value: '1.20.4', is_editable: true, rules: 'required|string' },
-        { name: 'Forge Version', description: 'Forge build version', env_variable: 'FORGE_VERSION', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
-      ],
-    },
-    {
-      id: 5,
-      uuid: 'egg-fabric-mc',
-      nest_id: 1,
-      nest_name: 'Minecraft',
-      author: 'admin@slayernode.xyz',
-      name: 'Fabric Minecraft',
-      description: 'Fabric is a lightweight, experimental, and modern modding toolchain for Minecraft with exceptional server optimization mods.',
-      docker_images: {
-        'Java 25 (Recommended - Default)': 'ghcr.io/pterodactyl/yolks:java_25',
-        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
-        'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
-      },
-      startup: 'java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui',
-      config: {
-        files: {
-          'server.properties': { parser: 'properties', find: { 'server-ip': '0.0.0.0', 'server-port': '{{server.build.default.port}}' } },
-        },
-        startup: { done: ')! For help, type ' },
-        stop: 'stop',
-      },
-      variables: [
-        { name: 'Server Jar File', description: 'Fabric loader jar', env_variable: 'SERVER_JARFILE', default_value: 'fabric-server-launch.jar', server_value: 'fabric-server-launch.jar', is_editable: true, rules: 'required|string' },
-        { name: 'Minecraft Version', description: 'Minecraft release version', env_variable: 'MINECRAFT_VERSION', default_value: 'latest', server_value: '1.20.4', is_editable: true, rules: 'required|string' },
-        { name: 'Loader Version', description: 'Fabric loader version', env_variable: 'LOADER_VERSION', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
-      ],
-    },
-    {
-      id: 6,
-      uuid: 'egg-velocity-proxy',
-      nest_id: 1,
-      nest_name: 'Minecraft',
-      author: 'admin@slayernode.xyz',
-      name: 'Velocity Proxy',
-      description: 'Next-generation Minecraft proxy with high packet throughput, modern DDoS mitigations, and velocity forward support.',
-      docker_images: {
-        'Java 25 (Recommended - Default)': 'ghcr.io/pterodactyl/yolks:java_25',
-        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
-        'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
-      },
-      startup: 'java -Xms512M -Xmx{{SERVER_MEMORY}}M -XX:+UseG1GC -jar {{SERVER_JARFILE}}',
-      config: {
-        files: {},
-        startup: { done: 'Booting Velocity' },
-        stop: 'end',
-      },
-      variables: [
-        { name: 'Server Jar File', description: 'Velocity Jar', env_variable: 'SERVER_JARFILE', default_value: 'velocity.jar', server_value: 'velocity.jar', is_editable: true, rules: 'required|string' },
-      ],
-    },
-    {
-      id: 7,
-      uuid: 'egg-bungeecord-mc',
-      nest_id: 1,
-      nest_name: 'Minecraft',
-      author: 'admin@slayernode.xyz',
-      name: 'BungeeCord',
-      description: 'Classic multi-server proxy network engine connecting various Minecraft worlds into a single player network.',
-      docker_images: {
-        'Java 25 (Recommended - Default)': 'ghcr.io/pterodactyl/yolks:java_25',
-        'Java 21': 'ghcr.io/pterodactyl/yolks:java_21',
-        'Java 17': 'ghcr.io/pterodactyl/yolks:java_17',
-      },
-      startup: 'java -Xms512M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}',
-      config: {
-        files: {},
-        startup: { done: 'Listening on' },
-        stop: 'end',
-      },
-      variables: [
-        { name: 'Server Jar File', description: 'Proxy jar file', env_variable: 'SERVER_JARFILE', default_value: 'bungeecord.jar', server_value: 'bungeecord.jar', is_editable: true, rules: 'required|string' },
-      ],
-    },
-    {
-      id: 8,
-      uuid: 'egg-rust-dedicated',
-      nest_id: 2,
-      nest_name: 'Steam Dedicated Games',
-      author: 'admin@slayernode.xyz',
-      name: 'Rust Dedicated',
-      description: 'Facepunch Rust experimental survival multi-threaded server instance.',
-      docker_images: {
-        'Rust Yolks': 'ghcr.io/slayernode/games:rust',
-      },
-      startup: './RustDedicated -batchmode +server.port {{SERVER_PORT}} +server.level "Procedural Map" +server.seed {{MAP_SEED}} +server.worldsize {{WORLD_SIZE}} +server.maxplayers {{MAX_PLAYERS}}',
-      config: {
-        files: {},
-        startup: { done: 'Server startup complete' },
-        stop: 'quit',
-      },
-      variables: [
-        { name: 'Map Seed', description: 'Procedural map seed', env_variable: 'MAP_SEED', default_value: '1337', server_value: '1337', is_editable: true, rules: 'numeric' },
-        { name: 'World Size', description: 'World map size in meters', env_variable: 'WORLD_SIZE', default_value: '4000', server_value: '4000', is_editable: true, rules: 'numeric' },
-        { name: 'Max Players', description: 'Player slots', env_variable: 'MAX_PLAYERS', default_value: '200', server_value: '200', is_editable: true, rules: 'numeric' },
-      ],
-    },
-    {
-      id: 9,
-      uuid: 'egg-nodejs-generic',
-      nest_id: 3,
-      nest_name: 'Voice & Discord Bots',
-      author: 'admin@slayernode.xyz',
-      name: 'Node.js Web Server & App',
-      description: 'Modern Node.js 22 runtime for Express, Fastify, Next, and Discord bots.',
-      docker_images: {
-        'Node.js 22 (Default)': 'ghcr.io/pterodactyl/yolks:nodejs_22',
-        'Node.js 20': 'ghcr.io/pterodactyl/yolks:nodejs_20',
-      },
-      startup: 'node index.js',
-      config: {
-        files: {},
-        startup: { done: 'listening on' },
-        stop: '^C',
-      },
-      variables: [
-        { name: 'Main File', description: 'Main entrypoint file', env_variable: 'MAIN_FILE', default_value: 'index.js', server_value: 'index.js', is_editable: true, rules: 'required|string' },
-      ],
-    },
-    {
-      id: 10,
-      uuid: 'egg-python-generic',
-      nest_id: 3,
-      nest_name: 'Voice & Discord Bots',
-      author: 'admin@slayernode.xyz',
-      name: 'Python Application & Bot',
-      description: 'Python 3.12 modern runtime for FastAPI, Flask, Django, and generic automation.',
-      docker_images: {
-        'Python 3.12 (Default)': 'ghcr.io/pterodactyl/yolks:python_3.12',
-        'Python 3.11': 'ghcr.io/pterodactyl/yolks:python_3.11',
-      },
-      startup: 'python3 app.py',
-      config: {
-        files: {},
-        startup: { done: 'Running' },
-        stop: '^C',
-      },
-      variables: [
-        { name: 'App File', description: 'Main script file', env_variable: 'APP_FILE', default_value: 'app.py', server_value: 'app.py', is_editable: true, rules: 'required|string' },
-      ],
-    },
-  ],
-  servers: [],
-  blueprint_extensions: [
-    {
-      id: 'slayernode-theme',
-      name: 'SlayerNode Liquid Glass Theme',
-      version: '1.0.0',
-      author: 'SlayerNode (https://slayernode.xyz)',
-      description: 'Official production-grade Apple Liquid Glass design framework with 3-color palette and translucent depth.',
-      target: 'v1.0.0',
-      icon: 'Palette',
-      enabled: true,
-      installed_at: '2026-11-20',
-    },
-    {
-      id: 'nebula-studio',
-      name: 'Nebula Theme & Customization Studio',
-      version: '2.4.0',
-      author: 'SlayerNode Systems',
-      description: 'Full-control real-time visual appearance editor with live split-screen preview, physics sliders, and CSS injection.',
-      target: 'v1.0.0',
-      icon: 'Sliders',
-      enabled: true,
-      installed_at: '2026-11-21',
-    },
-    {
-      id: 'player-manager',
-      name: 'Live Player Manager & Avatars',
-      version: '3.1.0',
-      author: 'SlayerNode Addons',
-      description: 'Real-time player monitoring, 2D/3D avatars, kick, ban, whitelist, and gamemode controls.',
-      target: 'v1.0.0',
-      icon: 'UserCheck',
-      enabled: true,
-      installed_at: '2026-11-22',
-    },
-    {
-      id: 'modpack-installer',
-      name: 'Modrinth & CurseForge Auto-Resolver',
-      version: '2.0.0',
-      author: 'SlayerNode Addons',
-      description: 'One-click mod and plugin repository browser with automatic dependency resolution and loader filtering.',
-      target: 'v1.0.0',
-      icon: 'Package',
-      enabled: true,
-      installed_at: '2026-11-22',
-    },
-    {
-      id: 'server-splitter',
-      name: 'Dynamic Server Resource Splitter',
-      version: '1.5.0',
-      author: 'SlayerNode Addons',
-      description: 'Allows allocating resource limits across multiple child server instances without modifying node quotas.',
-      target: 'v1.0.0',
-      icon: 'Split',
-      enabled: true,
-      installed_at: '2026-11-23',
-    },
-  ],
-  subdomains: [],
-};
-
-function loadState() {
-  try {
-    if (fs.existsSync(DB_PATH)) {
-      const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
-      
-      const mergedEggs = Array.isArray(data.eggs) ? [...data.eggs] : [...DEFAULT_DB.eggs];
-      for (const defEgg of DEFAULT_DB.eggs) {
-        if (!mergedEggs.some(e => String(e.id) === String(defEgg.id))) {
-          mergedEggs.push(defEgg);
-        }
-      }
-
-      const mergedNests = Array.isArray(data.nests) ? [...data.nests] : [...DEFAULT_DB.nests];
-      for (const defNest of DEFAULT_DB.nests) {
-        if (!mergedNests.some(n => String(n.id) === String(defNest.id))) {
-          mergedNests.push(defNest);
-        }
-      }
-
-      return {
-        ...DEFAULT_DB,
-        ...data,
-        locations: data.locations || DEFAULT_DB.locations,
-        nodes: data.nodes || DEFAULT_DB.nodes,
-        allocations: data.allocations || DEFAULT_DB.allocations,
-        nests: mergedNests,
-        eggs: mergedEggs,
-        blueprint_extensions: data.blueprint_extensions || DEFAULT_DB.blueprint_extensions,
-      };
-    }
-  } catch (e) {
-    console.error('Failed reading storage_db.json:', e);
-  }
-  return DEFAULT_DB;
-}
-
-function saveState(data) {
-  try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
-  } catch (e) {
-    console.error('Failed writing storage_db.json:', e);
-  }
-}
-
+// Load persistent store
 let db = loadState();
+const getDb = () => db;
 
-// Ensure all servers have required limits and feature_limits
-if (db.servers) {
-  for (const s of db.servers) {
-    if (!s.feature_limits) s.feature_limits = { databases: 3, allocations: 4, backups: 5 };
-    if (!s.limits) s.limits = { memory: 2048, swap: 512, disk: 10240, io: 500, cpu: 100 };
-  }
-}
+// Live per-server telemetry cache (strictly keyed by server UUID)
+const liveStatsCache = new Map();
 
-// ==========================================
-// Security & Sanitization Middlewares
-// ==========================================
+// Clean malformed JSON & Express fingerprints
+const app = express();
+app.disable('x-powered-by');
+app.set('trust proxy', false);
 
-const SQLI_PATTERNS = [
-  /(\b(union([\s\S]*?)select)\b)/i,
-  /(\b(select|insert|update|delete|drop|alter|truncate)([\s\S]*?)from\b)/i,
-  /(;|--|\/\*|\*\/|xp_)/i,
-  /('[\s]*or[\s]*'1'[\s]*=[\s]*'1')/i,
-  /("[\s]*or[\s]*"1"[\s]*=[\s]*"1")/i,
-  /(\bexec(\s|\+)+(s|x)p\w+)/i,
-];
-
-function sanitizeString(val) {
-  if (typeof val !== 'string') return val;
-  for (const pattern of SQLI_PATTERNS) {
-    if (pattern.test(val)) {
-      console.warn(`[Security Guard] Suspicious SQL injection payload blocked: "${val.substring(0, 40)}"`);
-      return val.replace(pattern, '[BLOCKED_INJECTION]');
-    }
-  }
-  return val;
-}
-
-function sanitizeObject(obj) {
-  if (!obj || typeof obj !== 'object') return obj;
-  for (const key of Object.keys(obj)) {
-    if (typeof obj[key] === 'string') {
-      obj[key] = sanitizeString(obj[key]);
-    } else if (typeof obj[key] === 'object') {
-      sanitizeObject(obj[key]);
-    }
-  }
-  return obj;
-}
+// ============================================================================
+// HTTP Security Headers & Strict Non-Wildcard CORS
+// ============================================================================
 
 app.use((req, res, next) => {
-  if (req.body && typeof req.body === 'object') {
-    sanitizeObject(req.body);
-  }
-  if (req.query && typeof req.query === 'object') {
-    sanitizeObject(req.query);
-  }
-  next();
-});
-
-function getRequestUser(req) {
-  const authHeader = req.headers['authorization'];
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.slice(7).trim();
-    const key = (db.client_api_keys || []).find(k => k.secret_token === token || k.token === token || k.identifier === token);
-    if (key) {
-      const user = db.users.find(u => u.id === key.user_id) || db.users[0];
-      return user;
-    }
-    return null;
-  }
-
-  const userIdHeader = req.headers['x-user-id'];
-  if (userIdHeader) {
-    const found = db.users.find(u => String(u.id) === String(userIdHeader));
-    if (found) return found;
-  }
-  return db.users[0]; // Default to admin for dev
-}
-
-function verifyServerOwnership(req, res, next) {
-  const user = getRequestUser(req);
-  if (!user) {
-    return res.status(401).json({ error: 'Unauthenticated.' });
-  }
-  const serverId = req.params.uuid;
-
-  const target = db.servers.find(
-    s => s.uuid === serverId || s.identifier === serverId || String(s.id) === String(serverId)
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
   );
 
-  if (!target) {
-    return res.status(404).json({ error: 'Server instance not found' });
+  const origin = req.headers.origin;
+  if (origin && isAllowedOrigin(req)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token');
   }
-
-  if (!user.root_admin && target.owner_id !== user.id) {
-    console.warn(`[Tenant Boundary Breach Attempt] User ID ${user.id} attempted to access server ${serverId}`);
-    return res.status(403).json({
-      error: '403 Forbidden: You do not have permission to access or manage this server container.',
-    });
-  }
-
-  req.targetServer = target;
-  req.currentUser = user;
-  next();
-}
-
-function requireRootAdmin(req, res, next) {
-  const user = getRequestUser(req);
-  if (!user.root_admin) {
-    return res.status(403).json({
-      error: '403 Forbidden: Administrator privileges required to access this endpoint.',
-    });
-  }
-  req.currentUser = user;
-  next();
-}
-
-// ==========================================
-// 1. Application Nodes & Wings Engine API
-// ==========================================
-
-async function probeNode(n) {
-  const t0 = Date.now();
-  const scheme = n.scheme || 'http';
-  const fqdn = n.fqdn || '127.0.0.1';
-  const port = n.daemon_listen || 8443;
-  const daemonUrl = `${scheme}://${fqdn}:${port}/api/system`;
-
-  try {
-    const probeRes = await fetch(daemonUrl, {
-      signal: AbortSignal.timeout(4000)
-    });
-    if (probeRes.ok) {
-      const sysInfo = await probeRes.json();
-      const pingMs = Math.max(1, Date.now() - t0);
-      return {
-        ...n,
-        is_online: true,
-        ping_ms: pingMs,
-        daemon_version: sysInfo.version || n.daemon_version || 'v1.0.0-slayerwings',
-        docker_active: !!sysInfo.docker_active,
-        docker_version: sysInfo.docker_version,
-      };
+  if (req.method === 'OPTIONS') {
+    if (origin && !isAllowedOrigin(req)) {
+      return res.status(403).json({ error: 'CORS Origin denied' });
     }
-  } catch (err) {}
+    return res.status(204).end();
+  }
+  next();
+});
+
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// ============================================================================
+// Rate Limiters
+// ============================================================================
+
+const authLimiter = createRateLimiter({ windowMs: 60_000, max: 15 });
+const accountMutationLimiter = createRateLimiter({ windowMs: 60_000, max: 25 });
+const powerLimiter = createRateLimiter({
+  windowMs: 10_000,
+  max: 20,
+  keyFn: req => `${req.user?.id || req.ip}:${req.params?.uuid || 'global'}`,
+});
+const commandLimiter = createRateLimiter({
+  windowMs: 10_000,
+  max: 40,
+  keyFn: req => `${req.user?.id || req.ip}:${req.params?.uuid || 'global'}`,
+});
+
+// ============================================================================
+// Activity Recorder & Serialization Helpers
+// ============================================================================
+
+function recordActivity(user, serverUuid, action, description, ip = '127.0.0.1') {
+  db.activity_logs.unshift({
+    id: Date.now() + Math.floor(Math.random() * 1000),
+    user_id: user?.id || null,
+    username: user?.username || 'system',
+    server_uuid: serverUuid || null,
+    action,
+    description: stripHtmlTags(description).slice(0, 300),
+    ip: String(ip || '127.0.0.1').slice(0, 64),
+    timestamp: new Date().toISOString(),
+  });
+  if (db.activity_logs.length > 500) db.activity_logs.length = 500;
+  saveState(db);
+}
+
+function sanitizeUser(u) {
+  if (!u) return null;
+  return {
+    id: u.id,
+    uuid: u.uuid,
+    username: u.username,
+    email: u.email,
+    name_first: u.name_first || '',
+    name_last: u.name_last || '',
+    language: u.language || 'en',
+    root_admin: Boolean(u.root_admin),
+    is_admin: Boolean(u.root_admin),
+    two_factor_enabled: Boolean(u.two_factor_enabled),
+    created_at: u.created_at,
+  };
+}
+
+function sanitizeNodeForAdmin(node) {
+  if (!node) return null;
+  const loc = db.locations.find(l => String(l.id) === String(node.location_id));
+  const nodeAllocCount = db.allocations.filter(a => String(a.node_id) === String(node.id)).length;
+  const nodeServerCount = db.servers.filter(s => String(s.node_id) === String(node.id)).length;
+  return {
+    id: node.id,
+    uuid: node.uuid,
+    name: node.name,
+    description: node.description || '',
+    location_id: node.location_id,
+    location_name: loc ? `${loc.short} (${loc.long})` : (node.location_name || 'Local'),
+    fqdn: node.fqdn,
+    scheme: node.scheme || 'http',
+    behind_proxy: Boolean(node.behind_proxy),
+    maintenance_mode: Boolean(node.maintenance_mode),
+    allow_auto_allocation: node.allow_auto_allocation !== false,
+    memory: node.memory,
+    memory_overallocate: node.memory_overallocate || 0,
+    disk: node.disk,
+    disk_overallocate: node.disk_overallocate || 0,
+    upload_size: node.upload_size || 100,
+    daemon_listen: node.daemon_listen || 8443,
+    daemon_sftp: node.daemon_sftp || 2202,
+    daemon_base: node.daemon_base,
+    servers_count: nodeServerCount,
+    allocations_count: nodeAllocCount,
+    is_online: Boolean(node.is_online),
+    daemon_version: node.daemon_version || 'unknown',
+    latency_ms: node.latency_ms ?? null,
+    system_info: node.system_info || null,
+    has_token: Boolean(node.daemon_token || ['127.0.0.1', 'localhost'].includes(String(node.fqdn).toLowerCase())),
+  };
+}
+
+function buildCanonicalServer(srv) {
+  if (!srv) return null;
+  const node = getServerNode(db, srv);
+  const owner = db.users.find(u => String(u.id) === String(srv.owner_id || srv.user_id));
+  const egg = db.eggs.find(e => String(e.id) === String(srv.egg_id));
+  const allocs = db.allocations.filter(a => String(a.server_id) === String(srv.id));
+  const primaryAlloc =
+    allocs.find(a => String(a.id) === String(srv.allocation_id)) ||
+    db.allocations.find(a => String(a.id) === String(srv.allocation_id)) ||
+    allocs[0] ||
+    null;
 
   return {
-    ...n,
-    is_online: false,
-    ping_ms: null,
+    ...srv,
+    identifier: srv.identifier || String(srv.uuid).slice(0, 8),
+    owner_id: srv.owner_id || srv.user_id,
+    egg_name: srv.egg_name || egg?.name || 'Custom',
+    node_name: node?.name || 'Local-Node',
+    allocation: primaryAlloc
+      ? { id: primaryAlloc.id, ip: primaryAlloc.ip, port: primaryAlloc.port, alias: primaryAlloc.alias || null }
+      : { id: null, ip: '127.0.0.1', port: 25565, alias: null },
+    allocations: allocs.map(a => ({
+      id: a.id,
+      ip: a.ip,
+      port: a.port,
+      alias: a.alias || null,
+      notes: a.notes || '',
+      is_default: primaryAlloc ? String(a.id) === String(primaryAlloc.id) : false,
+    })),
+    sftp_details: {
+      ip: node?.fqdn || '127.0.0.1',
+      port: node?.daemon_sftp || 2202,
+    },
+    telemetry: liveStatsCache.get(srv.uuid) || null,
+    relationships: {
+      node: node ? { id: node.id, name: node.name, fqdn: node.fqdn, daemon_listen: node.daemon_listen } : null,
+      user: owner ? sanitizeUser(owner) : null,
+      egg: egg ? { id: egg.id, uuid: egg.uuid, name: egg.name, nest_id: egg.nest_id } : null,
+      allocations: allocs,
+    },
   };
 }
 
-app.get('/api/application/nodes', async (req, res) => {
-  const probed = await Promise.all(db.nodes.map(n => probeNode(n)));
-  res.json({
-    object: 'list',
-    data: probed.map(n => ({
-      object: 'node',
-      attributes: n,
-    })),
+function getClientIp(req) {
+  return String(req.socket?.remoteAddress || req.ip || '127.0.0.1');
+}
+
+function ipAllowedByKey(clientIp, allowedIps) {
+  if (!Array.isArray(allowedIps) || allowedIps.length === 0) return true;
+  const cleanClient = clientIp.replace(/^::ffff:/, '');
+  return allowedIps.some(ip => {
+    const cleanAllowed = String(ip).trim().replace(/^::ffff:/, '');
+    return cleanAllowed === '*' || cleanAllowed === cleanClient || (cleanAllowed === '127.0.0.1' && cleanClient === '::1');
   });
-});
+}
 
-app.get('/api/application/nodes/:id', async (req, res) => {
-  const node = db.nodes.find(n => String(n.id) === String(req.params.id));
-  if (!node) return res.status(404).json({ error: 'Node not found' });
-  const probed = await probeNode(node);
-  res.json({ object: 'node', attributes: probed });
-});
+function setSessionCookie(res, user) {
+  const token = createSessionCookieToken(user, 86400);
+  const decoded = verifySessionCookieToken(token);
+  const csrfToken = createCsrfToken(decoded.sid);
+  const flags = [
+    `slayer_session=${encodeURIComponent(token)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=86400',
+  ];
+  if (IS_PROD) flags.push('Secure');
+  res.setHeader('Set-Cookie', flags.join('; '));
+  return csrfToken;
+}
 
-app.get('/api/application/nodes/:id/configuration', requireRootAdmin, (req, res) => {
-  const node = db.nodes.find(n => String(n.id) === String(req.params.id));
-  if (!node) return res.status(404).json({ error: 'Node not found' });
+function clearSessionCookie(res) {
+  res.setHeader('Set-Cookie', 'slayer_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+}
 
-  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.get('host') || 'localhost:3000';
-  const remoteUrl = `${proto}://${host}`;
+// ============================================================================
+// Authentication, CSRF & Authorization Middleware
+// ============================================================================
 
-  const configYaml = `# ========================================================
-# SlayerWings Engine Daemon Configuration (v1.0.0)
-# Generated by SlayerNode Panel v1.0.0 for ${node.name}
-# Documentation: https://slayernode.xyz/docs/slayerwings
-# ========================================================
-debug: false
-uuid: ${node.uuid}
-token_id: ${node.uuid.slice(0, 8)}
-token: sn_wing_${node.uuid.replace(/-/g, '')}
-api:
-  host: 0.0.0.0
-  port: ${node.daemon_listen || 8443}
-  ssl:
-    enabled: ${node.scheme === 'https'}
-    cert: /etc/letsencrypt/live/${node.fqdn}/fullchain.pem
-    key: /etc/letsencrypt/live/${node.fqdn}/privkey.pem
-  upload_limit: ${node.upload_size || 500}
-system:
-  root_directory: ${node.daemon_base || '/var/lib/slayerwings/volumes'}
-  log_directory: /var/log/slayerwings
-  data: /var/lib/slayerwings
-  archive_directory: /var/lib/slayerwings/backups
-  backup_retention: 7
-  sftp:
-    bind_port: ${node.daemon_sftp || 2202}
-allowed_mounts: []
-remote: ${remoteUrl}
-docker:
-  network:
-    name: slayernode_nw
-    driver: bridge
-    interface: 172.18.0.1
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
-`;
+app.use((req, res, next) => {
+  req.user = null;
+  req.authType = null;
+  req.apiKey = null;
+  req.csrfExpected = null;
 
-  res.setHeader('Content-Type', 'text/yaml');
-  res.send(configYaml);
-});
+  const authHeader = req.headers['authorization'];
+  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+    const rawToken = authHeader.slice(7).trim();
+    if (!rawToken) return next();
+    const tokenHash = hashApiToken(rawToken);
+    const clientIp = getClientIp(req);
 
-app.post('/api/application/nodes', requireRootAdmin, (req, res) => {
-  const data = req.body;
-  const newNode = {
-    id: Date.now(),
-    uuid: crypto.randomUUID(),
-    name: data.name || 'New Wings Node',
-    description: data.description || '',
-    location_id: parseInt(data.location_id) || 1,
-    location_name: data.location_name || 'Frankfurt, Germany',
-    fqdn: data.fqdn || 'node.example.com',
-    scheme: data.scheme || 'https',
-    behind_proxy: !!data.behind_proxy,
-    maintenance_mode: !!data.maintenance_mode,
-    allow_auto_allocation: data.allow_auto_allocation !== false,
-    memory: parseInt(data.memory) || 32768,
-    memory_overallocate: parseInt(data.memory_overallocate) || 0,
-    disk: parseInt(data.disk) || 512000,
-    disk_overallocate: parseInt(data.disk_overallocate) || 0,
-    upload_size: parseInt(data.upload_size) || 500,
-    daemon_listen: parseInt(data.daemon_listen) || 8443,
-    daemon_sftp: parseInt(data.daemon_sftp) || 2202,
-    daemon_base: data.daemon_base || '/var/lib/slayerwings/volumes',
-    servers_count: 0,
-    allocations_count: 0,
-    is_online: true,
-    daemon_version: 'v1.0.0-slayerwings',
-  };
-
-  db.nodes.push(newNode);
-  saveState(db);
-  res.status(201).json({ object: 'node', attributes: newNode });
-});
-
-app.patch('/api/application/nodes/:id', requireRootAdmin, (req, res) => {
-  const idx = db.nodes.findIndex(n => String(n.id) === String(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: 'Node not found' });
-
-  db.nodes[idx] = {
-    ...db.nodes[idx],
-    ...req.body,
-    id: db.nodes[idx].id, // Protected
-    uuid: db.nodes[idx].uuid, // Protected
-  };
-  saveState(db);
-  res.json({ object: 'node', attributes: db.nodes[idx] });
-});
-
-app.delete('/api/application/nodes/:id', requireRootAdmin, (req, res) => {
-  const node = db.nodes.find(n => String(n.id) === String(req.params.id));
-  if (!node) return res.status(404).json({ error: 'Node not found' });
-
-  const activeServers = db.servers.filter(s => String(s.node_id) === String(req.params.id));
-  if (activeServers.length > 0) {
-    return res.status(400).json({ error: `Cannot delete node: It currently hosts ${activeServers.length} active servers.` });
-  }
-
-  db.nodes = db.nodes.filter(n => String(n.id) !== String(req.params.id));
-  db.allocations = db.allocations.filter(a => String(a.node_id) !== String(req.params.id));
-  saveState(db);
-  res.status(204).send();
-});
-
-// Node Allocations (IP:Port)
-app.get('/api/application/nodes/:id/allocations', (req, res) => {
-  const allocations = db.allocations.filter(a => String(a.node_id) === String(req.params.id));
-  res.json({
-    object: 'list',
-    data: allocations.map(a => ({
-      object: 'allocation',
-      attributes: a,
-    })),
-  });
-});
-
-app.post('/api/application/nodes/:id/allocations', requireRootAdmin, (req, res) => {
-  const { ip, ports, alias } = req.body;
-  if (!ip || !ports) {
-    return res.status(400).json({ error: 'IP address and ports are required.' });
-  }
-
-  const portList = [];
-  const rawPorts = String(ports).split(',').map(p => p.trim());
-  for (const part of rawPorts) {
-    if (part.includes('-')) {
-      const [start, end] = part.split('-').map(Number);
-      if (!isNaN(start) && !isNaN(end) && end >= start) {
-        for (let p = start; p <= Math.min(start + 50, end); p++) {
-          portList.push(p);
-        }
+    const clientKey = (db.client_api_keys || []).find(
+      k => k.token_hash === tokenHash && !k.revoked_at
+    );
+    if (clientKey && ipAllowedByKey(clientIp, clientKey.allowed_ips)) {
+      const user = db.users.find(u => String(u.id) === String(clientKey.user_id));
+      if (user) {
+        clientKey.last_used_at = new Date().toISOString();
+        req.user = user;
+        req.authType = 'client_api_key';
+        req.apiKey = { ...clientKey, kind: 'client' };
       }
-    } else {
-      const p = Number(part);
-      if (!isNaN(p)) portList.push(p);
+      return next();
+    }
+
+    const appKey = (db.api_keys || []).find(
+      k => k.token_hash === tokenHash && !k.revoked_at
+    );
+    if (appKey && ipAllowedByKey(clientIp, appKey.allowed_ips)) {
+      const user = db.users.find(u => String(u.id) === String(appKey.user_id));
+      if (user) {
+        appKey.last_used_at = new Date().toISOString();
+        req.user = user;
+        req.authType = 'app_api_key';
+        req.apiKey = { ...appKey, kind: 'application' };
+      }
+      return next();
+    }
+    return next();
+  }
+
+  const cookies = parseCookies(req.headers.cookie || '');
+  if (cookies.slayer_session) {
+    const session = verifySessionCookieToken(cookies.slayer_session);
+    if (session) {
+      const user = db.users.find(u => String(u.id) === String(session.uid));
+      if (user && (user.token_version || 1) === (session.tv || 1)) {
+        req.user = user;
+        req.authType = 'cookie';
+        req.sessionPayload = session;
+        req.csrfExpected = createCsrfToken(session.sid);
+      }
+    }
+  }
+  next();
+});
+
+// Enforce Origin & CSRF on mutating API calls
+app.use('/api', (req, res, next) => {
+  const mutating = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+  if (!mutating) return next();
+
+  // If browser sends Origin header, strictly validate it
+  if (req.headers.origin && !isAllowedOrigin(req)) {
+    return res.status(403).json({
+      errors: [{ code: 'ForbiddenOrigin', status: '403', detail: 'Cross-site origin rejected by security policy.' }],
+    });
+  }
+
+  // API key Bearer requests are immune to browser cookie CSRF
+  if (req.authType === 'client_api_key' || req.authType === 'app_api_key') {
+    return next();
+  }
+
+  // Public auth endpoints rely on credentials + Origin check above
+  if (req.path === '/auth/login' || req.path === '/auth/register') {
+    return next();
+  }
+
+  // Cookie-authenticated state changes MUST present matching X-CSRF-Token
+  if (req.authType === 'cookie') {
+    const provided = req.headers['x-csrf-token'];
+    if (!verifyCsrfToken(provided, req.sessionPayload?.sid)) {
+      return res.status(403).json({
+        errors: [{ code: 'InvalidCsrfToken', status: '403', detail: 'Missing or invalid CSRF token.' }],
+      });
+    }
+  }
+  next();
+});
+
+function requireAuth(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({
+      errors: [{ code: 'Unauthenticated', status: '401', detail: 'Authentication required.' }],
+    });
+  }
+  next();
+}
+
+function requireRootAdmin(requiredScope = null) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        errors: [{ code: 'Unauthenticated', status: '401', detail: 'Authentication required.' }],
+      });
+    }
+    if (!req.user.root_admin) {
+      return res.status(403).json({
+        errors: [{ code: 'Forbidden', status: '403', detail: 'Administrator privileges required.' }],
+      });
+    }
+    if (req.authType === 'client_api_key') {
+      return res.status(403).json({
+        errors: [{ code: 'InvalidKeyType', status: '403', detail: 'Client API keys cannot access Application Admin endpoints.' }],
+      });
+    }
+    if (req.authType === 'app_api_key' && requiredScope) {
+      const scopes = Array.isArray(req.apiKey?.scopes) ? req.apiKey.scopes : [];
+      if (!scopes.includes('*') && !scopes.includes(requiredScope)) {
+        return res.status(403).json({
+          errors: [{ code: 'InsufficientScope', status: '403', detail: `API key lacks required scope: ${requiredScope}` }],
+        });
+      }
+    }
+    next();
+  };
+}
+
+function findServerStrict(idOrUuid) {
+  if (!idOrUuid) return null;
+  const key = String(idOrUuid).trim();
+  return (
+    db.servers.find(s => String(s.uuid) === key) ||
+    db.servers.find(s => String(s.identifier) === key) ||
+    db.servers.find(s => String(s.id) === key) ||
+    null
+  );
+}
+
+function userCanAccessServer(user, srv, requiredPerm = null) {
+  if (!user || !srv) return false;
+  if (user.root_admin) return true;
+  if (String(srv.owner_id || srv.user_id) === String(user.id)) return true;
+
+  const sub = (db.subusers || []).find(
+    su => String(su.server_uuid) === String(srv.uuid) && String(su.user_id) === String(user.id)
+  );
+  if (!sub) return false;
+  if (!requiredPerm) return true;
+  const perms = Array.isArray(sub.permissions) ? sub.permissions : [];
+  return perms.includes('*') || perms.includes(requiredPerm);
+}
+
+function clientKeyHasPerm(apiKey, requiredPerm) {
+  if (!requiredPerm) return true;
+  const scopes = Array.isArray(apiKey?.permissions) ? apiKey.permissions : ['*'];
+  return scopes.includes('*') || scopes.includes(requiredPerm) || scopes.includes(requiredPerm.split('.')[0] + '.*');
+}
+
+function verifyServerOwnership(requiredPerm = null) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ errors: [{ code: 'Unauthenticated', status: '401', detail: 'Authentication required.' }] });
+    }
+    if (req.authType === 'client_api_key' && requiredPerm && !clientKeyHasPerm(req.apiKey, requiredPerm)) {
+      return res.status(403).json({
+        errors: [{ code: 'InsufficientScope', status: '403', detail: `Client API key lacks permission: ${requiredPerm}` }],
+      });
+    }
+    const srv = findServerStrict(req.params.uuid || req.params.id);
+    if (!srv) {
+      return res.status(404).json({ errors: [{ code: 'NotFound', status: '404', detail: 'Server not found.' }] });
+    }
+    if (!userCanAccessServer(req.user, srv, requiredPerm)) {
+      return res.status(403).json({
+        errors: [{ code: 'Forbidden', status: '403', detail: 'You do not have permission to access this server.' }],
+      });
+    }
+    req.targetServer = srv;
+    next();
+  };
+}
+
+// ============================================================================
+// Authentication & Session Endpoints
+// ============================================================================
+
+app.post('/api/auth/login', authLimiter, (req, res) => {
+  const { email, identifier, password, two_factor_code } = req.body || {};
+  const loginKey = String(email || identifier || '').trim().toLowerCase();
+
+  if (!loginKey || typeof password !== 'string' || !password) {
+    return res.status(400).json({ error: 'Email/username and password are required.' });
+  }
+  if (hasSqlInjection(loginKey)) {
+    return res.status(400).json({ error: 'Invalid credential format.' });
+  }
+
+  const user = db.users.find(
+    u => String(u.email).toLowerCase() === loginKey || String(u.username).toLowerCase() === loginKey
+  );
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    return res.status(401).json({ error: 'Invalid credentials.' });
+  }
+
+  if (user.two_factor_enabled) {
+    if (!two_factor_code) {
+      return res.status(200).json({ requires_two_factor: true });
+    }
+    if (!verifyTotpCode(user.two_factor_secret, two_factor_code)) {
+      return res.status(401).json({ error: 'Invalid two-factor authentication code.' });
     }
   }
 
-  const created = [];
-  for (const port of portList) {
-    // Avoid exact duplicate on same node
-    const exists = db.allocations.some(a => String(a.node_id) === String(req.params.id) && a.ip === ip && a.port === port);
-    if (!exists) {
-      const newAlloc = {
-        id: Date.now() + Math.floor(Math.random() * 1000),
-        node_id: parseInt(req.params.id),
-        ip,
-        port,
-        alias: alias || '',
-        server_id: null,
-        is_default: false,
-      };
-      db.allocations.push(newAlloc);
-      created.push(newAlloc);
-    }
-  }
-
-  // Update node allocations count
-  const node = db.nodes.find(n => String(n.id) === String(req.params.id));
-  if (node) {
-    node.allocations_count = db.allocations.filter(a => String(a.node_id) === String(req.params.id)).length;
-  }
-
-  saveState(db);
-  res.status(201).json({ object: 'list', data: created.map(a => ({ object: 'allocation', attributes: a })) });
+  const csrfToken = setSessionCookie(res, user);
+  recordActivity(user, null, 'auth:login', `Authenticated user ${user.username}`, getClientIp(req));
+  return res.json({ user: sanitizeUser(user), csrfToken });
 });
 
-app.delete('/api/application/nodes/:id/allocations/:allocId', requireRootAdmin, (req, res) => {
-  const alloc = db.allocations.find(a => String(a.id) === String(req.params.allocId));
-  if (!alloc) return res.status(404).json({ error: 'Allocation not found.' });
-
-  if (alloc.server_id) {
-    return res.status(400).json({ error: 'Cannot delete an allocation assigned to an active server container.' });
+app.post('/api/auth/register', authLimiter, (req, res) => {
+  if (!db.theme.auth_allow_registration || !db.settings.allow_registration) {
+    return res.status(403).json({ error: 'New account registration is disabled by an administrator.' });
   }
+  const { username, email, password, name_first = '', name_last = '' } = req.body || {};
+  const cleanUser = stripHtmlTags(String(username || '')).trim();
+  const cleanEmail = String(email || '').trim().toLowerCase();
 
-  db.allocations = db.allocations.filter(a => String(a.id) !== String(req.params.allocId));
-  const node = db.nodes.find(n => String(n.id) === String(req.params.id));
-  if (node) {
-    node.allocations_count = db.allocations.filter(a => String(a.node_id) === String(req.params.id)).length;
+  if (!/^[a-zA-Z0-9._-]{3,32}$/.test(cleanUser)) {
+    return res.status(400).json({ error: 'Username must be 3-32 alphanumeric characters.' });
   }
-  saveState(db);
-  res.status(204).send();
-});
-
-// ==========================================
-// 2. Application Users API & Main Admin Protection
-// ==========================================
-
-app.get('/api/application/users', requireRootAdmin, (req, res) => {
-  res.json({
-    object: 'list',
-    data: db.users.map(u => ({
-      object: 'user',
-      attributes: u,
-    })),
-  });
-});
-
-app.post('/api/application/users', requireRootAdmin, (req, res) => {
-  const { username, email, name_first, name_last, root_admin, password } = req.body;
-  if (!username || !email) {
-    return res.status(400).json({ error: 'Username and email are required.' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return res.status(400).json({ error: 'Valid email address is required.' });
   }
-
-  const existing = db.users.find(u => u.username.toLowerCase() === username.toLowerCase() || u.email.toLowerCase() === email.toLowerCase());
-  if (existing) {
-    return res.status(400).json({ error: 'A user with this username or email already exists.' });
+  if (typeof password !== 'string' || password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+  }
+  if (db.users.some(u => u.email.toLowerCase() === cleanEmail || u.username.toLowerCase() === cleanUser.toLowerCase())) {
+    return res.status(409).json({ error: 'Username or email is already registered.' });
   }
 
   const newUser = {
-    id: Date.now(),
+    id: nextId(db.users),
     uuid: crypto.randomUUID(),
-    username: username.toLowerCase().trim(),
-    email: email.toLowerCase().trim(),
-    name_first: name_first || 'User',
-    name_last: name_last || '',
+    username: cleanUser,
+    email: cleanEmail,
+    name_first: stripHtmlTags(name_first).slice(0, 64),
+    name_last: stripHtmlTags(name_last).slice(0, 64),
     language: 'en',
-    root_admin: !!root_admin,
+    root_admin: false, // Explicitly lock standard registration to non-admin!
     two_factor_enabled: false,
+    two_factor_secret: '',
+    token_version: 1,
+    password_hash: hashPassword(password),
     created_at: new Date().toISOString(),
   };
 
   db.users.push(newUser);
   saveState(db);
-  res.status(201).json({ object: 'user', attributes: newUser });
+
+  const csrfToken = setSessionCookie(res, newUser);
+  recordActivity(newUser, null, 'auth:register', `Registered account ${newUser.username}`, getClientIp(req));
+  return res.status(201).json({ user: sanitizeUser(newUser), csrfToken });
 });
 
-app.patch('/api/application/users/:id', requireRootAdmin, (req, res) => {
-  const userId = parseInt(req.params.id);
-  const idx = db.users.findIndex(u => u.id === userId);
-  if (idx === -1) return res.status(404).json({ error: 'User not found' });
-
-  // STRICT SECURITY CHECK: Protect Main Admin Account ID 1
-  if (userId === 1) {
-    // Cannot remove root_admin status
-    if (req.body.root_admin === false) {
-      return res.status(403).json({ error: 'Security Violation: Cannot revoke root administrator privileges from the primary admin account.' });
-    }
+app.post('/api/auth/logout', (req, res) => {
+  if (req.user) {
+    req.user.token_version = (req.user.token_version || 1) + 1;
+    saveState(db);
+    recordActivity(req.user, null, 'auth:logout', `Signed out user ${req.user.username}`, getClientIp(req));
   }
-
-  db.users[idx] = {
-    ...db.users[idx],
-    ...req.body,
-    id: db.users[idx].id, // Protected
-    uuid: db.users[idx].uuid, // Protected
-    root_admin: userId === 1 ? true : (req.body.root_admin !== undefined ? req.body.root_admin : db.users[idx].root_admin),
-  };
-
-  saveState(db);
-  res.json({ object: 'user', attributes: db.users[idx] });
+  clearSessionCookie(res);
+  return res.status(204).end();
 });
 
-app.delete('/api/application/users/:id', requireRootAdmin, (req, res) => {
-  const userId = parseInt(req.params.id);
-
-  // STRICT SECURITY CHECK: Prevent Deletion of Primary Admin ID 1
-  if (userId === 1) {
-    return res.status(403).json({
-      error: 'Security Violation: The primary system administrator account (ID 1) is permanent and cannot be deleted.',
-    });
+app.get('/api/auth/me', (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Not authenticated' });
   }
-
-  const user = db.users.find(u => u.id === userId);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-
-  const userServers = db.servers.filter(s => s.owner_id === userId);
-  if (userServers.length > 0) {
-    return res.status(400).json({ error: `Cannot delete user: They own ${userServers.length} active server instances.` });
-  }
-
-  db.users = db.users.filter(u => u.id !== userId);
-  saveState(db);
-  res.status(204).send();
-});
-
-// ==========================================
-// 3. Application Servers API (Create & Host Servers)
-// ==========================================
-
-app.get('/api/application/servers', requireRootAdmin, (req, res) => {
-  res.json({
-    object: 'list',
-    data: db.servers.map(s => ({
-      object: 'server',
-      attributes: s,
-    })),
+  return res.json({
+    user: sanitizeUser(req.user),
+    csrfToken: req.csrfExpected || '',
   });
 });
 
-app.post('/api/application/servers', requireRootAdmin, (req, res) => {
+// ============================================================================
+// Customization Studio & Theme (Public read for styling, Admin write)
+// ============================================================================
+
+app.get('/api/studio/theme', (req, res) => {
+  // Never expose third-party integration tokens to unauthenticated or non-admin users
+  const safeTheme = { ...db.theme };
+  if (!req.user?.root_admin) {
+    delete safeTheme.cloudflare_api_token;
+    delete safeTheme.curseforge_api_key;
+    delete safeTheme.modrinth_token;
+  }
+  return res.json(safeTheme);
+});
+
+app.put('/api/studio/theme', requireRootAdmin('settings:write'), (req, res) => {
+  const updates = req.body || {};
+  for (const urlField of ['custom_wallpaper_url', 'logo_url', 'favicon_url', 'auth_bg_url']) {
+    if (updates[urlField] !== undefined && !validateSafeMediaUrl(String(updates[urlField]))) {
+      return res.status(400).json({ error: `Invalid or unsafe URL for ${urlField}` });
+    }
+  }
+  if (updates.custom_css !== undefined && containsDangerousCss(String(updates.custom_css))) {
+    return res.status(400).json({ error: 'Custom CSS contains forbidden constructs (<script>, expression, @import url)' });
+  }
+  const safeTextFields = ['panel_name', 'preset_name', 'auth_heading', 'auth_subtitle'];
+  for (const tf of safeTextFields) {
+    if (typeof updates[tf] === 'string') {
+      updates[tf] = stripHtmlTags(updates[tf]).slice(0, 120);
+    }
+  }
+  if (updates.announcement_banner && typeof updates.announcement_banner.text === 'string') {
+    updates.announcement_banner = {
+      ...updates.announcement_banner,
+      text: stripHtmlTags(updates.announcement_banner.text).slice(0, 300),
+    };
+  }
+
+  db.theme = { ...db.theme, ...updates };
+  saveState(db);
+  recordActivity(req.user, null, 'studio:theme.update', 'Updated Customization Studio theme configuration', getClientIp(req));
+  return res.json(db.theme);
+});
+
+app.post('/api/studio/theme/reset', requireRootAdmin('settings:write'), (req, res) => {
+  db.theme = createDefaultTheme();
+  saveState(db);
+  recordActivity(req.user, null, 'studio:theme.reset', 'Reset Customization Studio theme to defaults', getClientIp(req));
+  return res.json(db.theme);
+});
+
+// ============================================================================
+// Blueprint Extension Framework (Admin-Only Write, Authenticated Read)
+// ============================================================================
+
+app.get('/api/blueprint/extensions', requireAuth, (req, res) => {
+  return res.json({ data: db.blueprint_extensions || [] });
+});
+
+app.post('/api/blueprint/extensions/toggle', requireRootAdmin('settings:write'), (req, res) => {
+  const { id, enabled } = req.body || {};
+  const ext = (db.blueprint_extensions || []).find(e => e.id === id);
+  if (!ext) return res.status(404).json({ error: 'Extension not found' });
+  ext.enabled = Boolean(enabled);
+  saveState(db);
+  recordActivity(req.user, null, 'blueprint:toggle', `${ext.enabled ? 'Enabled' : 'Disabled'} extension "${ext.name}"`, getClientIp(req));
+  return res.json({ success: true, extension: ext });
+});
+
+app.post('/api/blueprint/upload', requireRootAdmin('settings:write'), (req, res) => {
+  const src = req.body?.manifest && typeof req.body.manifest === 'object' ? req.body.manifest : (req.body || {});
+  const { name, version = '1.0.0', author = 'Community', description = '' } = src;
+  const cleanName = stripHtmlTags(String(name || '')).trim();
+  if (!cleanName) return res.status(400).json({ error: 'Extension name is required' });
+  const ext = {
+    id: cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) + '-' + crypto.randomBytes(2).toString('hex'),
+    name: cleanName,
+    version: stripHtmlTags(version).slice(0, 24),
+    author: stripHtmlTags(author).slice(0, 64),
+    description: stripHtmlTags(description).slice(0, 240),
+    target: 'v1.0.0',
+    icon: 'Package',
+    enabled: true,
+    installed_at: new Date().toISOString().slice(0, 10),
+  };
+  db.blueprint_extensions.push(ext);
+  saveState(db);
+  recordActivity(req.user, null, 'blueprint:install', `Installed extension "${cleanName}"`, getClientIp(req));
+  return res.status(201).json({ success: true, extension: ext });
+});
+
+// ============================================================================
+// Client Account, Security (Password & 2FA), API Keys, SSH Keys, Regions
+// ============================================================================
+
+app.get('/api/client/account', requireAuth, (req, res) => {
+  return res.json(sanitizeUser(req.user));
+});
+
+app.put('/api/client/account/email', requireAuth, accountMutationLimiter, (req, res) => {
+  const { email, password } = req.body || {};
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return res.status(400).json({ error: 'Valid email address is required.' });
+  }
+  if (!password || !verifyPassword(password, req.user.password_hash)) {
+    return res.status(403).json({ error: 'Current password is incorrect.' });
+  }
+  if (db.users.some(u => u.id !== req.user.id && u.email.toLowerCase() === cleanEmail)) {
+    return res.status(409).json({ error: 'Email already in use.' });
+  }
+  req.user.email = cleanEmail;
+  saveState(db);
+  recordActivity(req.user, null, 'account:email.update', `Updated email to ${cleanEmail}`, getClientIp(req));
+  return res.json(sanitizeUser(req.user));
+});
+
+app.put('/api/client/account/password', requireAuth, accountMutationLimiter, (req, res) => {
+  const { current_password, password, password_confirmation } = req.body || {};
+  if (!current_password || !verifyPassword(current_password, req.user.password_hash)) {
+    return res.status(403).json({ error: 'Current password is incorrect.' });
+  }
+  if (typeof password !== 'string' || password.length < 8) {
+    return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+  }
+  if (password_confirmation !== undefined && password !== password_confirmation) {
+    return res.status(400).json({ error: 'Password confirmation does not match.' });
+  }
+  req.user.password_hash = hashPassword(password);
+  req.user.token_version = (req.user.token_version || 1) + 1;
+  saveState(db);
+  const csrfToken = setSessionCookie(res, req.user);
+  recordActivity(req.user, null, 'account:password.update', 'Updated account password', getClientIp(req));
+  return res.json({ success: true, csrfToken });
+});
+
+app.post('/api/client/account/two-factor', requireAuth, accountMutationLimiter, (req, res) => {
+  if (req.body?.code) {
+    // Enable 2FA when code supplied against pending or existing secret
+    const pendingSecret = req.user.pending_two_factor_secret || req.user.two_factor_secret;
+    if (!pendingSecret || !verifyTotpCode(pendingSecret, req.body.code)) {
+      return res.status(400).json({ error: 'Invalid 6-digit verification code.' });
+    }
+    req.user.two_factor_secret = pendingSecret;
+    delete req.user.pending_two_factor_secret;
+    req.user.two_factor_enabled = true;
+    saveState(db);
+    recordActivity(req.user, null, 'account:2fa.enable', 'Enabled two-factor authentication', getClientIp(req));
+    return res.json({ enabled: true });
+  }
+
+  const secret = generateTotpSecret();
+  req.user.pending_two_factor_secret = secret;
+  saveState(db);
+  const otpauth = buildOtpAuthUri(req.user.email, db.theme.panel_name || 'SlayerNode', secret);
+  return res.json({ secret, otpauth_uri: otpauth, enabled: false });
+});
+
+app.delete('/api/client/account/two-factor', requireAuth, accountMutationLimiter, (req, res) => {
+  const { password } = req.body || {};
+  if (req.user.two_factor_enabled && (!password || !verifyPassword(password, req.user.password_hash))) {
+    return res.status(403).json({ error: 'Valid password is required to disable 2FA.' });
+  }
+  req.user.two_factor_enabled = false;
+  req.user.two_factor_secret = '';
+  delete req.user.pending_two_factor_secret;
+  saveState(db);
+  recordActivity(req.user, null, 'account:2fa.disable', 'Disabled two-factor authentication', getClientIp(req));
+  return res.json({ enabled: false });
+});
+
+app.get('/api/client/account/api-keys', requireAuth, (req, res) => {
+  const keys = (db.client_api_keys || [])
+    .filter(k => String(k.user_id) === String(req.user.id) && !k.revoked_at)
+    .map(k => ({
+      identifier: k.identifier,
+      description: k.description,
+      allowed_ips: k.allowed_ips || [],
+      permissions: k.permissions || ['*'],
+      last_used_at: k.last_used_at || null,
+      created_at: k.created_at,
+    }));
+  return res.json({ data: keys });
+});
+
+app.post('/api/client/account/api-keys', requireAuth, accountMutationLimiter, (req, res) => {
+  const { description, allowed_ips = [], permissions = ['*'] } = req.body || {};
+  const cleanDesc = stripHtmlTags(String(description || '')).trim();
+  if (!cleanDesc) return res.status(400).json({ error: 'API key description is required.' });
+  if (hasSqlInjection(cleanDesc)) return res.status(400).json({ error: 'Invalid API key description.' });
+
+  const identifier = crypto.randomBytes(6).toString('hex');
+  const rawToken = `ptlc_${crypto.randomBytes(24).toString('hex')}`;
+  const cleanIps = Array.isArray(allowed_ips)
+    ? allowed_ips.map(i => String(i).trim()).filter(Boolean)
+    : String(allowed_ips || '').split(',').map(i => i.trim()).filter(Boolean);
+
+  const keyRecord = {
+    identifier,
+    user_id: req.user.id,
+    description: cleanDesc.slice(0, 100),
+    allowed_ips: cleanIps,
+    permissions: Array.isArray(permissions) && permissions.length ? permissions : ['*'],
+    token_hash: hashApiToken(rawToken),
+    last_used_at: null,
+    revoked_at: null,
+    created_at: new Date().toISOString(),
+  };
+
+  db.client_api_keys.push(keyRecord);
+  saveState(db);
+  recordActivity(req.user, null, 'api-key:create', `Generated client API key "${keyRecord.description}"`, getClientIp(req));
+
+  return res.status(201).json({
+    identifier: keyRecord.identifier,
+    description: keyRecord.description,
+    allowed_ips: keyRecord.allowed_ips,
+    permissions: keyRecord.permissions,
+    secret_token: rawToken,
+    created_at: keyRecord.created_at,
+  });
+});
+
+app.delete('/api/client/account/api-keys/:identifier', requireAuth, (req, res) => {
+  const key = (db.client_api_keys || []).find(
+    k => k.identifier === req.params.identifier && String(k.user_id) === String(req.user.id) && !k.revoked_at
+  );
+  if (!key) return res.status(404).json({ error: 'API key not found.' });
+  key.revoked_at = new Date().toISOString();
+  saveState(db);
+  recordActivity(req.user, null, 'api-key:delete', `Revoked client API key ${key.identifier}`, getClientIp(req));
+  return res.status(204).end();
+});
+
+app.get('/api/client/account/ssh-keys', requireAuth, (req, res) => {
+  const keys = (db.ssh_keys || []).filter(k => String(k.user_id) === String(req.user.id));
+  return res.json({ data: keys });
+});
+
+app.post('/api/client/account/ssh-keys', requireAuth, accountMutationLimiter, (req, res) => {
+  const { name, public_key } = req.body || {};
+  const cleanName = stripHtmlTags(String(name || '')).trim();
+  const cleanKey = String(public_key || '').trim();
+  if (!cleanName || !/^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-nistp\d+)\s+[A-Za-z0-9+/=]+/.test(cleanKey)) {
+    return res.status(400).json({ error: 'Valid SSH key name and public key are required.' });
+  }
+  const keyBodyB64 = cleanKey.split(/\s+/)[1] || '';
+  const fingerprint = `SHA256:${crypto.createHash('sha256').update(Buffer.from(keyBodyB64, 'base64')).digest('base64').replace(/=+$/, '')}`;
+  const entry = {
+    id: nextId(db.ssh_keys),
+    user_id: req.user.id,
+    name: cleanName.slice(0, 64),
+    public_key: cleanKey,
+    fingerprint,
+    created_at: new Date().toISOString(),
+  };
+  db.ssh_keys.push(entry);
+  saveState(db);
+  recordActivity(req.user, null, 'ssh-key:create', `Added SSH key "${entry.name}" (${fingerprint.slice(0, 22)}...)`, getClientIp(req));
+  return res.status(201).json(entry);
+});
+
+app.delete('/api/client/account/ssh-keys/:fingerprint', requireAuth, (req, res) => {
+  const fp = decodeURIComponent(req.params.fingerprint);
+  const idx = (db.ssh_keys || []).findIndex(
+    k => (k.fingerprint === fp || String(k.id) === fp) && String(k.user_id) === String(req.user.id)
+  );
+  if (idx === -1) return res.status(404).json({ error: 'SSH key not found.' });
+  const [removed] = db.ssh_keys.splice(idx, 1);
+  saveState(db);
+  recordActivity(req.user, null, 'ssh-key:delete', `Removed SSH key ${removed.fingerprint}`, getClientIp(req));
+  return res.status(204).end();
+});
+
+app.get('/api/client/account/activity', requireAuth, (req, res) => {
+  const logs = (db.activity_logs || []).filter(
+    l => req.user.root_admin || String(l.user_id) === String(req.user.id)
+  );
+  return res.json({ data: logs.slice(0, 100) });
+});
+
+app.get('/api/client/regions', requireAuth, async (req, res) => {
+  const results = await Promise.all(
+    db.nodes.map(async n => {
+      const health = await probeNodeHealth(n, 1200);
+      n.is_online = health.is_online;
+      n.daemon_version = health.daemon_version;
+      n.latency_ms = health.latency_ms;
+      const loc = db.locations.find(l => String(l.id) === String(n.location_id));
+      return {
+        id: n.id,
+        name: n.name,
+        location: loc ? loc.short : 'local',
+        fqdn: n.fqdn,
+        status: health.is_online ? 'online' : 'offline',
+        latency_ms: health.latency_ms,
+        daemon_version: health.daemon_version,
+      };
+    })
+  );
+  return res.json({ data: results });
+});
+
+// ============================================================================
+// Client Server Endpoints (Strictly Isolated & Permission-Enforced)
+// ============================================================================
+
+app.get('/api/client/servers', requireAuth, async (req, res) => {
+  const accessible = db.servers.filter(s => userCanAccessServer(req.user, s));
+
+  // Sync live statuses across active local nodes with a quick stats pull
+  const byNode = new Map();
+  for (const srv of accessible) {
+    const node = getServerNode(db, srv);
+    if (!node) continue;
+    if (!byNode.has(node.id)) byNode.set(node.id, { node, servers: [] });
+    byNode.get(node.id).servers.push(srv);
+  }
+  await Promise.all(
+    Array.from(byNode.values()).map(async ({ node }) => {
+      try {
+        const listRes = await daemonRequest(node, '/api/servers', { timeoutMs: 1200 });
+        for (const item of (listRes.data || [])) {
+          const srv = db.servers.find(s => s.uuid === item.uuid);
+          const itemState = item.state || item.status || 'offline';
+          if (srv) {
+            srv.status = itemState === 'running' ? 'running' : itemState;
+          }
+          const stats = item.telemetry || item.stats;
+          if (stats) {
+            liveStatsCache.set(item.uuid, { ...stats, updated_at: Date.now() });
+          }
+        }
+      } catch {}
+    })
+  );
+
+  return res.json({ data: accessible.map(buildCanonicalServer) });
+});
+
+app.get('/api/client/servers/:uuid', verifyServerOwnership(), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (node) {
+    try {
+      const statsRes = await daemonRequest(node, `/api/servers/${srv.uuid}/stats`, { timeoutMs: 1200 });
+      const stats = statsRes?.data || statsRes;
+      if (stats?.state) {
+        srv.status = stats.state === 'running' ? 'running' : stats.state;
+        liveStatsCache.set(srv.uuid, { ...stats, updated_at: Date.now() });
+      }
+    } catch {}
+  }
+  return res.json(buildCanonicalServer(srv));
+});
+
+app.get('/api/client/servers/:uuid/resources', verifyServerOwnership(), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Assigned node unavailable.' });
+
+  try {
+    const raw = await daemonRequest(node, `/api/servers/${srv.uuid}/stats`, { timeoutMs: 1500 });
+    const stats = raw?.data || raw;
+    srv.status = stats.state === 'running' ? 'running' : (stats.state || 'offline');
+    liveStatsCache.set(srv.uuid, { ...stats, updated_at: Date.now() });
+    return res.json(stats);
+  } catch {
+    const cached = liveStatsCache.get(srv.uuid);
+    return res.json({
+      memory_bytes: cached?.memory_bytes || 0,
+      memory_limit_bytes: (srv.limits?.memory || 512) * 1024 * 1024,
+      cpu_absolute: cached?.cpu_absolute || 0,
+      disk_bytes: cached?.disk_bytes || 0,
+      disk_limit_bytes: (srv.limits?.disk || 1024) * 1024 * 1024,
+      network: cached?.network || { rx_bytes: 0, tx_bytes: 0 },
+      uptime_ms: cached?.uptime_ms || 0,
+      state: srv.status || 'offline',
+    });
+  }
+});
+
+app.get('/api/client/servers/:uuid/logs', verifyServerOwnership('control.console'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.json({ logs: [] });
+  try {
+    const data = await daemonRequest(node, `/api/servers/${srv.uuid}/logs`, { timeoutMs: 3000 });
+    return res.json({ logs: Array.isArray(data.logs) ? data.logs : [] });
+  } catch (err) {
+    return res.json({ logs: [`[SlayerPanel] Node ${node.name} unreachable: ${err.message}`] });
+  }
+});
+
+app.get('/api/client/servers/:uuid/websocket', verifyServerOwnership('control.console'), (req, res) => {
+  const srv = req.targetServer;
+  const token = createWsToken(req.user, srv.uuid, 180);
+  return res.json({
+    data: {
+      token,
+      socket: `/api/client/servers/${srv.uuid}/ws`,
+    },
+  });
+});
+
+app.post('/api/client/servers/:uuid/power', verifyServerOwnership(), powerLimiter, async (req, res) => {
+  const srv = req.targetServer;
+  const action = String(req.body?.action || '').toLowerCase();
+  const permMap = {
+    start: 'control.start',
+    stop: 'control.stop',
+    restart: 'control.restart',
+    kill: 'control.stop',
+  };
+  if (!permMap[action]) {
+    return res.status(400).json({ error: 'Invalid power action. Must be start, stop, restart, or kill.' });
+  }
+  if (!userCanAccessServer(req.user, srv, permMap[action])) {
+    return res.status(403).json({ error: `Permission denied for action: ${action}` });
+  }
+  if (req.authType === 'client_api_key' && !clientKeyHasPerm(req.apiKey, permMap[action])) {
+    return res.status(403).json({ error: `Client API key lacks permission: ${permMap[action]}` });
+  }
+  if (srv.suspended) {
+    return res.status(403).json({ error: 'Server is currently suspended.' });
+  }
+
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Assigned node unavailable.' });
+  const primaryAlloc = db.allocations.find(a => String(a.id) === String(srv.allocation_id));
+
+  try {
+    await daemonRequest(node, `/api/servers/${srv.uuid}/power`, {
+      method: 'POST',
+      timeoutMs: 120_000, // Accommodates initial PaperMC JAR download on start
+      body: {
+        action,
+        egg_name: srv.egg_name,
+        port: primaryAlloc?.port || srv.environment?.SERVER_PORT || 25565,
+        memory: srv.limits?.memory || 1024,
+        swap: srv.limits?.swap || 0,
+        disk: srv.limits?.disk || 10240,
+        cpu: srv.limits?.cpu || 100,
+        dl_path: srv.environment?.DL_PATH || '',
+        startup: srv.startup || '',
+        environment: srv.environment || {},
+      },
+    });
+    srv.status = action === 'start' || action === 'restart' ? 'running' : 'offline';
+    saveState(db);
+    recordActivity(req.user, srv.uuid, `server:power.${action}`, `Sent power signal "${action}"`, getClientIp(req));
+    return res.json({ success: true, action, status: srv.status });
+  } catch (err) {
+    return res.status(502).json({ error: `Daemon power action failed: ${err.message}` });
+  }
+});
+
+app.post('/api/client/servers/:uuid/command', verifyServerOwnership('control.console'), commandLimiter, async (req, res) => {
+  const srv = req.targetServer;
+  if (srv.suspended) return res.status(403).json({ error: 'Server is suspended.' });
+
+  const command = String(req.body?.command || '').replace(/[\r\n]+/g, ' ').trim();
+  if (!command || command.length > 500) {
+    return res.status(400).json({ error: 'Command must be between 1 and 500 characters.' });
+  }
+
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Assigned node unavailable.' });
+
+  try {
+    const result = await daemonRequest(node, `/api/servers/${srv.uuid}/commands`, {
+      method: 'POST',
+      body: { commands: [command] },
+    });
+    recordActivity(req.user, srv.uuid, 'server:console.command', `Dispatched console command`, getClientIp(req));
+    return res.json(result);
+  } catch (err) {
+    return res.status(err.status || 502).json({ error: err.message });
+  }
+});
+
+// ---------------- File Manager Endpoints ----------------
+
+app.get('/api/client/servers/:uuid/files/list', verifyServerOwnership('file.read'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Node missing.' });
+  const dir = String(req.query.directory || '/');
+  try {
+    const data = await daemonRequest(node, `/api/servers/${srv.uuid}/files/list?directory=${encodeURIComponent(dir)}`);
+    return res.json(data);
+  } catch (err) {
+    return res.status(err.status || 502).json({ error: err.message });
+  }
+});
+
+app.get('/api/client/servers/:uuid/files/contents', verifyServerOwnership('file.read'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Node missing.' });
+  const file = String(req.query.file || '');
+  try {
+    const upstream = await daemonRequest(node, `/api/servers/${srv.uuid}/files/contents?file=${encodeURIComponent(file)}`, {
+      rawResponse: true,
+    });
+    const text = await upstream.text();
+    if (!upstream.ok) {
+      let errMsg = upstream.statusText || `HTTP ${upstream.status}`;
+      try {
+        const parsed = JSON.parse(text);
+        errMsg = parsed?.error || parsed?.detail || errMsg;
+      } catch {}
+      return res.status(upstream.status || 404).json({ error: errMsg });
+    }
+    return res.json({ content: text });
+  } catch (err) {
+    return res.status(err.status || 404).json({ error: err.message });
+  }
+});
+
+app.get('/api/client/servers/:uuid/files/download', verifyServerOwnership('file.read'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Node missing.' });
+  const file = String(req.query.file || '');
+  try {
+    const upstream = await daemonRequest(node, `/api/servers/${srv.uuid}/files/download?file=${encodeURIComponent(file)}`, {
+      rawResponse: true,
+      timeoutMs: 60_000,
+    });
+    if (!upstream.ok) {
+      const msg = await upstream.text().catch(() => upstream.statusText);
+      return res.status(upstream.status).json({ error: msg });
+    }
+    const safeName = path.basename(file).replace(/["\r\n]/g, '_') || 'download';
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    return res.send(buf);
+  } catch (err) {
+    return res.status(502).json({ error: err.message });
+  }
+});
+
+app.post('/api/client/servers/:uuid/files/write', verifyServerOwnership('file.update'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Node missing.' });
+  const { file, content = '', encoding = 'utf8' } = req.body || {};
+  if (!file) return res.status(400).json({ error: 'File path is required.' });
+  try {
+    const result = await daemonRequest(node, `/api/servers/${srv.uuid}/files/write`, {
+      method: 'POST',
+      timeoutMs: 60_000,
+      body: { file, content, encoding },
+    });
+    recordActivity(req.user, srv.uuid, 'server:file.write', `Saved file ${file}`, getClientIp(req));
+    return res.json(result);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+app.post('/api/client/servers/:uuid/files/create-folder', verifyServerOwnership('file.create'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Node missing.' });
+  const { root = '/', name } = req.body || {};
+  try {
+    const result = await daemonRequest(node, `/api/servers/${srv.uuid}/files/create-folder`, {
+      method: 'POST',
+      body: { root, name },
+    });
+    recordActivity(req.user, srv.uuid, 'server:file.mkdir', `Created folder ${name} in ${root}`, getClientIp(req));
+    return res.json(result);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+app.post('/api/client/servers/:uuid/files/rename', verifyServerOwnership('file.update'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Node missing.' });
+  try {
+    const result = await daemonRequest(node, `/api/servers/${srv.uuid}/files/rename`, {
+      method: 'POST',
+      body: req.body,
+    });
+    recordActivity(req.user, srv.uuid, 'server:file.rename', 'Renamed server file/folder', getClientIp(req));
+    return res.json(result);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+app.post('/api/client/servers/:uuid/files/delete', verifyServerOwnership('file.delete'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Node missing.' });
+  const { files = [] } = req.body || {};
+  try {
+    const result = await daemonRequest(node, `/api/servers/${srv.uuid}/files/delete`, {
+      method: 'POST',
+      body: { files },
+    });
+    recordActivity(req.user, srv.uuid, 'server:file.delete', `Deleted ${files.length} file(s)`, getClientIp(req));
+    return res.json(result);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+app.post('/api/client/servers/:uuid/files/compress', verifyServerOwnership('file.archive'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Node missing.' });
+  try {
+    const result = await daemonRequest(node, `/api/servers/${srv.uuid}/files/compress`, {
+      method: 'POST',
+      timeoutMs: 60_000,
+      body: req.body,
+    });
+    return res.json(result);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+app.post('/api/client/servers/:uuid/files/decompress', verifyServerOwnership('file.archive'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Node missing.' });
+  try {
+    const result = await daemonRequest(node, `/api/servers/${srv.uuid}/files/decompress`, {
+      method: 'POST',
+      timeoutMs: 60_000,
+      body: req.body,
+    });
+    return res.json(result);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+app.post('/api/client/servers/:uuid/files/pull', verifyServerOwnership('file.create'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Node missing.' });
+  const { url, directory = '/', filename = '' } = req.body || {};
+  try {
+    const safeUrl = await assertSafeExternalUrl(url);
+    const result = await daemonRequest(node, `/api/servers/${srv.uuid}/files/pull`, {
+      method: 'POST',
+      timeoutMs: 60_000,
+      body: { url: safeUrl, directory, filename },
+    });
+    recordActivity(req.user, srv.uuid, 'server:file.pull', `Pulled external file into ${directory}`, getClientIp(req));
+    return res.json(result);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+});
+
+// ---------------- Per-Server Databases CRUD ----------------
+
+app.get('/api/client/servers/:uuid/databases', verifyServerOwnership('database.read'), (req, res) => {
+  const list = (db.databases || []).filter(d => d.server_uuid === req.targetServer.uuid);
+  return res.json({ data: list, limit: req.targetServer.feature_limits?.databases ?? 2 });
+});
+
+app.post('/api/client/servers/:uuid/databases', verifyServerOwnership('database.create'), (req, res) => {
+  const srv = req.targetServer;
+  const existing = (db.databases || []).filter(d => d.server_uuid === srv.uuid);
+  const limit = srv.feature_limits?.databases ?? 2;
+  if (limit > 0 && existing.length >= limit) {
+    return res.status(400).json({ error: `Database limit reached (${limit} max).` });
+  }
+  const cleanName = stripHtmlTags(String(req.body?.database || '')).replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 32);
+  if (!cleanName || cleanName.length < 2) {
+    return res.status(400).json({ error: 'Database name must be at least 2 alphanumeric/underscore characters.' });
+  }
+  const dbRecord = {
+    id: nextId(db.databases),
+    server_uuid: srv.uuid,
+    name: `s${srv.id}_${cleanName}`,
+    username: `u${srv.id}_${crypto.randomBytes(3).toString('hex')}`,
+    password: crypto.randomBytes(16).toString('base64url'),
+    host: '127.0.0.1',
+    port: 3306,
+    remote: String(req.body?.remote || '%').slice(0, 32),
+    max_connections: 0,
+    created_at: new Date().toISOString(),
+  };
+  db.databases.push(dbRecord);
+  saveState(db);
+  recordActivity(req.user, srv.uuid, 'server:database.create', `Provisioned database ${dbRecord.name}`, getClientIp(req));
+  return res.status(201).json(dbRecord);
+});
+
+app.post('/api/client/servers/:uuid/databases/:dbId/rotate-password', verifyServerOwnership('database.update'), (req, res) => {
+  const dbRecord = (db.databases || []).find(
+    d => String(d.id) === String(req.params.dbId) && d.server_uuid === req.targetServer.uuid
+  );
+  if (!dbRecord) return res.status(404).json({ error: 'Database not found.' });
+  dbRecord.password = crypto.randomBytes(16).toString('base64url');
+  saveState(db);
+  recordActivity(req.user, req.targetServer.uuid, 'server:database.rotate', `Rotated password for ${dbRecord.name}`, getClientIp(req));
+  return res.json(dbRecord);
+});
+
+app.delete('/api/client/servers/:uuid/databases/:dbId', verifyServerOwnership('database.delete'), (req, res) => {
+  const idx = (db.databases || []).findIndex(
+    d => String(d.id) === String(req.params.dbId) && d.server_uuid === req.targetServer.uuid
+  );
+  if (idx === -1) return res.status(404).json({ error: 'Database not found.' });
+  const [removed] = db.databases.splice(idx, 1);
+  saveState(db);
+  recordActivity(req.user, req.targetServer.uuid, 'server:database.delete', `Deleted database ${removed.name}`, getClientIp(req));
+  return res.status(204).end();
+});
+
+// ---------------- Per-Server Schedules CRUD & Real Executor ----------------
+
+app.get('/api/client/servers/:uuid/schedules', verifyServerOwnership('schedule.read'), (req, res) => {
+  const list = (db.schedules || []).filter(s => s.server_uuid === req.targetServer.uuid);
+  return res.json({ data: list });
+});
+
+app.post('/api/client/servers/:uuid/schedules', verifyServerOwnership('schedule.create'), (req, res) => {
+  const srv = req.targetServer;
   const {
     name,
-    description,
-    owner_id,
-    node_id,
-    allocation_id,
-    egg_id,
-    nest_id,
-    memory = 2048,
-    swap = 512,
-    disk = 10240,
-    cpu = 100,
-    io = 500,
-  } = req.body;
+    minute = '0',
+    hour = '4',
+    day_of_month = '*',
+    month = '*',
+    day_of_week = '*',
+    is_active = true,
+    tasks = [],
+  } = req.body || {};
+  const cleanName = stripHtmlTags(String(name || '')).trim();
+  if (!cleanName) return res.status(400).json({ error: 'Schedule name is required.' });
 
-  // Strict Validation Guards
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: 'Validation Error: "Server Name" is required. Please specify a recognizable name for this game server instance.' });
+  const normalizedTasks = Array.isArray(tasks)
+    ? tasks.map((t, idx) => ({
+        id: idx + 1,
+        sequence_id: idx + 1,
+        action: ['command', 'power', 'backup'].includes(t.action) ? t.action : 'command',
+        payload: String(t.payload || '').slice(0, 300),
+        time_offset: Math.max(0, Math.min(300, Number(t.time_offset) || 0)),
+      }))
+    : [];
+
+  const schedule = {
+    id: nextId(db.schedules),
+    server_uuid: srv.uuid,
+    name: cleanName.slice(0, 64),
+    cron: {
+      minute: String(minute || '*'),
+      hour: String(hour || '*'),
+      day_of_month: String(day_of_month || '*'),
+      month: String(month || '*'),
+      day_of_week: String(day_of_week || '*'),
+    },
+    is_active: Boolean(is_active),
+    is_processing: false,
+    only_when_online: Boolean(req.body?.only_when_online),
+    last_run_at: null,
+    tasks: normalizedTasks,
+    created_at: new Date().toISOString(),
+  };
+  db.schedules.push(schedule);
+  saveState(db);
+  recordActivity(req.user, srv.uuid, 'server:schedule.create', `Created schedule "${schedule.name}"`, getClientIp(req));
+  return res.status(201).json(schedule);
+});
+
+app.put('/api/client/servers/:uuid/schedules/:id', verifyServerOwnership('schedule.update'), (req, res) => {
+  const sched = (db.schedules || []).find(
+    s => String(s.id) === String(req.params.id) && s.server_uuid === req.targetServer.uuid
+  );
+  if (!sched) return res.status(404).json({ error: 'Schedule not found.' });
+  const { name, minute, hour, day_of_month, month, day_of_week, is_active, tasks } = req.body || {};
+  if (name !== undefined) sched.name = stripHtmlTags(String(name)).trim().slice(0, 64);
+  if (is_active !== undefined) sched.is_active = Boolean(is_active);
+  sched.cron = {
+    minute: minute !== undefined ? String(minute) : sched.cron.minute,
+    hour: hour !== undefined ? String(hour) : sched.cron.hour,
+    day_of_month: day_of_month !== undefined ? String(day_of_month) : sched.cron.day_of_month,
+    month: month !== undefined ? String(month) : sched.cron.month,
+    day_of_week: day_of_week !== undefined ? String(day_of_week) : sched.cron.day_of_week,
+  };
+  if (Array.isArray(tasks)) {
+    sched.tasks = tasks.map((t, idx) => ({
+      id: idx + 1,
+      sequence_id: idx + 1,
+      action: ['command', 'power', 'backup'].includes(t.action) ? t.action : 'command',
+      payload: String(t.payload || '').slice(0, 300),
+      time_offset: Math.max(0, Math.min(300, Number(t.time_offset) || 0)),
+    }));
   }
+  saveState(db);
+  return res.json(sched);
+});
 
-  if (!owner_id) {
-    return res.status(400).json({ error: 'Validation Error: "Server Owner" is required. Please assign an account to own this server.' });
-  }
+app.post('/api/client/servers/:uuid/schedules/:id/execute', verifyServerOwnership('schedule.update'), async (req, res) => {
+  const sched = (db.schedules || []).find(
+    s => String(s.id) === String(req.params.id) && s.server_uuid === req.targetServer.uuid
+  );
+  if (!sched) return res.status(404).json({ error: 'Schedule not found.' });
+  const result = await executeScheduleTasks(db, saveState, sched, recordActivity);
+  if (result.error) return res.status(502).json({ error: result.error });
+  return res.json({ success: true, executed: result.executed, schedule: sched });
+});
 
-  const owner = db.users.find(u => String(u.id) === String(owner_id));
-  if (!owner) {
-    return res.status(400).json({ error: 'Validation Error: The specified server owner does not exist. Please select a valid user from the user accounts list.' });
-  }
+app.delete('/api/client/servers/:uuid/schedules/:id', verifyServerOwnership('schedule.delete'), (req, res) => {
+  const idx = (db.schedules || []).findIndex(
+    s => String(s.id) === String(req.params.id) && s.server_uuid === req.targetServer.uuid
+  );
+  if (idx === -1) return res.status(404).json({ error: 'Schedule not found.' });
+  const [removed] = db.schedules.splice(idx, 1);
+  saveState(db);
+  recordActivity(req.user, req.targetServer.uuid, 'server:schedule.delete', `Deleted schedule "${removed.name}"`, getClientIp(req));
+  return res.status(204).end();
+});
 
-  if (!node_id) {
-    return res.status(400).json({ error: 'Validation Error: "Target Infrastructure Node" is required. Please select an active node.' });
-  }
+// ---------------- Per-Server Subusers & ACL CRUD ----------------
 
-  const node = db.nodes.find(n => String(n.id) === String(node_id));
-  if (!node) {
-    return res.status(400).json({ error: 'Validation Error: Target node does not exist. Please select an active infrastructure node.' });
-  }
-
-  if (!nest_id) {
-    return res.status(400).json({ error: 'Validation Error: "Nest / Game Category" is required. Please select a game nest.' });
-  }
-
-  const nest = db.nests.find(n => String(n.id) === String(nest_id));
-  if (!nest) {
-    return res.status(400).json({ error: 'Validation Error: Selected Nest category does not exist. Please choose a valid Nest.' });
-  }
-
-  const nestEggs = db.eggs.filter(e => String(e.nest_id) === String(nest_id));
-  if (nestEggs.length === 0) {
-    return res.status(400).json({
-      error: `Validation Error: The selected nest "${nest.name}" has 0 configured eggs. You cannot deploy a server without an Egg. Please import or create an Egg in Admin > Nests first.`
+app.get('/api/client/servers/:uuid/users', verifyServerOwnership('user.read'), (req, res) => {
+  const subs = (db.subusers || [])
+    .filter(su => su.server_uuid === req.targetServer.uuid)
+    .map(su => {
+      const u = db.users.find(usr => String(usr.id) === String(su.user_id));
+      return {
+        uuid: su.uuid,
+        user_id: su.user_id,
+        username: u?.username || 'unknown',
+        email: u?.email || '',
+        permissions: su.permissions || [],
+        created_at: su.created_at,
+      };
     });
+  return res.json({ data: subs });
+});
+
+app.post('/api/client/servers/:uuid/users', verifyServerOwnership('user.create'), (req, res) => {
+  const srv = req.targetServer;
+  const { email, permissions = [] } = req.body || {};
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  const targetUser = db.users.find(u => u.email.toLowerCase() === cleanEmail);
+  if (!targetUser) return res.status(404).json({ error: 'No registered user found with that email address.' });
+  if (String(targetUser.id) === String(srv.owner_id || srv.user_id)) {
+    return res.status(400).json({ error: 'Server owner already has full access.' });
+  }
+  if ((db.subusers || []).some(su => su.server_uuid === srv.uuid && String(su.user_id) === String(targetUser.id))) {
+    return res.status(409).json({ error: 'User is already assigned as a subuser.' });
+  }
+  const sub = {
+    uuid: crypto.randomUUID(),
+    server_uuid: srv.uuid,
+    user_id: targetUser.id,
+    permissions: Array.isArray(permissions) ? permissions.map(String) : [],
+    created_at: new Date().toISOString(),
+  };
+  db.subusers.push(sub);
+  saveState(db);
+  recordActivity(req.user, srv.uuid, 'server:subuser.create', `Added subuser ${targetUser.email}`, getClientIp(req));
+  return res.status(201).json({ ...sub, username: targetUser.username, email: targetUser.email });
+});
+
+app.put('/api/client/servers/:uuid/users/:subUuid', verifyServerOwnership('user.update'), (req, res) => {
+  const sub = (db.subusers || []).find(
+    su => su.uuid === req.params.subUuid && su.server_uuid === req.targetServer.uuid
+  );
+  if (!sub) return res.status(404).json({ error: 'Subuser not found.' });
+  if (Array.isArray(req.body?.permissions)) {
+    sub.permissions = req.body.permissions.map(String);
+  }
+  saveState(db);
+  recordActivity(req.user, req.targetServer.uuid, 'server:subuser.update', `Updated permissions for subuser ${sub.uuid}`, getClientIp(req));
+  return res.json(sub);
+});
+
+app.delete('/api/client/servers/:uuid/users/:subUuid', verifyServerOwnership('user.delete'), (req, res) => {
+  const idx = (db.subusers || []).findIndex(
+    su => su.uuid === req.params.subUuid && su.server_uuid === req.targetServer.uuid
+  );
+  if (idx === -1) return res.status(404).json({ error: 'Subuser not found.' });
+  db.subusers.splice(idx, 1);
+  saveState(db);
+  recordActivity(req.user, req.targetServer.uuid, 'server:subuser.delete', `Removed subuser ${req.params.subUuid}`, getClientIp(req));
+  return res.status(204).end();
+});
+
+// ---------------- Per-Server Real Backups CRUD ----------------
+
+app.get('/api/client/servers/:uuid/backups', verifyServerOwnership('backup.read'), (req, res) => {
+  const list = (db.backups || []).filter(b => b.server_uuid === req.targetServer.uuid);
+  return res.json({ data: list, limit: req.targetServer.feature_limits?.backups ?? 3 });
+});
+
+app.post('/api/client/servers/:uuid/backups', verifyServerOwnership('backup.create'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Node missing.' });
+
+  const existing = (db.backups || []).filter(b => b.server_uuid === srv.uuid);
+  const limit = srv.feature_limits?.backups ?? 3;
+  if (limit > 0 && existing.length >= limit) {
+    return res.status(400).json({ error: `Backup limit reached (${limit} max). Delete an older backup first.` });
   }
 
-  if (!egg_id) {
-    return res.status(400).json({
-      error: 'Validation Error: "Game Egg" is required. Please select an active Egg to define game startup flags and container images.'
+  const name = stripHtmlTags(String(req.body?.name || `Backup ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`)).trim();
+  const isLocked = Boolean(req.body?.is_locked);
+  const backupUuid = crypto.randomUUID();
+
+  try {
+    const result = await daemonRequest(node, `/api/servers/${srv.uuid}/backups`, {
+      method: 'POST',
+      timeoutMs: 120_000,
+      body: { uuid: backupUuid, name },
     });
+    const entry = {
+      uuid: result.uuid || backupUuid,
+      server_uuid: srv.uuid,
+      name,
+      ignored_files: String(req.body?.ignored_files || ''),
+      sha256_hash: result.sha256_hash || '',
+      bytes: result.bytes || 0,
+      is_successful: true,
+      is_locked: isLocked,
+      created_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+    };
+    db.backups.unshift(entry);
+    saveState(db);
+    recordActivity(req.user, srv.uuid, 'server:backup.create', `Created backup "${name}" (${entry.bytes} bytes)`, getClientIp(req));
+    return res.status(201).json(entry);
+  } catch (err) {
+    return res.status(502).json({ error: `Backup creation failed: ${err.message}` });
   }
+});
 
-  const egg = nestEggs.find(e => String(e.id) === String(egg_id));
-  if (!egg) {
-    return res.status(400).json({
-      error: `Validation Error: Selected Egg (ID ${egg_id}) does not exist in Nest "${nest.name}". Please select an available Egg from the dropdown.`
+app.post('/api/client/servers/:uuid/backups/:backupUuid/restore', verifyServerOwnership('backup.restore'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  const backup = (db.backups || []).find(b => b.uuid === req.params.backupUuid && b.server_uuid === srv.uuid);
+  if (!backup) return res.status(404).json({ error: 'Backup not found.' });
+  try {
+    await daemonRequest(node, `/api/servers/${srv.uuid}/backups/${backup.uuid}/restore`, {
+      method: 'POST',
+      timeoutMs: 120_000,
+      body: { truncate: Boolean(req.body?.truncate) },
     });
+    recordActivity(req.user, srv.uuid, 'server:backup.restore', `Restored backup "${backup.name}"`, getClientIp(req));
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(502).json({ error: err.message });
   }
+});
 
-  const numMemory = parseInt(memory, 10);
-  if (isNaN(numMemory) || numMemory < 128) {
-    return res.status(400).json({ error: 'Validation Error: "RAM Limit" must be at least 128 MiB.' });
-  }
-
-  const numDisk = parseInt(disk, 10);
-  if (isNaN(numDisk) || numDisk < 512) {
-    return res.status(400).json({ error: 'Validation Error: "Disk Limit" must be at least 512 MiB.' });
-  }
-
-  const numCpu = parseInt(cpu, 10);
-  if (isNaN(numCpu) || numCpu <= 0) {
-    return res.status(400).json({ error: 'Validation Error: "CPU Limit" must be greater than 0%.' });
-  }
-
-  // Find or pick allocation
-  let alloc = db.allocations.find(a => String(a.id) === String(allocation_id));
-  if (!alloc) {
-    alloc = db.allocations.find(a => String(a.node_id) === String(node_id) && !a.server_id);
-  }
-  if (!alloc) {
-    return res.status(400).json({
-      error: `Validation Error: Node "${node.name}" has no free network port allocations available. Please add port allocations under Admin > Nodes > Allocations before deploying.`
+app.get('/api/client/servers/:uuid/backups/:backupUuid/download', verifyServerOwnership('backup.download'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  const backup = (db.backups || []).find(b => b.uuid === req.params.backupUuid && b.server_uuid === srv.uuid);
+  if (!backup) return res.status(404).json({ error: 'Backup not found.' });
+  try {
+    const upstream = await daemonRequest(node, `/api/servers/${srv.uuid}/backups/${backup.uuid}/download`, {
+      rawResponse: true,
+      timeoutMs: 120_000,
     });
+    if (!upstream.ok) return res.status(upstream.status).json({ error: 'Download failed' });
+    res.setHeader('Content-Disposition', `attachment; filename="backup-${backup.uuid.slice(0, 8)}.tar.gz"`);
+    res.setHeader('Content-Type', 'application/gzip');
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    return res.send(buf);
+  } catch (err) {
+    return res.status(502).json({ error: err.message });
+  }
+});
+
+app.delete('/api/client/servers/:uuid/backups/:backupUuid', verifyServerOwnership('backup.delete'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  const idx = (db.backups || []).findIndex(b => b.uuid === req.params.backupUuid && b.server_uuid === srv.uuid);
+  if (idx === -1) return res.status(404).json({ error: 'Backup not found.' });
+  if (db.backups[idx].is_locked) return res.status(400).json({ error: 'Locked backups cannot be deleted.' });
+
+  const [removed] = db.backups.splice(idx, 1);
+  if (node) {
+    await daemonRequest(node, `/api/servers/${srv.uuid}/backups/${removed.uuid}`, { method: 'DELETE' }).catch(() => {});
+  }
+  saveState(db);
+  recordActivity(req.user, srv.uuid, 'server:backup.delete', `Deleted backup "${removed.name}"`, getClientIp(req));
+  return res.status(204).end();
+});
+
+// ---------------- Per-Server Network Allocations CRUD ----------------
+
+app.get('/api/client/servers/:uuid/network/allocations', verifyServerOwnership('allocation.read'), (req, res) => {
+  const srv = req.targetServer;
+  const allocs = db.allocations
+    .filter(a => String(a.server_id) === String(srv.id))
+    .map(a => ({ ...a, is_default: String(a.id) === String(srv.allocation_id) }));
+  return res.json({ data: allocs, limit: srv.feature_limits?.allocations ?? 2 });
+});
+
+app.post('/api/client/servers/:uuid/network/allocations', verifyServerOwnership('allocation.create'), (req, res) => {
+  const srv = req.targetServer;
+  const assigned = db.allocations.filter(a => String(a.server_id) === String(srv.id));
+  const limit = srv.feature_limits?.allocations ?? 2;
+  if (limit > 0 && assigned.length >= limit) {
+    return res.status(400).json({ error: `Allocation limit reached (${limit} max).` });
+  }
+  const free = db.allocations.find(a => String(a.node_id) === String(srv.node_id) && !a.server_id);
+  if (!free) return res.status(400).json({ error: 'No free ports available on this node.' });
+  free.server_id = srv.id;
+  free.assigned = true;
+  saveState(db);
+  recordActivity(req.user, srv.uuid, 'server:allocation.create', `Assigned allocation ${free.ip}:${free.port}`, getClientIp(req));
+  return res.status(201).json({ ...free, is_default: String(free.id) === String(srv.allocation_id) });
+});
+
+app.post('/api/client/servers/:uuid/network/allocations/:allocId', verifyServerOwnership('allocation.update'), (req, res) => {
+  const srv = req.targetServer;
+  const alloc = db.allocations.find(a => String(a.id) === String(req.params.allocId) && String(a.server_id) === String(srv.id));
+  if (!alloc) return res.status(404).json({ error: 'Allocation not found.' });
+  if (req.body?.notes !== undefined) alloc.notes = stripHtmlTags(String(req.body.notes)).slice(0, 200);
+  saveState(db);
+  return res.json({ ...alloc, is_default: String(alloc.id) === String(srv.allocation_id) });
+});
+
+app.post('/api/client/servers/:uuid/network/allocations/:allocId/primary', verifyServerOwnership('allocation.update'), (req, res) => {
+  const srv = req.targetServer;
+  const alloc = db.allocations.find(a => String(a.id) === String(req.params.allocId) && String(a.server_id) === String(srv.id));
+  if (!alloc) return res.status(404).json({ error: 'Allocation not found.' });
+  srv.allocation_id = alloc.id;
+  srv.environment = { ...(srv.environment || {}), SERVER_PORT: String(alloc.port) };
+  saveState(db);
+  recordActivity(req.user, srv.uuid, 'server:allocation.primary', `Set primary allocation to ${alloc.ip}:${alloc.port}`, getClientIp(req));
+  return res.json({ ...alloc, is_default: true });
+});
+
+app.delete('/api/client/servers/:uuid/network/allocations/:allocId', verifyServerOwnership('allocation.delete'), (req, res) => {
+  const srv = req.targetServer;
+  const alloc = db.allocations.find(a => String(a.id) === String(req.params.allocId) && String(a.server_id) === String(srv.id));
+  if (!alloc) return res.status(404).json({ error: 'Allocation not found.' });
+  if (String(alloc.id) === String(srv.allocation_id)) {
+    return res.status(400).json({ error: 'Cannot delete primary allocation.' });
+  }
+  alloc.server_id = null;
+  alloc.assigned = false;
+  alloc.notes = '';
+  saveState(db);
+  recordActivity(req.user, srv.uuid, 'server:allocation.delete', `Released allocation ${alloc.ip}:${alloc.port}`, getClientIp(req));
+  return res.status(204).end();
+});
+
+// ---------------- Startup, Settings & Server-Scoped Activity ----------------
+
+app.get('/api/client/servers/:uuid/startup', verifyServerOwnership('startup.read'), (req, res) => {
+  const srv = req.targetServer;
+  const egg = db.eggs.find(e => String(e.id) === String(srv.egg_id));
+  const rawVars = srv.variables && srv.variables.length > 0 ? srv.variables : (egg?.variables || []);
+  const variables = rawVars.map(v => ({
+    ...v,
+    server_value: srv.environment?.[v.env_variable] ?? v.server_value ?? v.default_value ?? '',
+  }));
+  return res.json({
+    startup_command: srv.startup || egg?.startup || '',
+    docker_image: srv.docker_image || (egg?.docker_images ? egg.docker_images.split('\n')[0] : ''),
+    variables,
+  });
+});
+
+app.put('/api/client/servers/:uuid/startup/variable', verifyServerOwnership('startup.update'), (req, res) => {
+  const srv = req.targetServer;
+  const { key, value, startup_command, docker_image } = req.body || {};
+
+  // Admin can update full startup command directly; standard owner/subuser edits editable variables only
+  if (startup_command !== undefined && req.user.root_admin) {
+    srv.startup = String(startup_command).slice(0, 500);
+  }
+  if (docker_image !== undefined) {
+    srv.docker_image = stripHtmlTags(String(docker_image)).slice(0, 180);
   }
 
-  const serverId = String(db.servers.length + 1);
+  if (key) {
+    const cleanKey = String(key).trim();
+    if (!/^[A-Z0-9_]{1,40}$/.test(cleanKey)) {
+      return res.status(400).json({ error: 'Invalid environment variable identifier.' });
+    }
+    const cleanVal = String(value ?? '').replace(/[\r\n]/g, '').slice(0, 500);
+    // Prevent shell metacharacter injection in startup env variables
+    if (/[`$;|&<>]/.test(cleanVal) && !cleanKey.includes('DL_PATH')) {
+      return res.status(400).json({ error: 'Disallowed shell characters in variable value.' });
+    }
+    srv.environment = { ...(srv.environment || {}), [cleanKey]: cleanVal };
+    if (Array.isArray(srv.variables)) {
+      const varRec = srv.variables.find(v => v.env_variable === cleanKey);
+      if (varRec) varRec.server_value = cleanVal;
+    }
+    recordActivity(req.user, srv.uuid, 'server:startup.update', `Updated variable ${cleanKey}`, getClientIp(req));
+  }
+
+  saveState(db);
+  return res.json({ success: true, environment: srv.environment, startup_command: srv.startup });
+});
+
+app.put('/api/client/servers/:uuid/settings/rename', verifyServerOwnership('settings.rename'), (req, res) => {
+  const srv = req.targetServer;
+  const { name, description } = req.body || {};
+  const cleanName = stripHtmlTags(String(name || '')).trim();
+  if (!cleanName || cleanName.length < 2) {
+    return res.status(400).json({ error: 'Server name must be at least 2 characters.' });
+  }
+  srv.name = cleanName.slice(0, 64);
+  if (description !== undefined) {
+    srv.description = stripHtmlTags(String(description)).slice(0, 240);
+  }
+  saveState(db);
+  recordActivity(req.user, srv.uuid, 'server:settings.rename', `Renamed server to "${srv.name}"`, getClientIp(req));
+  return res.json(buildCanonicalServer(srv));
+});
+
+app.post('/api/client/servers/:uuid/settings/reinstall', verifyServerOwnership('settings.reinstall'), async (req, res) => {
+  const srv = req.targetServer;
+  const node = getServerNode(db, srv);
+  if (!node) return res.status(404).json({ error: 'Assigned node unavailable.' });
+  const primaryAlloc = db.allocations.find(a => String(a.id) === String(srv.allocation_id));
+  try {
+    await daemonRequest(node, '/api/servers', {
+      method: 'POST',
+      body: {
+        uuid: srv.uuid,
+        name: srv.name,
+        memory: srv.limits?.memory || 1024,
+        swap: srv.limits?.swap || 0,
+        disk: srv.limits?.disk || 10240,
+        cpu: srv.limits?.cpu || 100,
+        port: primaryAlloc?.port || 25565,
+        egg_name: srv.egg_name,
+        dl_path: srv.environment?.DL_PATH || '',
+        startup: srv.startup || '',
+        environment: srv.environment || {},
+      },
+    });
+    recordActivity(req.user, srv.uuid, 'server:settings.reinstall', 'Triggered server re-install on daemon', getClientIp(req));
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(502).json({ error: err.message });
+  }
+});
+
+app.get('/api/client/servers/:uuid/activity', verifyServerOwnership(), (req, res) => {
+  const srv = req.targetServer;
+  const logs = (db.activity_logs || []).filter(l => l.server_uuid === srv.uuid);
+  return res.json({ data: logs.slice(0, 100) });
+});
+
+// Register all per-server Addon endpoints
+registerAddonRoutes(app, { getDb, saveState, verifyServerOwnership, recordActivity });
+
+// ============================================================================
+// Application / Admin Endpoints (Strictly Root Admin Enforced!)
+// ============================================================================
+
+app.get('/api/application/overview', requireRootAdmin('settings:read'), (req, res) => {
+  const runningCount = db.servers.filter(s => s.status === 'running' || s.status === 'online').length;
+  const onlineNodes = db.nodes.filter(n => n.is_online).length;
+  const totalMemAllocated = db.servers.reduce((acc, s) => acc + (s.limits?.memory || 0), 0);
+  const totalDiskAllocated = db.servers.reduce((acc, s) => acc + (s.limits?.disk || 0), 0);
+  return res.json({
+    servers_total: db.servers.length,
+    servers_running: runningCount,
+    users_total: db.users.length,
+    nodes_total: db.nodes.length,
+    nodes_online: onlineNodes,
+    nests_total: db.nests.length,
+    eggs_total: db.eggs.length,
+    allocations_total: db.allocations.length,
+    allocations_used: db.allocations.filter(a => a.server_id).length,
+    memory_allocated_mb: totalMemAllocated,
+    disk_allocated_mb: totalDiskAllocated,
+  });
+});
+
+// ---------------- Admin Locations CRUD ----------------
+
+app.get('/api/application/locations', requireRootAdmin('nodes:read'), (req, res) => {
+  const enriched = db.locations.map(loc => {
+    const locNodes = db.nodes.filter(n => String(n.location_id) === String(loc.id));
+    const nodeIds = new Set(locNodes.map(n => String(n.id)));
+    const srvCount = db.servers.filter(s => nodeIds.has(String(s.node_id))).length;
+    return { ...loc, nodes_count: locNodes.length, servers_count: srvCount };
+  });
+  return res.json({ data: enriched });
+});
+
+app.post('/api/application/locations', requireRootAdmin('nodes:write'), (req, res) => {
+  const short = stripHtmlTags(String(req.body?.short || '')).trim().slice(0, 32);
+  const long = stripHtmlTags(String(req.body?.long || '')).trim().slice(0, 128);
+  if (!short) return res.status(400).json({ error: 'Location short code is required.' });
+  const loc = { id: nextId(db.locations), short, long: long || short, created_at: new Date().toISOString() };
+  db.locations.push(loc);
+  saveState(db);
+  recordActivity(req.user, null, 'admin:location.create', `Created location ${short}`, getClientIp(req));
+  return res.status(201).json(loc);
+});
+
+app.delete('/api/application/locations/:id', requireRootAdmin('nodes:write'), (req, res) => {
+  if (db.nodes.some(n => String(n.location_id) === String(req.params.id))) {
+    return res.status(400).json({ error: 'Cannot delete a location that still has nodes assigned.' });
+  }
+  const idx = db.locations.findIndex(l => String(l.id) === String(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Location not found.' });
+  db.locations.splice(idx, 1);
+  saveState(db);
+  return res.status(204).end();
+});
+
+// ---------------- Admin Nodes & Allocations CRUD ----------------
+
+app.get('/api/application/nodes', requireRootAdmin('nodes:read'), async (req, res) => {
+  const enriched = await Promise.all(
+    db.nodes.map(async n => {
+      const health = await probeNodeHealth(n, 1000);
+      n.is_online = health.is_online;
+      n.daemon_version = health.daemon_version;
+      n.latency_ms = health.latency_ms;
+      n.system_info = health.system;
+      return sanitizeNodeForAdmin(n);
+    })
+  );
+  return res.json({ data: enriched });
+});
+
+app.get('/api/application/nodes/:id', requireRootAdmin('nodes:read'), async (req, res) => {
+  const node = db.nodes.find(n => String(n.id) === String(req.params.id) || n.uuid === req.params.id);
+  if (!node) return res.status(404).json({ error: 'Node not found.' });
+  const health = await probeNodeHealth(node, 1500);
+  node.is_online = health.is_online;
+  node.daemon_version = health.daemon_version;
+  node.latency_ms = health.latency_ms;
+  node.system_info = health.system;
+  return res.json(sanitizeNodeForAdmin(node));
+});
+
+app.get('/api/application/nodes/:id/configuration', requireRootAdmin('nodes:write'), (req, res) => {
+  const node = db.nodes.find(n => String(n.id) === String(req.params.id) || n.uuid === req.params.id);
+  if (!node) return res.status(404).json({ error: 'Node not found.' });
+  const token = resolveNodeAuthToken(node);
+  return res.json({
+    uuid: node.uuid,
+    token,
+    remote: db.settings.panel_url || 'http://127.0.0.1:3001',
+    api: { port: node.daemon_listen || 8443 },
+    system: {
+      data: node.daemon_base,
+      sftp: { bind_port: node.daemon_sftp || 2202 },
+    },
+  });
+});
+
+app.post('/api/application/nodes', requireRootAdmin('nodes:write'), (req, res) => {
+  const body = req.body || {};
+  const name = stripHtmlTags(String(body.name || '')).trim();
+  const fqdn = stripHtmlTags(String(body.fqdn || '')).trim();
+  if (!name || !fqdn) return res.status(400).json({ error: 'Node name and FQDN/IP are required.' });
+  if (hasSqlInjection(name) || hasSqlInjection(fqdn)) return res.status(400).json({ error: 'Invalid input.' });
+
+  const newNode = {
+    id: nextId(db.nodes),
+    uuid: crypto.randomUUID(),
+    name: name.slice(0, 64),
+    description: stripHtmlTags(String(body.description || '')).slice(0, 200),
+    location_id: Number(body.location_id) || db.locations[0]?.id || 1,
+    fqdn,
+    scheme: body.scheme === 'https' ? 'https' : 'http',
+    behind_proxy: Boolean(body.behind_proxy),
+    maintenance_mode: Boolean(body.maintenance_mode),
+    allow_auto_allocation: body.allow_auto_allocation !== false,
+    memory: Number(body.memory) || 8192,
+    memory_overallocate: Number(body.memory_overallocate) || 0,
+    disk: Number(body.disk) || 102400,
+    disk_overallocate: Number(body.disk_overallocate) || 0,
+    upload_size: Number(body.upload_size) || 100,
+    daemon_listen: Number(body.daemon_listen) || 8443,
+    daemon_sftp: Number(body.daemon_sftp) || 2202,
+    daemon_base: String(body.daemon_base || path.join(os.homedir(), '.slayerwings', 'volumes')),
+    daemon_token: body.daemon_token || `sn_wing_${crypto.randomBytes(20).toString('hex')}`,
+    is_online: false,
+    daemon_version: 'pending',
+  };
+  db.nodes.push(newNode);
+  saveState(db);
+  recordActivity(req.user, null, 'admin:node.create', `Created node ${newNode.name} (${newNode.fqdn})`, getClientIp(req));
+  return res.status(201).json(sanitizeNodeForAdmin(newNode));
+});
+
+app.patch('/api/application/nodes/:id', requireRootAdmin('nodes:write'), (req, res) => {
+  const node = db.nodes.find(n => String(n.id) === String(req.params.id));
+  if (!node) return res.status(404).json({ error: 'Node not found.' });
+  const allowed = ['name', 'description', 'location_id', 'fqdn', 'scheme', 'behind_proxy', 'maintenance_mode', 'allow_auto_allocation', 'memory', 'memory_overallocate', 'disk', 'disk_overallocate', 'upload_size', 'daemon_listen', 'daemon_sftp', 'daemon_base'];
+  for (const field of allowed) {
+    if (req.body?.[field] !== undefined) {
+      node[field] = typeof req.body[field] === 'string' ? stripHtmlTags(req.body[field]) : req.body[field];
+    }
+  }
+  saveState(db);
+  recordActivity(req.user, null, 'admin:node.update', `Updated node ${node.name}`, getClientIp(req));
+  return res.json(sanitizeNodeForAdmin(node));
+});
+
+app.delete('/api/application/nodes/:id', requireRootAdmin('nodes:write'), (req, res) => {
+  const idx = db.nodes.findIndex(n => String(n.id) === String(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Node not found.' });
+  if (db.servers.some(s => String(s.node_id) === String(req.params.id))) {
+    return res.status(400).json({ error: 'Cannot delete node while servers remain assigned to it.' });
+  }
+  const [removed] = db.nodes.splice(idx, 1);
+  db.allocations = db.allocations.filter(a => String(a.node_id) !== String(removed.id));
+  saveState(db);
+  recordActivity(req.user, null, 'admin:node.delete', `Deleted node ${removed.name}`, getClientIp(req));
+  return res.status(204).end();
+});
+
+app.get('/api/application/nodes/:id/allocations', requireRootAdmin('nodes:read'), (req, res) => {
+  const allocs = db.allocations.filter(a => String(a.node_id) === String(req.params.id));
+  return res.json({ data: allocs });
+});
+
+app.post('/api/application/nodes/:id/allocations', requireRootAdmin('nodes:write'), (req, res) => {
+  const node = db.nodes.find(n => String(n.id) === String(req.params.id));
+  if (!node) return res.status(404).json({ error: 'Node not found.' });
+  const ip = stripHtmlTags(String(req.body?.ip || node.fqdn || '127.0.0.1')).trim();
+  const alias = stripHtmlTags(String(req.body?.alias || '')).trim();
+  const rawPorts = Array.isArray(req.body?.ports)
+    ? req.body.ports
+    : String(req.body?.ports || req.body?.port || '').split(',').map(s => s.trim()).filter(Boolean);
+  const created = [];
+
+  for (const token of rawPorts) {
+    const str = String(token).trim();
+    if (str.includes('-')) {
+      const [start, end] = str.split('-').map(Number);
+      if (start > 0 && end >= start && end - start <= 200) {
+        for (let p = start; p <= end; p++) {
+          if (!db.allocations.some(a => String(a.node_id) === String(node.id) && a.port === p)) {
+            const entry = { id: nextId(db.allocations), node_id: node.id, ip, port: p, alias, notes: '', server_id: null, assigned: false };
+            db.allocations.push(entry);
+            created.push(entry);
+          }
+        }
+      }
+    } else {
+      const p = parseInt(str, 10);
+      if (p >= 1024 && p <= 65535 && !db.allocations.some(a => String(a.node_id) === String(node.id) && a.port === p)) {
+        const entry = { id: nextId(db.allocations), node_id: node.id, ip, port: p, alias, notes: '', server_id: null, assigned: false };
+        db.allocations.push(entry);
+        created.push(entry);
+      }
+    }
+  }
+  saveState(db);
+  return res.status(201).json({ data: created });
+});
+
+app.delete('/api/application/nodes/:id/allocations/:allocId', requireRootAdmin('nodes:write'), (req, res) => {
+  const idx = db.allocations.findIndex(a => String(a.id) === String(req.params.allocId) && String(a.node_id) === String(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Allocation not found.' });
+  if (db.allocations[idx].server_id) return res.status(400).json({ error: 'Cannot delete an allocation currently bound to a server.' });
+  db.allocations.splice(idx, 1);
+  saveState(db);
+  return res.status(204).end();
+});
+
+// ---------------- Admin Users CRUD ----------------
+
+app.get('/api/application/users', requireRootAdmin('users:read'), (req, res) => {
+  return res.json({ data: db.users.map(sanitizeUser) });
+});
+
+app.post('/api/application/users', requireRootAdmin('users:write'), (req, res) => {
+  const { username, email, password, name_first = '', name_last = '', root_admin = false } = req.body || {};
+  const cleanUser = stripHtmlTags(String(username || '')).trim();
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanUser || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return res.status(400).json({ error: 'Valid username and email are required.' });
+  }
+  if (!password || String(password).length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+  }
+  if (db.users.some(u => u.email.toLowerCase() === cleanEmail || u.username.toLowerCase() === cleanUser.toLowerCase())) {
+    return res.status(409).json({ error: 'Username or email already exists.' });
+  }
+  const newUser = {
+    id: nextId(db.users),
+    uuid: crypto.randomUUID(),
+    username: cleanUser,
+    email: cleanEmail,
+    name_first: stripHtmlTags(name_first).slice(0, 64),
+    name_last: stripHtmlTags(name_last).slice(0, 64),
+    language: 'en',
+    root_admin: Boolean(root_admin),
+    two_factor_enabled: false,
+    two_factor_secret: '',
+    token_version: 1,
+    password_hash: hashPassword(String(password)),
+    created_at: new Date().toISOString(),
+  };
+  db.users.push(newUser);
+  saveState(db);
+  recordActivity(req.user, null, 'admin:user.create', `Created user ${newUser.username} (${newUser.email})`, getClientIp(req));
+  return res.status(201).json(sanitizeUser(newUser));
+});
+
+app.patch('/api/application/users/:id', requireRootAdmin('users:write'), (req, res) => {
+  const user = db.users.find(u => String(u.id) === String(req.params.id));
+  if (!user) return res.status(404).json({ error: 'User not found.' });
+  const { username, email, name_first, name_last, root_admin, password } = req.body || {};
+  if (username !== undefined) user.username = stripHtmlTags(String(username)).trim().slice(0, 32);
+  if (email !== undefined) user.email = String(email).trim().toLowerCase();
+  if (name_first !== undefined) user.name_first = stripHtmlTags(String(name_first)).slice(0, 64);
+  if (name_last !== undefined) user.name_last = stripHtmlTags(String(name_last)).slice(0, 64);
+  if (root_admin !== undefined) user.root_admin = Boolean(root_admin);
+  if (password && String(password).length >= 8) {
+    user.password_hash = hashPassword(String(password));
+    user.token_version = (user.token_version || 1) + 1;
+  }
+  saveState(db);
+  recordActivity(req.user, null, 'admin:user.update', `Updated user ${user.username}`, getClientIp(req));
+  return res.json(sanitizeUser(user));
+});
+
+app.delete('/api/application/users/:id', requireRootAdmin('users:write'), (req, res) => {
+  if (String(req.params.id) === String(req.user.id)) {
+    return res.status(400).json({ error: 'You cannot delete your own active admin account.' });
+  }
+  if (db.servers.some(s => String(s.owner_id || s.user_id) === String(req.params.id))) {
+    return res.status(400).json({ error: 'User still owns active servers; transfer or delete servers first.' });
+  }
+  const idx = db.users.findIndex(u => String(u.id) === String(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'User not found.' });
+  const [removed] = db.users.splice(idx, 1);
+  saveState(db);
+  recordActivity(req.user, null, 'admin:user.delete', `Deleted user ${removed.username}`, getClientIp(req));
+  return res.status(204).end();
+});
+
+// ---------------- Admin Nests & Eggs CRUD ----------------
+
+app.get('/api/application/nests', requireRootAdmin('nests:read'), (req, res) => {
+  const enriched = db.nests.map(n => {
+    const nestEggs = db.eggs.filter(e => String(e.nest_id) === String(n.id));
+    return {
+      ...n,
+      eggs: nestEggs,
+      eggs_count: nestEggs.length,
+      servers_count: db.servers.filter(s => String(s.nest_id) === String(n.id)).length,
+    };
+  });
+  return res.json({ data: enriched });
+});
+
+app.get('/api/application/nests/:id', requireRootAdmin('nests:read'), (req, res) => {
+  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
+  if (!nest) return res.status(404).json({ error: 'Nest not found.' });
+  const eggs = db.eggs.filter(e => String(e.nest_id) === String(nest.id));
+  return res.json({ ...nest, eggs, eggs_count: eggs.length });
+});
+
+app.post('/api/application/nests', requireRootAdmin('nests:write'), (req, res) => {
+  const name = stripHtmlTags(String(req.body?.name || '')).trim();
+  if (!name) return res.status(400).json({ error: 'Nest name is required.' });
+  const nest = {
+    id: nextId(db.nests),
+    uuid: crypto.randomUUID(),
+    author: req.user.email,
+    name: name.slice(0, 64),
+    description: stripHtmlTags(String(req.body?.description || '')).slice(0, 240),
+    created_at: new Date().toISOString().slice(0, 10),
+  };
+  db.nests.push(nest);
+  saveState(db);
+  return res.status(201).json(nest);
+});
+
+app.patch('/api/application/nests/:id', requireRootAdmin('nests:write'), (req, res) => {
+  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
+  if (!nest) return res.status(404).json({ error: 'Nest not found.' });
+  if (req.body?.name) nest.name = stripHtmlTags(String(req.body.name)).slice(0, 64);
+  if (req.body?.description !== undefined) nest.description = stripHtmlTags(String(req.body.description)).slice(0, 240);
+  saveState(db);
+  return res.json(nest);
+});
+
+app.delete('/api/application/nests/:id', requireRootAdmin('nests:write'), (req, res) => {
+  const idx = db.nests.findIndex(n => String(n.id) === String(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Nest not found.' });
+  if (db.eggs.some(e => String(e.nest_id) === String(req.params.id))) {
+    return res.status(400).json({ error: 'Cannot delete a nest while eggs remain inside it.' });
+  }
+  db.nests.splice(idx, 1);
+  saveState(db);
+  return res.status(204).end();
+});
+
+app.get('/api/application/nests/:id/eggs', requireRootAdmin('nests:read'), (req, res) => {
+  const eggs = db.eggs
+    .filter(e => String(e.nest_id) === String(req.params.id))
+    .map(e => ({
+      ...e,
+      servers_count: db.servers.filter(s => String(s.egg_id) === String(e.id)).length,
+    }));
+  return res.json({ data: eggs });
+});
+
+app.post('/api/application/nests/:id/eggs', requireRootAdmin('nests:write'), (req, res) => {
+  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
+  if (!nest) return res.status(404).json({ error: 'Nest not found.' });
+  const body = req.body || {};
+  const egg = {
+    id: nextId(db.eggs),
+    uuid: crypto.randomUUID(),
+    nest_id: nest.id,
+    nest_name: nest.name,
+    author: req.user.email,
+    name: stripHtmlTags(String(body.name || 'Custom Egg')).slice(0, 64),
+    description: stripHtmlTags(String(body.description || '')).slice(0, 240),
+    docker_images: String(body.docker_images || 'ghcr.io/pterodactyl/yolks:java_21'),
+    startup: String(body.startup || ''),
+    force_outgoing_ip: Boolean(body.force_outgoing_ip),
+    features: String(body.features || ''),
+    config: body.config || { files: '{}', stop: '^C', logs: '{}', startup: '{}' },
+    variables: Array.isArray(body.variables) ? body.variables : [],
+    created_at: new Date().toISOString().slice(0, 10),
+  };
+  db.eggs.push(egg);
+  saveState(db);
+  return res.status(201).json(egg);
+});
+
+app.patch('/api/application/nests/:id/eggs/:eggId', requireRootAdmin('nests:write'), (req, res) => {
+  const egg = db.eggs.find(e => String(e.id) === String(req.params.eggId) && String(e.nest_id) === String(req.params.id));
+  if (!egg) return res.status(404).json({ error: 'Egg not found.' });
+  const fields = ['name', 'description', 'docker_images', 'startup', 'force_outgoing_ip', 'features', 'config', 'variables'];
+  for (const f of fields) {
+    if (req.body?.[f] !== undefined) egg[f] = req.body[f];
+  }
+  saveState(db);
+  return res.json(egg);
+});
+
+app.delete('/api/application/nests/:id/eggs/:eggId', requireRootAdmin('nests:write'), (req, res) => {
+  const idx = db.eggs.findIndex(e => String(e.id) === String(req.params.eggId) && String(e.nest_id) === String(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Egg not found.' });
+  db.eggs.splice(idx, 1);
+  saveState(db);
+  return res.status(204).end();
+});
+
+app.post('/api/application/nests/:id/eggs/import', requireRootAdmin('nests:write'), (req, res) => {
+  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
+  if (!nest) return res.status(404).json({ error: 'Nest not found.' });
+  const raw = req.body || {};
+  const egg = {
+    id: nextId(db.eggs),
+    uuid: raw.uuid || crypto.randomUUID(),
+    nest_id: nest.id,
+    nest_name: nest.name,
+    author: stripHtmlTags(String(raw.author || req.user.email)),
+    name: stripHtmlTags(String(raw.name || 'Imported Egg')),
+    description: stripHtmlTags(String(raw.description || '')),
+    docker_images: Array.isArray(raw.docker_images)
+      ? raw.docker_images.join('\n')
+      : (typeof raw.docker_images === 'object' ? Object.values(raw.docker_images).join('\n') : String(raw.docker_images || '')),
+    startup: String(raw.startup || ''),
+    force_outgoing_ip: Boolean(raw.force_outgoing_ip),
+    features: Array.isArray(raw.features) ? raw.features.join(', ') : String(raw.features || ''),
+    config: raw.config || { files: '{}', stop: '^C', logs: '{}', startup: '{}' },
+    variables: Array.isArray(raw.variables) ? raw.variables : [],
+    created_at: new Date().toISOString().slice(0, 10),
+  };
+  db.eggs.push(egg);
+  saveState(db);
+  return res.status(201).json(egg);
+});
+
+// ---------------- Admin Mounts CRUD ----------------
+
+app.get('/api/application/mounts', requireRootAdmin('mounts:read'), (req, res) => {
+  return res.json({ data: db.mounts || [] });
+});
+
+app.post('/api/application/mounts', requireRootAdmin('mounts:write'), (req, res) => {
+  const { name, description = '', source, target, read_only = false, user_mountable = false } = req.body || {};
+  const cleanName = stripHtmlTags(String(name || '')).trim();
+  const cleanSource = String(source || '').trim();
+  const cleanTarget = String(target || '').trim();
+  if (!cleanName || !cleanSource.startsWith('/') || !cleanTarget.startsWith('/') || cleanSource.includes('..') || cleanTarget.includes('..')) {
+    return res.status(400).json({ error: 'Valid mount name, absolute source, and target paths are required.' });
+  }
+  const mount = {
+    id: nextId(db.mounts),
+    uuid: crypto.randomUUID(),
+    name: cleanName.slice(0, 64),
+    description: stripHtmlTags(String(description)).slice(0, 240),
+    source: cleanSource,
+    target: cleanTarget,
+    read_only: Boolean(read_only),
+    user_mountable: Boolean(user_mountable),
+    created_at: new Date().toISOString(),
+  };
+  db.mounts.push(mount);
+  saveState(db);
+  return res.status(201).json(mount);
+});
+
+app.delete('/api/application/mounts/:id', requireRootAdmin('mounts:write'), (req, res) => {
+  const idx = (db.mounts || []).findIndex(m => String(m.id) === String(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Mount not found.' });
+  db.mounts.splice(idx, 1);
+  saveState(db);
+  return res.status(204).end();
+});
+
+// ---------------- Admin Servers Fleet & Full Provisioning ----------------
+
+app.get('/api/application/servers', requireRootAdmin('servers:read'), async (req, res) => {
+  const byNode = new Map();
+  for (const srv of db.servers) {
+    const node = getServerNode(db, srv);
+    if (!node) continue;
+    if (!byNode.has(node.id)) byNode.set(node.id, node);
+  }
+  await Promise.all(
+    Array.from(byNode.values()).map(async node => {
+      try {
+        const listRes = await daemonRequest(node, '/api/servers', { timeoutMs: 1200 });
+        for (const item of (listRes.data || [])) {
+          const srv = db.servers.find(s => s.uuid === item.uuid);
+          if (srv) srv.status = item.state || item.status || 'offline';
+        }
+      } catch {}
+    })
+  );
+  return res.json({ data: db.servers.map(buildCanonicalServer) });
+});
+
+app.get('/api/application/servers/:id', requireRootAdmin('servers:read'), (req, res) => {
+  const srv = findServerStrict(req.params.id);
+  if (!srv) return res.status(404).json({ error: 'Server not found.' });
+  const databases = (db.databases || []).filter(d => d.server_uuid === srv.uuid);
+  return res.json({ ...buildCanonicalServer(srv), databases });
+});
+
+app.post('/api/application/servers', requireRootAdmin('servers:write'), async (req, res) => {
+  const body = req.body || {};
+  const name = stripHtmlTags(String(body.name || '')).trim();
+  if (!name) return res.status(400).json({ error: 'Server name is required.' });
+  if (hasSqlInjection(name)) return res.status(400).json({ error: 'Invalid server name.' });
+
+  const owner = db.users.find(u => String(u.id) === String(body.user_id || body.owner_id || req.user.id));
+  if (!owner) return res.status(404).json({ error: 'Selected owner user not found.' });
+
+  const node = db.nodes.find(n => String(n.id) === String(body.node_id)) || db.nodes[0];
+  if (!node) return res.status(404).json({ error: 'No target node available.' });
+
+  const egg = db.eggs.find(e => String(e.id) === String(body.egg_id));
+  if (!egg) return res.status(404).json({ error: 'Selected software Egg not found.' });
+
+  let alloc = null;
+  if (body.allocation_id) {
+    alloc = db.allocations.find(a => String(a.id) === String(body.allocation_id) && String(a.node_id) === String(node.id));
+    if (!alloc) return res.status(404).json({ error: 'Selected allocation does not exist on target node.' });
+    if (alloc.server_id) return res.status(409).json({ error: `Allocation port ${alloc.port} is already assigned to another server.` });
+  } else {
+    alloc = db.allocations.find(a => String(a.node_id) === String(node.id) && !a.server_id);
+    if (!alloc) return res.status(400).json({ error: `No free port allocations remaining on node ${node.name}. Add ports in Node Management.` });
+  }
+
+  const limits = {
+    memory: Number(body.limits?.memory ?? body.memory ?? 1024),
+    swap: Number(body.limits?.swap ?? body.swap ?? 0),
+    disk: Number(body.limits?.disk ?? body.disk ?? 10240),
+    io: Number(body.limits?.io ?? body.io ?? 500),
+    cpu: Number(body.limits?.cpu ?? body.cpu ?? 100),
+    oom_disabled: Boolean(body.limits?.oom_disabled ?? false),
+  };
+
+  const feature_limits = {
+    databases: Number(body.feature_limits?.databases ?? body.database_limit ?? 2),
+    allocations: Number(body.feature_limits?.allocations ?? body.allocation_limit ?? 2),
+    backups: Number(body.feature_limits?.backups ?? body.backup_limit ?? 3),
+  };
+
+  const serverId = nextId(db.servers);
   const uuid = crypto.randomUUID();
   const identifier = uuid.slice(0, 8);
 
-  const startOnDeploy = !!req.body.start_on_deploy;
+  const envVars = {
+    SERVER_PORT: String(alloc.port),
+    SERVER_MEMORY: String(limits.memory),
+  };
+  for (const v of (egg.variables || [])) {
+    envVars[v.env_variable] = body.environment?.[v.env_variable] ?? v.server_value ?? v.default_value ?? '';
+  }
+  if (body.environment && typeof body.environment === 'object') {
+    for (const [k, val] of Object.entries(body.environment)) {
+      envVars[k] = String(val ?? '');
+    }
+  }
+
+  const serverVariables = (egg.variables || []).map(v => ({
+    ...v,
+    server_value: envVars[v.env_variable] ?? v.default_value ?? '',
+  }));
 
   const newServer = {
     id: serverId,
     uuid,
     identifier,
-    name: name.trim(),
-    description: description || 'Hosted on SlayerNode Infrastructure',
+    name: name.slice(0, 64),
+    description: stripHtmlTags(String(body.description || '')).slice(0, 240),
+    status: 'offline',
+    suspended: false,
+    user_id: owner.id,
     owner_id: owner.id,
-    owner_username: owner.username,
-    node: node.name,
     node_id: node.id,
-    status: startOnDeploy ? 'running' : 'offline',
-    is_suspended: false,
-    is_transferring: false,
-    pinned: false,
-    limits: {
-      memory: parseInt(memory) || 2048,
-      swap: parseInt(swap) || 512,
-      disk: parseInt(disk) || 10240,
-      io: parseInt(io) || 500,
-      cpu: parseInt(cpu) || 100,
-    },
-    feature_limits: {
-      databases: parseInt(req.body.database_limit) || 3,
-      allocations: parseInt(req.body.allocation_limit) || 4,
-      backups: parseInt(req.body.backup_limit) || 5,
-    },
-    allocation: {
-      id: alloc.id,
-      ip: alloc.ip,
-      port: alloc.port,
-      alias: alloc.alias || `${identifier}.${node.fqdn}`,
-      is_default: true,
-    },
-    egg_id: egg_id || 1,
-    nest_id: nest_id || 1,
+    allocation_id: alloc.id,
+    nest_id: egg.nest_id,
+    egg_id: egg.id,
+    egg_name: egg.name,
+    docker_image: body.docker_image || (egg.docker_images ? egg.docker_images.split('\n')[0] : ''),
+    startup: String(body.startup || egg.startup || ''),
+    environment: envVars,
+    variables: serverVariables,
+    limits,
+    feature_limits,
     created_at: new Date().toISOString(),
   };
 
-  alloc.server_id = parseInt(serverId);
-  db.servers.push(newServer);
-  node.servers_count = db.servers.filter(s => s.node_id === node.id).length;
+  // Reserve allocation atomically before contacting daemon
+  alloc.server_id = serverId;
+  alloc.assigned = true;
 
-  saveState(db);
-  console.log(`[Wings Server Provisioned] Container ${newServer.name} (${newServer.uuid}) created on node ${node.name}`);
-
-  // Forward volume creation and auto-boot to daemon on node host
   try {
-    const egg = (db.eggs || []).find(e => String(e.id) === String(newServer.egg_id));
-    const eggName = egg ? egg.name : 'Paper';
-    const dlPath = req.body.environment?.DL_PATH || '';
-    const daemonUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers`;
-
-    fetch(daemonUrl, {
+    await daemonRequest(node, '/api/servers', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      timeoutMs: 25_000,
+      body: {
         uuid: newServer.uuid,
         name: newServer.name,
-        memory: newServer.limits.memory,
-        disk: newServer.limits.disk,
+        memory: limits.memory,
+        swap: limits.swap,
+        disk: limits.disk,
+        cpu: limits.cpu,
         port: alloc.port,
-        egg_name: eggName,
-        dl_path: dlPath,
-        startup: req.body.startup || egg?.startup,
-        environment: req.body.environment || {},
-      })
-    }).then(async () => {
-      if (startOnDeploy) {
-        await fetch(`${daemonUrl}/${newServer.uuid}/power`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'start',
-            egg_name: eggName,
-            dl_path: dlPath,
-            port: alloc.port,
-            startup: req.body.startup || egg?.startup,
-          })
-        }).catch(() => {});
-      }
-    }).catch(err => {
-      console.log(`[Wings Daemon Provision Notice] Daemon sync notification:`, err.message);
+        egg_name: newServer.egg_name,
+        dl_path: envVars.DL_PATH || '',
+        startup: newServer.startup,
+        environment: envVars,
+      },
     });
-  } catch (err) {}
+  } catch (err) {
+    // Roll back allocation if provisioning failed on daemon
+    alloc.server_id = null;
+    alloc.assigned = false;
+    return res.status(502).json({ error: `Daemon provisioning failed on ${node.name}: ${err.message}` });
+  }
 
-  res.status(201).json({ object: 'server', attributes: newServer });
-});
+  db.servers.push(newServer);
+  saveState(db);
+  recordActivity(req.user, newServer.uuid, 'admin:server.create', `Provisioned server "${newServer.name}" (${newServer.identifier}) on port ${alloc.port}`, getClientIp(req));
 
-app.delete('/api/application/servers/:id', requireRootAdmin, (req, res) => {
-  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
-
-  // Free allocations
-  db.allocations.forEach(a => {
-    if (String(a.server_id) === String(server.id)) {
-      a.server_id = null;
-    }
-  });
-
-  db.servers = db.servers.filter(s => s.id !== server.id);
-  const node = db.nodes.find(n => n.id === server.node_id) || db.nodes[0];
-  if (node) {
-    node.servers_count = db.servers.filter(s => s.node_id === node.id).length;
-    // Tell daemon to remove container volume and kill process
+  const startOnDeploy = Boolean(body.start_on_completion ?? body.start_after_install ?? body.start_on_deploy ?? false);
+  if (startOnDeploy) {
     try {
-      const daemonUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${server.uuid}`;
-      fetch(daemonUrl, { method: 'DELETE' }).catch(() => {});
-    } catch {}
-  }
-
-  saveState(db);
-  res.status(204).send();
-});
-
-app.get('/api/application/servers/:id', requireRootAdmin, (req, res) => {
-  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
-  res.json({ object: 'server', attributes: server });
-});
-
-app.patch('/api/application/servers/:id/details', requireRootAdmin, (req, res) => {
-  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
-  const { name, owner_id, description, external_id } = req.body;
-  if (name) server.name = name.trim();
-  if (description !== undefined) server.description = description;
-  if (external_id !== undefined) server.external_id = external_id;
-  if (owner_id) {
-    const owner = db.users.find(u => String(u.id) === String(owner_id));
-    if (owner) {
-      server.owner_id = owner.id;
-      server.owner_username = owner.username;
-    }
-  }
-  saveState(db);
-  res.json({ object: 'server', attributes: server });
-});
-
-app.patch('/api/application/servers/:id/build', requireRootAdmin, (req, res) => {
-  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
-  const { allocation_id, memory, swap, disk, io, cpu, feature_limits } = req.body;
-  if (memory) server.limits.memory = parseInt(memory, 10);
-  if (swap !== undefined) server.limits.swap = parseInt(swap, 10);
-  if (disk) server.limits.disk = parseInt(disk, 10);
-  if (io) server.limits.io = parseInt(io, 10);
-  if (cpu) server.limits.cpu = parseInt(cpu, 10);
-  if (feature_limits) {
-    server.feature_limits = {
-      ...(server.feature_limits || {}),
-      ...feature_limits,
-    };
-  }
-  saveState(db);
-  res.json({ object: 'server', attributes: server });
-});
-
-app.patch('/api/application/servers/:id/startup', requireRootAdmin, (req, res) => {
-  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
-  const { startup, egg_id, nest_id, docker_image, environment } = req.body;
-  if (startup) server.startup = startup;
-  if (egg_id) server.egg_id = egg_id;
-  if (nest_id) server.nest_id = nest_id;
-  if (docker_image) server.docker_image = docker_image;
-  if (environment) server.environment = { ...(server.environment || {}), ...environment };
-  saveState(db);
-  res.json({ object: 'server', attributes: server });
-});
-
-app.post(['/api/application/servers/:id/manage', '/api/application/servers/:id/manage/:action'], requireRootAdmin, (req, res) => {
-  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
-  const action = req.params.action || req.body.action;
-  if (action === 'suspend') {
-    server.is_suspended = true;
-    server.status = 'offline';
-  } else if (action === 'unsuspend') {
-    server.is_suspended = false;
-  } else if (action === 'toggle-install') {
-    server.status = server.status === 'installing' ? 'offline' : 'installing';
-  } else if (action === 'reinstall') {
-    server.status = 'installing';
-    setTimeout(() => {
-      server.status = 'offline';
-      saveState(db);
-    }, 2000);
-  }
-  saveState(db);
-  res.json({ success: true, action, server });
-});
-
-app.post('/api/application/servers/:id/databases', requireRootAdmin, (req, res) => {
-  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
-  if (!server.databases) server.databases = [];
-  const { database, connections, max_connections } = req.body;
-  const newDb = {
-    id: server.databases.length + 1,
-    database: database || `s${server.id}_db`,
-    username: `u${server.id}_${Math.random().toString(36).substring(2, 7)}`,
-    connections_from: connections || '%',
-    max_connections: parseInt(max_connections, 10) || 0,
-    host: '127.0.0.1:3306',
-  };
-  server.databases.push(newDb);
-  saveState(db);
-  res.status(201).json({ success: true, database: newDb });
-});
-
-app.delete('/api/application/servers/:id/databases/:dbId', requireRootAdmin, (req, res) => {
-  const server = db.servers.find(s => String(s.id) === String(req.params.id) || s.uuid === req.params.id || s.identifier === req.params.id);
-  if (!server) return res.status(404).json({ error: 'Server not found' });
-  if (server.databases) {
-    server.databases = server.databases.filter(d => String(d.id) !== String(req.params.dbId));
-    saveState(db);
-  }
-  res.json({ success: true });
-});
-
-// ==========================================
-// 4. Blueprint Framework & Extensions API
-// ==========================================
-
-app.get('/api/blueprint/extensions', (req, res) => {
-  res.json({
-    success: true,
-    framework: 'Blueprint v2.4.0',
-    extensions: db.blueprint_extensions,
-  });
-});
-
-app.post('/api/blueprint/extensions/toggle', requireRootAdmin, (req, res) => {
-  const { id, enabled } = req.body;
-  const ext = db.blueprint_extensions.find(e => e.id === id);
-  if (!ext) return res.status(404).json({ error: 'Blueprint extension not found.' });
-
-  ext.enabled = !!enabled;
-  saveState(db);
-  res.json({ success: true, extension: ext });
-});
-
-app.post('/api/blueprint/upload', requireRootAdmin, (req, res) => {
-  const { filename, manifest } = req.body;
-  if (!manifest || !manifest.id || !manifest.name) {
-    return res.status(400).json({ error: 'Invalid Blueprint extension manifest.' });
-  }
-
-  const existingIdx = db.blueprint_extensions.findIndex(e => e.id === manifest.id);
-  const newExtension = {
-    id: manifest.id,
-    name: manifest.name,
-    version: manifest.version || '1.0.0',
-    author: manifest.author || 'Custom Blueprint Author',
-    description: manifest.description || 'Custom Blueprint extension for SlayerNode.',
-    target: manifest.target || 'v1.0.0',
-    icon: manifest.icon || 'Package',
-    enabled: true,
-    installed_at: new Date().toISOString().split('T')[0],
-  };
-
-  if (existingIdx !== -1) {
-    db.blueprint_extensions[existingIdx] = newExtension;
-  } else {
-    db.blueprint_extensions.push(newExtension);
-  }
-
-  saveState(db);
-  console.log(`[Blueprint Framework] Extension ${newExtension.name} (${newExtension.id}) installed.`);
-  res.status(201).json({ success: true, extension: newExtension });
-});
-
-// ==========================================
-// 5. SlayerNode Nests & Eggs API
-// ==========================================
-
-app.get('/api/application/nests', (req, res) => {
-  // Sync server counts and egg counts
-  db.nests.forEach(n => {
-    n.eggs_count = db.eggs.filter(e => String(e.nest_id) === String(n.id)).length;
-    n.servers_count = db.servers.filter(s => String(s.nest_id) === String(n.id)).length;
-  });
-  res.json({
-    object: 'list',
-    data: db.nests.map(n => ({
-      object: 'nest',
-      attributes: n,
-    })),
-  });
-});
-
-app.get('/api/application/nests/:id', (req, res) => {
-  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
-  if (!nest) return res.status(404).json({ error: 'Nest not found' });
-  const eggs = db.eggs.filter(e => String(e.nest_id) === String(req.params.id));
-  res.json({
-    object: 'nest',
-    attributes: {
-      ...nest,
-      eggs: eggs,
-      eggs_count: eggs.length,
-      servers_count: db.servers.filter(s => String(s.nest_id) === String(nest.id)).length,
-    },
-  });
-});
-
-app.post('/api/application/nests', requireRootAdmin, (req, res) => {
-  const { name, description } = req.body;
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: 'Nest name is required.' });
-  }
-
-  const newNest = {
-    id: Date.now(),
-    uuid: crypto.randomUUID(),
-    author: req.user?.email || 'admin@slayernode.xyz',
-    name: name.trim(),
-    description: description ? description.trim() : '',
-    eggs_count: 0,
-    servers_count: 0,
-    created_at: new Date().toISOString(),
-  };
-
-  db.nests.push(newNest);
-  saveState(db);
-  res.status(201).json({ object: 'nest', attributes: newNest });
-});
-
-app.patch('/api/application/nests/:id', requireRootAdmin, (req, res) => {
-  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
-  if (!nest) return res.status(404).json({ error: 'Nest not found' });
-
-  if (req.body.name) nest.name = req.body.name.trim();
-  if (req.body.description !== undefined) nest.description = req.body.description.trim();
-
-  saveState(db);
-  res.json({ object: 'nest', attributes: nest });
-});
-
-app.delete('/api/application/nests/:id', requireRootAdmin, (req, res) => {
-  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
-  if (!nest) return res.status(404).json({ error: 'Nest not found' });
-
-  const activeServers = db.servers.filter(s => String(s.nest_id) === String(req.params.id));
-  if (activeServers.length > 0) {
-    return res.status(400).json({
-      error: `Cannot delete nest: It currently has ${activeServers.length} active servers assigned to it.`
-    });
-  }
-
-  db.nests = db.nests.filter(n => String(n.id) !== String(req.params.id));
-  db.eggs = db.eggs.filter(e => String(e.nest_id) !== String(req.params.id));
-  saveState(db);
-  res.status(204).send();
-});
-
-// Eggs Sub-API
-app.get('/api/application/nests/:id/eggs', (req, res) => {
-  const eggs = db.eggs.filter(e => String(e.nest_id) === String(req.params.id));
-  res.json({
-    object: 'list',
-    data: eggs.map(e => ({
-      object: 'egg',
-      attributes: e,
-    })),
-  });
-});
-
-app.get('/api/application/nests/:id/eggs/:eggId', (req, res) => {
-  const egg = db.eggs.find(e => String(e.id) === String(req.params.eggId) && String(e.nest_id) === String(req.params.id));
-  if (!egg) return res.status(404).json({ error: 'Egg not found in this nest.' });
-  res.json({ object: 'egg', attributes: egg });
-});
-
-app.post('/api/application/nests/:id/eggs', requireRootAdmin, (req, res) => {
-  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
-  if (!nest) return res.status(404).json({ error: 'Target nest not found.' });
-
-  const data = req.body;
-  if (!data.name || !data.name.trim()) {
-    return res.status(400).json({ error: 'Egg name is required.' });
-  }
-
-  const newEgg = {
-    id: Date.now(),
-    uuid: crypto.randomUUID(),
-    nest_id: nest.id,
-    nest_name: nest.name,
-    author: req.user?.email || 'admin@slayernode.xyz',
-    name: data.name.trim(),
-    description: data.description ? data.description.trim() : '',
-    docker_images: data.docker_images || 'ghcr.io/pterodactyl/yolks:java_25',
-    startup: data.startup || 'java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui',
-    force_outgoing_ip: !!data.force_outgoing_ip,
-    features: data.features || '',
-    config: {
-      files: data.config_files || data.config?.files || '{"server.properties":{"server-port":"{{SERVER_PORT}}","server-ip":"0.0.0.0"}}',
-      stop: data.stop_cmd || data.config?.stop || 'stop',
-      logs: data.log_config || data.config?.logs || '{}',
-      startup: data.start_config || data.config?.startup || '{}',
-    },
-    variables: Array.isArray(data.variables) ? data.variables : [
-      { name: 'Server Jar File', env_variable: 'SERVER_JARFILE', default_value: 'server.jar', server_value: 'server.jar', is_editable: true, rules: 'required|string' },
-      { name: 'Minecraft Version', env_variable: 'MINECRAFT_VERSION', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
-    ],
-    servers_count: 0,
-    created_at: new Date().toISOString(),
-  };
-
-  db.eggs.push(newEgg);
-  nest.eggs_count = db.eggs.filter(e => String(e.nest_id) === String(nest.id)).length;
-  saveState(db);
-  res.status(201).json({ object: 'egg', attributes: newEgg });
-});
-
-app.patch('/api/application/nests/:id/eggs/:eggId', requireRootAdmin, (req, res) => {
-  const egg = db.eggs.find(e => String(e.id) === String(req.params.eggId) && String(e.nest_id) === String(req.params.id));
-  if (!egg) return res.status(404).json({ error: 'Egg not found in this nest.' });
-
-  const data = req.body;
-  if (data.name) egg.name = data.name.trim();
-  if (data.description !== undefined) egg.description = data.description.trim();
-  if (data.docker_images !== undefined) egg.docker_images = data.docker_images;
-  if (data.startup !== undefined) egg.startup = data.startup;
-  if (data.force_outgoing_ip !== undefined) egg.force_outgoing_ip = !!data.force_outgoing_ip;
-  if (data.features !== undefined) egg.features = data.features;
-  if (data.config_files !== undefined || data.stop_cmd !== undefined) {
-    egg.config = {
-      ...egg.config,
-      files: data.config_files !== undefined ? data.config_files : egg.config?.files,
-      stop: data.stop_cmd !== undefined ? data.stop_cmd : egg.config?.stop,
-      logs: data.log_config !== undefined ? data.log_config : egg.config?.logs,
-      startup: data.start_config !== undefined ? data.start_config : egg.config?.startup,
-    };
-  }
-
-  saveState(db);
-  res.json({ object: 'egg', attributes: egg });
-});
-
-app.delete('/api/application/nests/:id/eggs/:eggId', requireRootAdmin, (req, res) => {
-  const egg = db.eggs.find(e => String(e.id) === String(req.params.eggId) && String(e.nest_id) === String(req.params.id));
-  if (!egg) return res.status(404).json({ error: 'Egg not found.' });
-
-  const activeServers = db.servers.filter(s => String(s.egg_id) === String(req.params.eggId));
-  if (activeServers.length > 0) {
-    return res.status(400).json({
-      error: `Cannot delete Egg: It is currently assigned to ${activeServers.length} active server instances.`
-    });
-  }
-
-  db.eggs = db.eggs.filter(e => !(String(e.id) === String(req.params.eggId) && String(e.nest_id) === String(req.params.id)));
-  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
-  if (nest) {
-    nest.eggs_count = db.eggs.filter(e => String(e.nest_id) === String(nest.id)).length;
-  }
-
-  saveState(db);
-  res.status(204).send();
-});
-
-// Import Pterodactyl-Standard Egg JSON
-app.post('/api/application/nests/:id/eggs/import', requireRootAdmin, (req, res) => {
-  const nest = db.nests.find(n => String(n.id) === String(req.params.id));
-  if (!nest) return res.status(404).json({ error: 'Target nest not found.' });
-
-  let raw = req.body;
-  if (typeof raw === 'string') {
-    try {
-      raw = JSON.parse(raw);
-    } catch {
-      return res.status(400).json({ error: 'Invalid JSON format in uploaded Egg file.' });
-    }
-  }
-
-  if (!raw || (!raw.name && !raw.exported_at)) {
-    return res.status(400).json({ error: 'The uploaded file does not match a valid Pterodactyl or SlayerNode Egg schema.' });
-  }
-
-  // Handle docker_images mapping (can be object, string, or array in Pterodactyl eggs)
-  let dockerImagesStr = 'ghcr.io/pterodactyl/yolks:java_25';
-  if (typeof raw.docker_images === 'string') {
-    dockerImagesStr = raw.docker_images;
-  } else if (raw.docker_images && typeof raw.docker_images === 'object') {
-    dockerImagesStr = Object.entries(raw.docker_images)
-      .map(([k, v]) => `${v}`)
-      .join('\n');
-  }
-
-  const importedEgg = {
-    id: Date.now(),
-    uuid: raw.uuid || crypto.randomUUID(),
-    nest_id: nest.id,
-    nest_name: nest.name,
-    author: raw.author || req.user?.email || 'admin@slayernode.xyz',
-    name: (raw.name || 'Imported Custom Egg').trim(),
-    description: (raw.description || 'Custom imported game egg configuration.').trim(),
-    docker_images: dockerImagesStr,
-    startup: raw.startup || 'java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}} nogui',
-    force_outgoing_ip: !!raw.force_outgoing_ip,
-    features: Array.isArray(raw.features) ? raw.features.join(', ') : (raw.features || ''),
-    config: {
-      files: typeof raw.config?.files === 'object' ? JSON.stringify(raw.config.files) : (raw.config?.files || '{}'),
-      stop: raw.config?.stop || 'stop',
-      logs: typeof raw.config?.logs === 'object' ? JSON.stringify(raw.config.logs) : (raw.config?.logs || '{}'),
-      startup: typeof raw.config?.startup === 'object' ? JSON.stringify(raw.config.startup) : (raw.config?.startup || '{}'),
-    },
-    variables: Array.isArray(raw.variables) ? raw.variables : [
-      { name: 'Server Jar File', env_variable: 'SERVER_JARFILE', default_value: 'server.jar', server_value: 'server.jar', is_editable: true, rules: 'required|string' },
-      { name: 'Minecraft Version', env_variable: 'MINECRAFT_VERSION', default_value: 'latest', server_value: 'latest', is_editable: true, rules: 'required|string' },
-    ],
-    scripts: raw.scripts || {},
-    servers_count: 0,
-    created_at: new Date().toISOString(),
-  };
-
-  db.eggs.push(importedEgg);
-  nest.eggs_count = db.eggs.filter(e => String(e.nest_id) === String(nest.id)).length;
-  saveState(db);
-
-  console.log(`[Eggs Manager] Successfully imported Egg "${importedEgg.name}" (${importedEgg.uuid}) into nest "${nest.name}"`);
-  res.status(201).json({ object: 'egg', attributes: importedEgg });
-});
-
-app.get('/api/application/nests/:id/eggs/:eggId/export', (req, res) => {
-  const egg = db.eggs.find(e => String(e.id) === String(req.params.eggId) && String(e.nest_id) === String(req.params.id));
-  if (!egg) return res.status(404).json({ error: 'Egg not found.' });
-
-  const exported = {
-    _comment: 'DO NOT EDIT THIS FILE. IT WAS EXPORTED BY SLAYERNODE PANEL.',
-    meta: {
-      version: 'PTDL_v2',
-      update_url: null,
-    },
-    exported_at: new Date().toISOString(),
-    name: egg.name,
-    author: egg.author,
-    description: egg.description,
-    features: egg.features ? egg.features.split(',').map(s => s.trim()) : null,
-    docker_images: egg.docker_images,
-    startup: egg.startup,
-    config: egg.config,
-    variables: egg.variables,
-  };
-
-  res.setHeader('Content-Disposition', `attachment; filename="egg-${egg.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.json"`);
-  res.setHeader('Content-Type', 'application/json');
-  res.send(JSON.stringify(exported, null, 2));
-});
-
-// ==========================================
-// 6. Real Outbound SMTP Testing Engine
-// ==========================================
-
-app.post('/api/admin/mail/test', async (req, res) => {
-  const {
-    host,
-    port = 587,
-    encryption = 'tls',
-    username,
-    password,
-    from = 'noreply@slayernode.xyz',
-    to,
-  } = req.body;
-
-  if (!host) {
-    return res.status(400).json({ success: false, error: 'SMTP host is required.' });
-  }
-
-  const numericPort = parseInt(port, 10);
-  const isSecure = encryption === 'ssl' || numericPort === 465;
-
-  const transportConfig = {
-    host,
-    port: numericPort,
-    secure: isSecure,
-    tls: {
-      rejectUnauthorized: false,
-      minVersion: 'TLSv1.2',
-    },
-    connectionTimeout: 8000,
-    greetingTimeout: 5000,
-    socketTimeout: 8000,
-  };
-
-  if (username && password) {
-    transportConfig.auth = { user: username, pass: password };
-  }
-
-  const startTime = Date.now();
-
-  try {
-    const transporter = nodemailer.createTransport(transportConfig);
-    console.log(`[SMTP Test] Connecting to ${host}:${numericPort} (secure: ${isSecure})...`);
-    await transporter.verify();
-    const handshakeTime = Date.now() - startTime;
-    console.log(`[SMTP Test] Handshake successful in ${handshakeTime}ms!`);
-
-    let sentInfo = null;
-    if (to) {
-      console.log(`[SMTP Test] Dispatching test email to ${to}...`);
-      sentInfo = await transporter.sendMail({
-        from: `"SlayerNode Panel" <${from}>`,
-        to,
-        subject: 'SlayerNode Panel v1.0.0 — SMTP Connection Verified',
-        text: `Your SlayerNode SMTP mail daemon is configured correctly.\nServer: ${host}:${numericPort}\nLatency: ${handshakeTime}ms\nTimestamp: ${new Date().toISOString()}`,
-        html: `
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #090D16; color: #FFFFFF; border: 1px solid rgba(0, 210, 255, 0.3); border-radius: 16px; padding: 32px; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
-            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 16px;">
-              <h2 style="color: #00D2FF; margin: 0; font-size: 20px;">SlayerNode Panel v1.0.0</h2>
-            </div>
-            <h3 style="color: #10B981; margin-top: 0;">SMTP Mail Gateway Successfully Connected</h3>
-            <p style="color: #94A3B8; font-size: 14px; line-height: 1.6;">
-              This email confirms that the outbound mail transport configuration on your SlayerNode Panel instance is active and authenticated.
-            </p>
-            <div style="background: rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; color: #E2E8F0; margin: 20px 0;">
-              <div><strong>Host:</strong> ${host}</div>
-              <div><strong>Port:</strong> ${numericPort}</div>
-              <div><strong>Security:</strong> ${encryption.toUpperCase()}</div>
-              <div><strong>Response Latency:</strong> ${handshakeTime}ms</div>
-              <div><strong>Delivered At:</strong> ${new Date().toUTCString()}</div>
-            </div>
-            <p style="color: #64748B; font-size: 11px; margin-top: 24px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 12px;">
-              &copy; 2026 SlayerNode. All rights reserved. <a href="https://slayernode.xyz" style="color: #00D2FF;">https://slayernode.xyz</a>
-            </p>
-          </div>
-        `,
+      await daemonRequest(node, `/api/servers/${newServer.uuid}/power`, {
+        method: 'POST',
+        timeoutMs: 120_000,
+        body: {
+          action: 'start',
+          egg_name: newServer.egg_name,
+          port: alloc.port,
+          memory: limits.memory,
+          swap: limits.swap,
+          disk: limits.disk,
+          cpu: limits.cpu,
+          dl_path: envVars.DL_PATH || '',
+          startup: newServer.startup,
+          environment: envVars,
+        },
       });
+      newServer.status = 'running';
+      saveState(db);
+    } catch (err) {
+      // Server was provisioned successfully even if auto-start hit timeout/error
+      newServer.status = 'offline';
     }
-
-    return res.json({
-      success: true,
-      message: to
-        ? `SMTP verified & test email dispatched successfully to ${to} (${handshakeTime}ms)`
-        : `SMTP server reachable and handshake verified (${handshakeTime}ms)`,
-      latency_ms: handshakeTime,
-      response: sentInfo?.response || '250 2.0.0 OK Handshake Completed',
-      message_id: sentInfo?.messageId || null,
-    });
-  } catch (err) {
-    console.error('[SMTP Test Failed]:', err);
-    return res.status(500).json({
-      success: false,
-      error: err.message || 'SMTP Handshake or Authentication Failed',
-      code: err.code || 'ESMTPERROR',
-      command: err.command || 'EHLO',
-      details: `Failed communicating with ${host}:${numericPort}. Verify firewall rules, port openness, and credentials.`,
-    });
   }
+
+  return res.status(201).json(buildCanonicalServer(newServer));
 });
 
-// ==========================================
-// 7. Client Servers & Wings Daemon Signal API
-// ==========================================
-
-app.get(['/api/client', '/api/client/servers'], (req, res) => {
-  const user = getRequestUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
-  const filtered = user.root_admin
-    ? db.servers
-    : db.servers.filter(s => s.owner_id === user.id);
-
-  res.json({
-    object: 'list',
-    data: filtered.map(s => ({
-      object: 'server',
-      attributes: {
-        server_owner: s.owner_id === user.id,
-        identifier: s.identifier,
-        uuid: s.uuid,
-        name: s.name,
-        node: s.node,
-        status: s.status,
-        is_suspended: s.is_suspended,
-        limits: s.limits,
-        allocation: s.allocation,
-      },
-    })),
-  });
-});
-
-// ==========================================
-// 8. Client Account & Personal Preferences API
-// ==========================================
-
-app.get('/api/client/account', (req, res) => {
-  const user = getRequestUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
-  res.json({
-    object: 'user',
-    attributes: user,
-  });
-});
-
-app.put('/api/client/account/email', (req, res) => {
-  const user = getRequestUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
-  const { email } = req.body;
-  if (!email || !email.includes('@') || !email.includes('.')) {
-    return res.status(400).json({ error: 'Invalid email address.' });
-  }
-  user.email = email.trim().toLowerCase();
-  saveState(db);
-  res.json({ object: 'user', attributes: user });
-});
-
-app.put('/api/client/account/password', (req, res) => {
-  const user = getRequestUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
-  const { new_password, new_password_confirmation } = req.body;
-  if (!new_password || new_password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters in length.' });
-  }
-  if (new_password_confirmation && new_password !== new_password_confirmation) {
-    return res.status(400).json({ error: 'Password confirmation does not match.' });
+app.patch('/api/application/servers/:id/details', requireRootAdmin('servers:write'), (req, res) => {
+  const srv = findServerStrict(req.params.id);
+  if (!srv) return res.status(404).json({ error: 'Server not found.' });
+  const { name, description, owner_id, user_id, external_id } = req.body || {};
+  if (name) srv.name = stripHtmlTags(String(name)).slice(0, 64);
+  if (description !== undefined) srv.description = stripHtmlTags(String(description)).slice(0, 240);
+  if (external_id !== undefined) srv.external_id = stripHtmlTags(String(external_id)).slice(0, 64);
+  const newOwner = owner_id || user_id;
+  if (newOwner && db.users.some(u => String(u.id) === String(newOwner))) {
+    srv.owner_id = Number(newOwner);
+    srv.user_id = Number(newOwner);
   }
   saveState(db);
-  res.status(204).send();
+  recordActivity(req.user, srv.uuid, 'admin:server.details', `Updated details for "${srv.name}"`, getClientIp(req));
+  return res.json(buildCanonicalServer(srv));
 });
 
-app.get('/api/client/account/api-keys', (req, res) => {
-  const user = getRequestUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
-  const keys = (db.client_api_keys || []).filter(k => k.user_id === user.id);
-  res.json({
-    object: 'list',
-    data: keys.map(k => ({
-      object: 'api_key',
-      attributes: {
-        identifier: k.identifier,
-        description: k.description,
-        allowed_ips: k.allowed_ips || [],
-        created_at: k.created_at,
-        last_used_at: k.last_used_at || null,
-      },
-    })),
-  });
-});
-
-app.post('/api/client/account/api-keys', (req, res) => {
-  const user = getRequestUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
-  const rawDesc = String(req.body.description || '').replace(/(UNION|SELECT|--|;|'|"|<|>)/gi, '').trim();
-  const description = rawDesc || 'API Key';
-  const allowed_ips = req.body.allowed_ips ? (Array.isArray(req.body.allowed_ips) ? req.body.allowed_ips : [req.body.allowed_ips]) : [];
-
-  const identifier = 'ptlc_' + crypto.randomBytes(8).toString('hex');
-  const secret_token = 'ptlc_' + crypto.randomBytes(24).toString('hex');
-
-  const newKey = {
-    id: Date.now(),
-    user_id: user.id,
-    identifier,
-    secret_token,
-    description,
-    allowed_ips,
-    created_at: new Date().toISOString(),
+app.patch('/api/application/servers/:id/build', requireRootAdmin('servers:write'), (req, res) => {
+  const srv = findServerStrict(req.params.id);
+  if (!srv) return res.status(404).json({ error: 'Server not found.' });
+  const b = req.body || {};
+  srv.limits = {
+    ...srv.limits,
+    memory: Number(b.memory ?? srv.limits.memory),
+    swap: Number(b.swap ?? srv.limits.swap),
+    disk: Number(b.disk ?? srv.limits.disk),
+    io: Number(b.io ?? srv.limits.io),
+    cpu: Number(b.cpu ?? srv.limits.cpu),
+    oom_disabled: b.oom_disabled !== undefined ? Boolean(b.oom_disabled) : srv.limits.oom_disabled,
   };
-
-  db.client_api_keys = db.client_api_keys || [];
-  db.client_api_keys.push(newKey);
-  saveState(db);
-
-  res.status(201).json({
-    object: 'api_key',
-    attributes: {
-      identifier: newKey.identifier,
-      description: newKey.description,
-      allowed_ips: newKey.allowed_ips,
-      created_at: newKey.created_at,
-    },
-    meta: {
-      secret_token,
-    },
-  });
-});
-
-app.delete('/api/client/account/api-keys/:identifier', (req, res) => {
-  const user = getRequestUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
-  const id = req.params.identifier;
-  db.client_api_keys = (db.client_api_keys || []).filter(k => k.identifier !== id);
-  saveState(db);
-  res.status(204).send();
-});
-
-app.get('/api/client/account/ssh-keys', (req, res) => {
-  const user = getRequestUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
-  const keys = (db.ssh_keys || []).filter(k => k.user_id === user.id);
-  res.json({
-    object: 'list',
-    data: keys.map(k => ({
-      object: 'ssh_key',
-      attributes: k,
-    })),
-  });
-});
-
-app.post('/api/client/account/ssh-keys', (req, res) => {
-  const user = getRequestUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
-  const { name, public_key } = req.body;
-  if (!public_key || !public_key.trim().match(/^(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521)\s+[A-Za-z0-9+/=]+/)) {
-    return res.status(400).json({ error: 'Invalid SSH key format. Must be a valid public key starting with ssh-rsa, ssh-ed25519, etc.' });
-  }
-
-  const cleanKey = public_key.trim();
-  const fingerprint = crypto.createHash('sha256').update(cleanKey).digest('base64').replace(/=+$/, '');
-  const newSsh = {
-    id: Date.now(),
-    user_id: user.id,
-    name: name?.trim() || 'SSH Key',
-    fingerprint,
-    public_key: cleanKey,
-    created_at: new Date().toISOString(),
+  srv.feature_limits = {
+    ...srv.feature_limits,
+    databases: Number(b.database_limit ?? b.feature_limits?.databases ?? srv.feature_limits.databases),
+    allocations: Number(b.allocation_limit ?? b.feature_limits?.allocations ?? srv.feature_limits.allocations),
+    backups: Number(b.backup_limit ?? b.feature_limits?.backups ?? srv.feature_limits.backups),
   };
-
-  db.ssh_keys = db.ssh_keys || [];
-  db.ssh_keys.push(newSsh);
-  saveState(db);
-
-  res.status(201).json({
-    object: 'ssh_key',
-    attributes: newSsh,
-  });
-});
-
-app.delete('/api/client/account/ssh-keys/:fingerprint', (req, res) => {
-  const user = getRequestUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
-  const fp = req.params.fingerprint;
-  db.ssh_keys = (db.ssh_keys || []).filter(k => k.fingerprint !== fp);
-  saveState(db);
-  res.status(204).send();
-});
-
-app.get('/api/client/account/activity', (req, res) => {
-  const user = getRequestUser(req);
-  if (!user) return res.status(401).json({ error: 'Unauthenticated.' });
-  res.json({
-    object: 'list',
-    data: (db.activity_logs || []).map(a => ({
-      object: 'activity_log',
-      attributes: a,
-    })),
-  });
-});
-
-app.get('/api/client/regions', (req, res) => {
-  res.json({
-    object: 'list',
-    data: (db.locations || []).map(l => ({
-      object: 'location',
-      attributes: l,
-    })),
-  });
-});
-
-app.get('/api/client/servers/:uuid', verifyServerOwnership, (req, res) => {
-  res.json({
-    object: 'server',
-    attributes: req.targetServer,
-  });
-});
-
-app.post('/api/client/servers/:uuid/power', verifyServerOwnership, (req, res) => {
-  const { signal } = req.body;
-  console.log(`[Wings Daemon Power Signal] ${req.targetServer.name} (${req.params.uuid}) -> ${signal}`);
-  if (signal === 'start' || signal === 'restart') {
-    req.targetServer.status = 'running';
-  } else if (signal === 'stop' || signal === 'kill') {
-    req.targetServer.status = 'offline';
+  if (b.allocation_id) {
+    const newAlloc = db.allocations.find(a => String(a.id) === String(b.allocation_id) && String(a.node_id) === String(srv.node_id));
+    if (newAlloc && (!newAlloc.server_id || String(newAlloc.server_id) === String(srv.id))) {
+      newAlloc.server_id = srv.id;
+      newAlloc.assigned = true;
+      srv.allocation_id = newAlloc.id;
+      srv.environment.SERVER_PORT = String(newAlloc.port);
+    }
   }
   saveState(db);
-
-  // Forward signal to node daemon
-  try {
-    const node = db.nodes.find(n => n.id === req.targetServer.node_id) || db.nodes[0];
-    if (node) {
-      const egg = (db.eggs || []).find(e => String(e.id) === String(req.targetServer.egg_id));
-      const eggName = egg ? egg.name : 'Paper';
-      const daemonPowerUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.targetServer.uuid}/power`;
-      fetch(daemonPowerUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: signal,
-          egg_name: eggName,
-          port: req.targetServer.allocation?.port || 25565,
-        })
-      }).catch(err => console.log('[Wings Daemon Forward Notice]', err.message));
-    }
-  } catch (err) {}
-
-  res.status(204).send();
+  recordActivity(req.user, srv.uuid, 'admin:server.build', `Updated build limits for "${srv.name}"`, getClientIp(req));
+  return res.json(buildCanonicalServer(srv));
 });
 
-app.post('/api/client/servers/:uuid/command', verifyServerOwnership, (req, res) => {
-  const { command } = req.body;
-  console.log(`[Wings Daemon Stdin Command] ${req.targetServer.name} -> ${command}`);
-
-  // Forward stdin command to node daemon
-  try {
-    const node = db.nodes.find(n => n.id === req.targetServer.node_id) || db.nodes[0];
-    if (node) {
-      const daemonCmdUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.targetServer.uuid}/commands`;
-      fetch(daemonCmdUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commands: [command] })
-      }).catch(err => console.log('[Wings Daemon Forward Notice]', err.message));
+app.patch('/api/application/servers/:id/startup', requireRootAdmin('servers:write'), (req, res) => {
+  const srv = findServerStrict(req.params.id);
+  if (!srv) return res.status(404).json({ error: 'Server not found.' });
+  const b = req.body || {};
+  if (b.startup !== undefined || b.startup_command !== undefined) {
+    srv.startup = String(b.startup ?? b.startup_command).slice(0, 500);
+  }
+  if (b.egg_id) {
+    const egg = db.eggs.find(e => String(e.id) === String(b.egg_id));
+    if (egg) {
+      srv.egg_id = egg.id;
+      srv.egg_name = egg.name;
+      srv.nest_id = egg.nest_id;
+      if (!b.startup && !b.startup_command) srv.startup = egg.startup;
     }
-  } catch (err) {}
-
-  res.status(204).send();
-});
-
-app.get('/api/client/servers/:uuid/logs', verifyServerOwnership, async (req, res) => {
-  try {
-    const node = db.nodes.find(n => n.id === req.targetServer.node_id) || db.nodes[0];
-    if (node) {
-      const daemonLogsUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.targetServer.uuid}/logs`;
-      const response = await fetch(daemonLogsUrl, { signal: AbortSignal.timeout(1500) });
-      if (response.ok) {
-        const data = await response.json();
-        return res.json({ data: data.logs || [] });
+  }
+  if (b.docker_image || b.image) {
+    srv.docker_image = stripHtmlTags(String(b.docker_image || b.image));
+  }
+  if (b.environment && typeof b.environment === 'object') {
+    srv.environment = { ...srv.environment, ...b.environment };
+    for (const v of (srv.variables || [])) {
+      if (b.environment[v.env_variable] !== undefined) {
+        v.server_value = String(b.environment[v.env_variable]);
       }
     }
-  } catch (err) {}
-  res.json({ data: [] });
-});
-
-// Startup Parameters API (Pterodactyl Parity)
-app.get('/api/client/servers/:uuid/startup', verifyServerOwnership, (req, res) => {
-  const egg = (db.eggs || []).find(e => String(e.id) === String(req.targetServer.egg_id));
-  res.json({
-    startup: req.targetServer.startup || egg?.startup || 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}',
-    docker_image: req.targetServer.docker_image || req.targetServer.image || egg?.docker_image || 'ghcr.io/pterodactyl/yolks:java_25',
-    variables: req.targetServer.environment || egg?.variables || [],
-  });
-});
-
-app.put('/api/client/servers/:uuid/startup', verifyServerOwnership, (req, res) => {
-  const { startup, docker_image, variables } = req.body;
-  if (startup) req.targetServer.startup = startup;
-  if (docker_image) {
-    req.targetServer.docker_image = docker_image;
-    req.targetServer.image = docker_image;
-  }
-  if (variables) {
-    req.targetServer.environment = { ...(req.targetServer.environment || {}), ...variables };
   }
   saveState(db);
-  res.json({ success: true, message: 'Startup parameters updated successfully.' });
+  recordActivity(req.user, srv.uuid, 'admin:server.startup', `Updated startup config for "${srv.name}"`, getClientIp(req));
+  return res.json(buildCanonicalServer(srv));
 });
 
-// File Manager Proxy Routes (Pterodactyl Parity)
-app.use('/api/client/servers/:uuid/files', verifyServerOwnership, async (req, res) => {
-  try {
-    const node = db.nodes.find(n => n.id === req.targetServer.node_id) || db.nodes[0];
-    if (!node) {
-      return res.status(502).json({ error: 'Node unavailable for file operations.' });
-    }
-    const daemonUrl = `${node.scheme || 'http'}://${node.fqdn || '127.0.0.1'}:${node.daemon_listen || 8443}/api/servers/${req.targetServer.uuid}/files${req.url}`;
-
-    const headers = {
-      'Content-Type': req.headers['content-type'] || 'application/json',
-      'Authorization': `Bearer ${node.daemon_token || 'sn_sandbox_token_secret'}`
-    };
-
-    const fetchOptions = {
-      method: req.method,
-      headers,
-    };
-
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      fetchOptions.body = JSON.stringify(req.body);
-    }
-
-    const daemonRes = await fetch(daemonUrl, fetchOptions);
-    const contentType = daemonRes.headers.get('content-type') || 'application/json';
-    res.status(daemonRes.status);
-    res.setHeader('Content-Type', contentType);
-
-    if (contentType.includes('application/json')) {
-      const data = await daemonRes.json();
-      return res.json(data);
-    } else {
-      const text = await daemonRes.text();
-      return res.send(text);
-    }
-  } catch (err) {
-    console.error('[File Proxy Error]', err.message);
-    res.status(500).json({ error: 'Failed to proxy file operation to daemon: ' + err.message });
-  }
+app.get('/api/application/servers/:id/databases', requireRootAdmin('servers:read'), (req, res) => {
+  const srv = findServerStrict(req.params.id);
+  if (!srv) return res.status(404).json({ error: 'Server not found.' });
+  return res.json({ data: db.databases.filter(d => d.server_uuid === srv.uuid) });
 });
 
-app.get('/api/client/servers/:uuid/websocket', verifyServerOwnership, (req, res) => {
-  const ephemeralToken = `jwt_slayernode_${Date.now()}`;
-  res.json({
-    data: {
-      token: ephemeralToken,
-      socket: `ws://${req.headers.host}/api/client/servers/${req.targetServer.uuid}/ws`,
-    },
-  });
-});
-
-// Theme Studio API
-app.get('/api/studio/theme', (req, res) => {
-  res.json({ success: true, theme: db.theme });
-});
-
-app.post('/api/studio/theme', requireRootAdmin, (req, res) => {
-  db.theme = req.body;
+app.post('/api/application/servers/:id/databases', requireRootAdmin('servers:write'), (req, res) => {
+  const srv = findServerStrict(req.params.id);
+  if (!srv) return res.status(404).json({ error: 'Server not found.' });
+  const cleanName = stripHtmlTags(String(req.body?.database || 'db')).replace(/[^a-zA-Z0-9_]/g, '_');
+  const entry = {
+    id: nextId(db.databases),
+    server_uuid: srv.uuid,
+    name: `s${srv.id}_${cleanName}`,
+    username: `u${srv.id}_${crypto.randomBytes(3).toString('hex')}`,
+    password: crypto.randomBytes(16).toString('base64url'),
+    host: '127.0.0.1',
+    port: 3306,
+    remote: String(req.body?.remote || '%'),
+    created_at: new Date().toISOString(),
+  };
+  db.databases.push(entry);
   saveState(db);
-  res.json({ success: true, theme: db.theme });
+  return res.status(201).json(entry);
 });
 
-app.post('/api/studio/theme/reset', requireRootAdmin, (req, res) => {
-  db.theme = null;
+app.delete('/api/application/servers/:id/databases/:dbId', requireRootAdmin('servers:write'), (req, res) => {
+  const srv = findServerStrict(req.params.id);
+  if (!srv) return res.status(404).json({ error: 'Server not found.' });
+  const idx = db.databases.findIndex(d => String(d.id) === String(req.params.dbId) && d.server_uuid === srv.uuid);
+  if (idx === -1) return res.status(404).json({ error: 'Database not found.' });
+  db.databases.splice(idx, 1);
   saveState(db);
-  res.json({ success: true, message: 'Theme settings reset to factory default.' });
+  return res.status(204).end();
 });
 
-// Mod search proxy
-app.get('/api/addons/mods/search', async (req, res) => {
-  const query = req.query.q || '';
-  try {
-    const apiRes = await fetch(`https://api.modrinth.com/v2/search?query=${encodeURIComponent(query)}&limit=12`);
-    if (apiRes.ok) {
-      const data = await apiRes.json();
-      return res.json({ success: true, hits: data.hits });
+app.post('/api/application/servers/:id/manage/:action', requireRootAdmin('servers:write'), async (req, res) => {
+  const srv = findServerStrict(req.params.id);
+  if (!srv) return res.status(404).json({ error: 'Server not found.' });
+  const action = String(req.params.action).toLowerCase();
+  const node = getServerNode(db, srv);
+
+  if (action === 'suspend') {
+    srv.suspended = true;
+    srv.status = 'offline';
+    if (node) {
+      await daemonRequest(node, `/api/servers/${srv.uuid}/power`, { method: 'POST', body: { action: 'kill' } }).catch(() => {});
     }
-  } catch (e) {
-    console.warn('Modrinth upstream unreachable.');
-  }
-  res.json({ success: true, hits: [] });
-});
-
-// WebSocket Terminal & Stats Streamer
-server.on('upgrade', (request, socket, head) => {
-  if (request.url?.includes('/ws')) {
-    wss.handleUpgrade(request, socket, head, ws => {
-      wss.emit('connection', ws, request);
-    });
+  } else if (action === 'unsuspend') {
+    srv.suspended = false;
+  } else if (action === 'reinstall') {
+    const primaryAlloc = db.allocations.find(a => String(a.id) === String(srv.allocation_id));
+    if (node) {
+      await daemonRequest(node, '/api/servers', {
+        method: 'POST',
+        body: {
+          uuid: srv.uuid,
+          name: srv.name,
+          memory: srv.limits?.memory || 1024,
+          swap: srv.limits?.swap || 0,
+          disk: srv.limits?.disk || 10240,
+          cpu: srv.limits?.cpu || 100,
+          port: primaryAlloc?.port || 25565,
+          egg_name: srv.egg_name,
+          dl_path: srv.environment?.DL_PATH || '',
+          startup: srv.startup || '',
+          environment: srv.environment || {},
+        },
+      }).catch(() => {});
+    }
   } else {
-    socket.destroy();
+    return res.status(400).json({ error: 'Unknown management action.' });
+  }
+
+  saveState(db);
+  recordActivity(req.user, srv.uuid, `admin:server.${action}`, `Admin performed "${action}" on ${srv.name}`, getClientIp(req));
+  return res.json(buildCanonicalServer(srv));
+});
+
+app.delete('/api/application/servers/:id', requireRootAdmin('servers:write'), async (req, res) => {
+  const idx = db.servers.findIndex(
+    s => String(s.id) === String(req.params.id) || String(s.uuid) === String(req.params.id) || String(s.identifier) === String(req.params.id)
+  );
+  if (idx === -1) return res.status(404).json({ error: 'Server not found.' });
+  const [srv] = db.servers.splice(idx, 1);
+  const node = getServerNode(db, srv);
+  const force = req.query.force === 'true';
+
+  if (node) {
+    try {
+      await daemonRequest(node, `/api/servers/${srv.uuid}`, { method: 'DELETE' });
+    } catch (err) {
+      if (!force) {
+        db.servers.splice(idx, 0, srv);
+        return res.status(502).json({ error: `Daemon delete failed: ${err.message}. Pass ?force=true to remove anyway.` });
+      }
+    }
+  }
+
+  // Cascade release allocations & per-server child data
+  for (const alloc of db.allocations) {
+    if (String(alloc.server_id) === String(srv.id)) {
+      alloc.server_id = null;
+      alloc.assigned = false;
+      alloc.notes = '';
+    }
+  }
+  db.databases = db.databases.filter(d => d.server_uuid !== srv.uuid);
+  db.schedules = db.schedules.filter(s => s.server_uuid !== srv.uuid);
+  db.backups = db.backups.filter(b => b.server_uuid !== srv.uuid);
+  db.subusers = db.subusers.filter(su => su.server_uuid !== srv.uuid);
+  db.subdomains = db.subdomains.filter(sd => sd.server_uuid !== srv.uuid);
+  db.server_splits = db.server_splits.filter(sp => sp.parent_server_uuid !== srv.uuid && sp.child_server_uuid !== srv.uuid);
+  liveStatsCache.delete(srv.uuid);
+
+  saveState(db);
+  recordActivity(req.user, srv.uuid, 'admin:server.delete', `Deleted server "${srv.name}" (${srv.uuid})`, getClientIp(req));
+  return res.status(204).end();
+});
+
+// ---------------- Admin Application API Keys CRUD ----------------
+
+app.get('/api/application/api-keys', requireRootAdmin('api-keys:read'), (req, res) => {
+  const keys = (db.api_keys || [])
+    .filter(k => !k.revoked_at)
+    .map(k => ({
+      identifier: k.identifier,
+      memo: k.memo,
+      description: k.memo,
+      scopes: k.scopes || ['*'],
+      allowed_ips: k.allowed_ips || [],
+      last_used_at: k.last_used_at || null,
+      created_at: k.created_at,
+    }));
+  return res.json({ data: keys });
+});
+
+app.post('/api/application/api-keys', requireRootAdmin('api-keys:write'), (req, res) => {
+  const { memo, description, scopes = ['*'], allowed_ips = [] } = req.body || {};
+  const cleanMemo = stripHtmlTags(String(memo || description || '')).trim();
+  if (!cleanMemo) return res.status(400).json({ error: 'API key description is required.' });
+
+  const identifier = crypto.randomBytes(6).toString('hex');
+  const rawToken = `ptla_${crypto.randomBytes(24).toString('hex')}`;
+  const key = {
+    identifier,
+    user_id: req.user.id,
+    memo: cleanMemo.slice(0, 120),
+    scopes: Array.isArray(scopes) && scopes.length ? scopes : ['*'],
+    allowed_ips: Array.isArray(allowed_ips) ? allowed_ips : [],
+    token_hash: hashApiToken(rawToken),
+    last_used_at: null,
+    revoked_at: null,
+    created_at: new Date().toISOString(),
+  };
+  db.api_keys.push(key);
+  saveState(db);
+  recordActivity(req.user, null, 'admin:api-key.create', `Created Application API key "${cleanMemo}"`, getClientIp(req));
+
+  return res.status(201).json({
+    identifier: key.identifier,
+    memo: key.memo,
+    description: key.memo,
+    scopes: key.scopes,
+    allowed_ips: key.allowed_ips,
+    secret_token: rawToken,
+    secret: rawToken,
+    created_at: key.created_at,
+  });
+});
+
+app.delete('/api/application/api-keys/:identifier', requireRootAdmin('api-keys:write'), (req, res) => {
+  const key = (db.api_keys || []).find(k => k.identifier === req.params.identifier && !k.revoked_at);
+  if (!key) return res.status(404).json({ error: 'Application API key not found.' });
+  key.revoked_at = new Date().toISOString();
+  saveState(db);
+  recordActivity(req.user, null, 'admin:api-key.delete', `Revoked Application API key ${key.identifier}`, getClientIp(req));
+  return res.status(204).end();
+});
+
+// ---------------- Admin System Settings & Mail Test ----------------
+
+function getSafeSettings() {
+  const copy = { ...db.settings };
+  copy.mail_password = copy.mail_password ? '********' : '';
+  return copy;
+}
+
+app.get(['/api/application/settings', '/api/admin/settings'], requireRootAdmin('settings:read'), (req, res) => {
+  return res.json(getSafeSettings());
+});
+
+app.put(['/api/application/settings', '/api/admin/settings'], requireRootAdmin('settings:write'), (req, res) => {
+  const updates = req.body || {};
+  const allowedKeys = [
+    'panel_name', 'company_name', 'panel_url', 'require_2fa_admins',
+    'allow_registration', 'maintenance_mode', 'telemetry_interval_ms',
+    'mail_driver', 'mail_host', 'mail_port', 'mail_encryption',
+    'mail_username', 'mail_from_address', 'mail_from_name',
+  ];
+  for (const k of allowedKeys) {
+    if (updates[k] !== undefined) {
+      db.settings[k] = typeof updates[k] === 'string' ? stripHtmlTags(updates[k]) : updates[k];
+    }
+  }
+  if (typeof updates.mail_password === 'string' && updates.mail_password !== '' && updates.mail_password !== '********') {
+    db.settings.mail_password = updates.mail_password;
+  }
+  if (updates.allow_registration !== undefined) {
+    db.theme.auth_allow_registration = Boolean(updates.allow_registration);
+  }
+  if (updates.panel_name) {
+    db.theme.panel_name = db.settings.panel_name;
+  }
+  saveState(db);
+  recordActivity(req.user, null, 'admin:settings.update', 'Updated global system settings', getClientIp(req));
+  return res.json(getSafeSettings());
+});
+
+app.post('/api/admin/mail/test', requireRootAdmin('settings:write'), async (req, res) => {
+  const recipient = String(req.body?.email || req.user.email).trim();
+  const { mail_host, mail_port, mail_encryption, mail_username, mail_password, mail_from_address, mail_from_name } = db.settings;
+  if (!mail_host || mail_host === 'smtp.example.com') {
+    return res.status(400).json({ error: 'Configure a real SMTP host before sending a test email.' });
+  }
+  try {
+    const transporter = nodemailer.createTransport({
+      host: mail_host,
+      port: Number(mail_port) || 587,
+      secure: mail_encryption === 'ssl' || Number(mail_port) === 465,
+      auth: mail_username ? { user: mail_username, pass: mail_password } : undefined,
+      connectionTimeout: 5000,
+    });
+    await transporter.sendMail({
+      from: `"${mail_from_name || 'SlayerNode'}" <${mail_from_address || 'noreply@slayernode.xyz'}>`,
+      to: recipient,
+      subject: 'SlayerNode Panel SMTP Verification',
+      text: 'This is a live SMTP configuration test from SlayerNode Panel.',
+    });
+    return res.json({ success: true, message: `Test email dispatched to ${recipient}` });
+  } catch (err) {
+    return res.status(502).json({ error: `SMTP delivery failed: ${err.message}` });
   }
 });
 
-wss.on('connection', (clientWs, req) => {
-  // Extract server UUID from URL if present
-  const match = req.url?.match(/\/api\/client\/servers\/([^\/]+)\/ws/);
-  const serverUuid = match ? match[1] : null;
+// ---------------- Admin Audit & Activity Logs ----------------
 
-  // Establish upstream WebSocket bridge to SlayerWings Daemon on port 8443
-  let daemonWs = null;
-  const pendingQueue = [];
-  try {
-    daemonWs = new WebSocket('ws://127.0.0.1:8443');
-    daemonWs.on('open', () => {
-      // If client requested specific server, immediately request backlogs
-      if (serverUuid) {
-        daemonWs.send(JSON.stringify({ event: 'auth', args: [`jwt_slayernode_${Date.now()}`], server: serverUuid }));
-      }
-      while (pendingQueue.length > 0) {
-        const item = pendingQueue.shift();
-        if (daemonWs.readyState === WebSocket.OPEN) daemonWs.send(item);
-      }
-    });
-    daemonWs.on('message', data => {
-      if (clientWs.readyState === WebSocket.OPEN) {
-        clientWs.send(data);
-      }
-    });
-    daemonWs.on('error', err => {
-      console.warn('[Daemon WS Bridge Notice]', err.message);
-    });
-  } catch (e) {}
-
-  clientWs.on('message', message => {
-    try {
-      if (daemonWs && daemonWs.readyState === WebSocket.OPEN) {
-        daemonWs.send(message);
-      } else {
-        pendingQueue.push(message);
-      }
-    } catch (e) {}
-  });
-
-  clientWs.on('close', () => {
-    if (daemonWs) {
-      try {
-        daemonWs.close();
-      } catch {}
-    }
-  });
+app.get(['/api/application/activity', '/api/admin/audit'], requireRootAdmin('activity:read'), (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  let logs = db.activity_logs || [];
+  if (q && !hasSqlInjection(q)) {
+    logs = logs.filter(
+      l =>
+        String(l.action).toLowerCase().includes(q) ||
+        String(l.description).toLowerCase().includes(q) ||
+        String(l.username).toLowerCase().includes(q)
+    );
+  }
+  return res.json({ data: logs.slice(0, 200) });
 });
 
+// Block direct HTTP access to internal state, secrets, server directory, or dotfiles
 app.use((req, res, next) => {
-  if (req.path.includes('storage_db.json')) {
-    return res.status(403).json({ error: 'Direct access to internal database forbidden.' });
+  if (!req.path.startsWith('/api/') && /(?:storage_db\.json|\.daemon_token|\.session_secret|\.env|\/\.git(?:\/|$)|^\/server(?:\/|$))/i.test(req.path)) {
+    return res.status(403).json({ errors: [{ code: 'Forbidden', status: '403', detail: 'Access to internal server files is forbidden.' }] });
   }
   next();
 });
 
-const distDir = path.join(__dirname, '../dist');
-if (fs.existsSync(distDir)) {
-  app.use(express.static(distDir));
-  app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api')) {
-      return res.sendFile(path.join(distDir, 'index.html'));
-    }
-    next();
+// Optional static production SPA fallback (only if built dist/ exists, never blocks /api)
+const DIST_DIR = path.resolve(__dirname, '../dist');
+if (fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
+  app.use(express.static(DIST_DIR));
+  app.get(/^(?!\/api\/).*/, (req, res) => {
+    res.sendFile(path.join(DIST_DIR, 'index.html'));
   });
 }
 
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`\x1b[38;2;0;210;255m⚡ SlayerNode Panel v1.0.0 Backend\x1b[0m listening on http://localhost:${PORT}`);
-  console.log(`\x1b[38;2;16;185;129m✔ Wings Working Engine & Application API active.\x1b[0m`);
-  console.log(`\x1b[38;2;0;210;255m✔ Blueprint Framework Support & Extensions Router active.\x1b[0m`);
+// Strict JSON 404 for unknown /api/* routes
+app.use('/api', (req, res) => {
+  res.status(404).json({ errors: [{ code: 'NotFound', status: '404', detail: 'API endpoint not found.' }] });
+});
+
+// Secure Global Error Handler (never leaks stack traces or internal file paths)
+app.use((err, req, res, _next) => {
+  console.error('[Panel Error]', err?.message || err);
+  const status = Number(err?.status) >= 400 && Number(err?.status) < 600 ? Number(err.status) : 500;
+  const detail = status === 500 ? 'Internal server error.' : String(err?.message || 'Request failed');
+  res.status(status).json({ errors: [{ status: String(status), detail }] });
+});
+
+// ============================================================================
+// HTTP Server + Authenticated, Origin-Checked, Server-Isolated WebSocket Bridge
+// ============================================================================
+
+const server = http.createServer(app);
+const wss = new WebSocketServer({ noServer: true });
+
+server.on('upgrade', (request, socket, head) => {
+  try {
+    const reqUrl = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
+    const match = reqUrl.pathname.match(/^\/api\/client\/servers\/([^/]+)\/ws\/?$/);
+    if (!match) {
+      socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    // 1. Strict CSWSH Origin Validation
+    if (!isAllowedOrigin(request)) {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    // 2. Authenticate via signed ephemeral ?token=... OR signed HttpOnly slayer_session cookie
+    const tokenParam = reqUrl.searchParams.get('token');
+    const cookies = parseCookies(request.headers.cookie || '');
+    const requestedServerKey = decodeURIComponent(match[1]);
+    const srv = findServerStrict(requestedServerKey);
+
+    if (!srv) {
+      socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    let authedUser = null;
+    if (tokenParam) {
+      const wsPayload = verifyWsToken(tokenParam);
+      if (wsPayload && String(wsPayload.srv) === String(srv.uuid)) {
+        const user = db.users.find(u => String(u.id) === String(wsPayload.uid));
+        if (user && (user.token_version || 1) === (wsPayload.tv || 1)) {
+          authedUser = user;
+        }
+      }
+    } else if (cookies.slayer_session) {
+      const session = verifySessionCookieToken(cookies.slayer_session);
+      if (session) {
+        const user = db.users.find(u => String(u.id) === String(session.uid));
+        if (user && (user.token_version || 1) === (session.tv || 1)) {
+          authedUser = user;
+        }
+      }
+    }
+
+    if (!authedUser) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    if (!userCanAccessServer(authedUser, srv, 'control.console')) {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    wss.handleUpgrade(request, socket, head, clientWs => {
+      wss.emit('connection', clientWs, request, { user: authedUser, server: srv });
+    });
+  } catch {
+    socket.destroy();
+  }
+});
+
+wss.on('connection', (clientWs, _req, context) => {
+  const srv = context.server;
+  const targetUuid = srv.uuid;
+  const node = getServerNode(db, srv);
+
+  if (!node) {
+    clientWs.send(JSON.stringify({ event: 'error', server: targetUuid, message: 'Assigned node missing.' }));
+    clientWs.close();
+    return;
+  }
+
+  const wsBase = getNodeBaseUrl(node, { ws: true });
+  const daemonWsUrl = `${wsBase}/?server=${encodeURIComponent(targetUuid)}`;
+  const daemonToken = resolveNodeAuthToken(node);
+
+  let daemonWs = null;
+  let closed = false;
+
+  const connectUpstream = () => {
+    if (closed) return;
+    daemonWs = new WebSocket(daemonWsUrl, {
+      headers: { Authorization: `Bearer ${daemonToken}` },
+    });
+
+    daemonWs.on('open', () => {
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(JSON.stringify({ event: 'auth success', server: targetUuid }));
+      }
+    });
+
+    daemonWs.on('message', raw => {
+      if (clientWs.readyState !== WebSocket.OPEN) return;
+      try {
+        const msg = JSON.parse(raw.toString());
+        // Strict cross-server frame barrier: reject frames belonging to any other UUID
+        if (msg.server && msg.server !== targetUuid) return;
+        clientWs.send(JSON.stringify({ ...msg, server: targetUuid }));
+      } catch {}
+    });
+
+    daemonWs.on('error', err => {
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(
+          JSON.stringify({
+            event: 'console output',
+            server: targetUuid,
+            args: [`[SlayerPanel] Node ${node.name} stream issue: ${err.message}`],
+          })
+        );
+      }
+    });
+
+    daemonWs.on('close', () => {
+      daemonWs = null;
+    });
+  };
+
+  connectUpstream();
+
+  clientWs.on('message', async raw => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg.event === 'send command') {
+        const cmd = String(Array.isArray(msg.args) ? msg.args[0] : (msg.command || '')).replace(/[\r\n]+/g, ' ').trim();
+        if (!cmd || cmd.length > 500) return;
+        if (daemonWs && daemonWs.readyState === WebSocket.OPEN) {
+          daemonWs.send(JSON.stringify({ event: 'send command', args: [cmd], server: targetUuid }));
+        } else {
+          await daemonRequest(node, `/api/servers/${targetUuid}/commands`, {
+            method: 'POST',
+            body: { commands: [cmd] },
+          }).catch(() => {});
+        }
+      } else if (msg.event === 'set state' && typeof msg.args?.[0] === 'string') {
+        const action = msg.args[0].toLowerCase();
+        if (['start', 'stop', 'restart', 'kill'].includes(action)) {
+          await daemonRequest(node, `/api/servers/${targetUuid}/power`, {
+            method: 'POST',
+            body: { action },
+          }).catch(() => {});
+        }
+      }
+    } catch {}
+  });
+
+  clientWs.on('close', () => {
+    closed = true;
+    try {
+      daemonWs?.close();
+    } catch {}
+  });
+});
+
+// Start real cron schedule loop
+startScheduleLoop(getDb, saveState, recordActivity);
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`[SlayerPanel API] Listening on http://0.0.0.0:${PORT}`);
 });

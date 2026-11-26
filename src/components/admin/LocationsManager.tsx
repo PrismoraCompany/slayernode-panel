@@ -5,6 +5,7 @@ import { GlassButton } from '../ui/GlassButton';
 import { GlassModal } from '../ui/GlassModal';
 import { GlassInput } from '../ui/GlassInput';
 import { Location } from '../../types';
+import { apiFetch } from '../../lib/api';
 
 export const LocationsManager: React.FC = () => {
   const [locations, setLocations] = useState<Location[]>([]);
@@ -14,7 +15,7 @@ export const LocationsManager: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   React.useEffect(() => {
-    fetch('/api/application/locations')
+    apiFetch('/api/application/locations')
       .then(res => res.json())
       .then(d => {
         if (d && Array.isArray(d.data)) {
@@ -31,9 +32,8 @@ export const LocationsManager: React.FC = () => {
     }
     setError(null);
     try {
-      const res = await fetch('/api/application/locations', {
+      const res = await apiFetch('/api/application/locations', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ short: shortCode.trim(), long: longDesc.trim() || shortCode.trim() }),
       });
       if (res.ok) {
@@ -54,11 +54,14 @@ export const LocationsManager: React.FC = () => {
 
   const handleDelete = async (id: number | string) => {
     try {
-      await fetch(`/api/application/locations/${id}`, { method: 'DELETE' });
-      setLocations(prev => prev.filter(l => String(l.id) !== String(id)));
-    } catch {
-      setLocations(prev => prev.filter(l => String(l.id) !== String(id)));
-    }
+      const res = await apiFetch(`/api/application/locations/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setLocations(prev => prev.filter(l => String(l.id) !== String(id)));
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error || 'Cannot delete location.');
+      }
+    } catch {}
   };
 
   return (
@@ -131,14 +134,14 @@ export const LocationsManager: React.FC = () => {
                   </button>
                 </div>
 
-                <div className="flex items-center gap-4 text-xs font-mono text-slate-300 mt-4 p-3 rounded-lg bg-[#111216] border border-white/5">
-                  <span className="flex items-center gap-1.5">
-                    <HardDrive className="w-3.5 h-3.5 text-red-400" />
+                <div className="flex items-center justify-between gap-3 text-xs font-mono text-slate-300 mt-4 px-3.5 py-2.5 rounded-lg bg-[#111216] border border-white/5">
+                  <span className="flex items-center gap-1.5 whitespace-nowrap">
+                    <HardDrive className="w-3.5 h-3.5 text-red-400 shrink-0" />
                     <strong>{loc.nodes_count}</strong> Nodes
                   </span>
-                  <span>•</span>
-                  <span className="flex items-center gap-1.5">
-                    <Server className="w-3.5 h-3.5 text-slate-300" />
+                  <span className="text-slate-600">•</span>
+                  <span className="flex items-center gap-1.5 whitespace-nowrap">
+                    <Server className="w-3.5 h-3.5 text-slate-300 shrink-0" />
                     <strong>{loc.servers_count}</strong> Servers
                   </span>
                 </div>

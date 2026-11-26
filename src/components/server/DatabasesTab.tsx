@@ -1,170 +1,222 @@
-import React, { useState } from 'react';
-import { Database, Plus, Key, Trash2, Copy, Check, ExternalLink } from 'lucide-react';
-import { useServer } from '../../context/ServerContext';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Database, Plus, Trash2, Copy, Check, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { useServers } from '../../context/ServerContext';
+import { apiFetch, apiJson } from '../../lib/api';
 import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
-import { GlassInput } from '../ui/GlassInput';
 import { GlassModal } from '../ui/GlassModal';
-import { ServerDatabase } from '../../types';
+import { GlassInput } from '../ui/GlassInput';
+
+interface PersistedDb {
+  id: number;
+  name: string;
+  username: string;
+  password: string;
+  host: string;
+  port: number;
+  remote: string;
+  created_at: string;
+}
 
 export const DatabasesTab: React.FC = () => {
-  const { activeServer } = useServer();
-  const [databases, setDatabases] = useState<ServerDatabase[]>([
-    {
-      id: 'db_1',
-      name: 's1_luckperms',
-      username: 'u1_r3a8z9',
-      host: { address: '127.0.0.1', port: 3306 },
-      database_host_id: 1,
-      max_connections: 50,
-      connections_count: 8,
-      created_at: '2026-11-10 14:00',
-    },
-    {
-      id: 'db_2',
-      name: 's1_coreprotect',
-      username: 'u1_c8d7k2',
-      host: { address: '127.0.0.1', port: 3306 },
-      database_host_id: 1,
-      max_connections: 50,
-      connections_count: 14,
-      created_at: '2026-11-12 11:20',
-    },
-  ]);
-
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newDbName, setNewDbName] = useState('');
+  const { activeServer } = useServers();
+  const [databases, setDatabases] = useState<PersistedDb[]>([]);
+  const [limit, setLimit] = useState(2);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [dbName, setDbName] = useState('');
+  const [remoteHost, setRemoteHost] = useState('%');
+  const [error, setError] = useState<string | null>(null);
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<number, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const handleCreate = () => {
-    if (!newDbName.trim()) return;
-    const db: ServerDatabase = {
-      id: `db_${Date.now()}`,
-      name: `s1_${newDbName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
-      username: `u1_${Math.random().toString(36).substring(2, 8)}`,
-      host: { address: '127.0.0.1', port: 3306 },
-      database_host_id: 1,
-      max_connections: 50,
-      created_at: 'Just now',
-    };
-    setDatabases(prev => [...prev, db]);
-    setNewDbName('');
-    setShowCreateModal(false);
+  const loadDatabases = useCallback(async () => {
+    if (!activeServer) return;
+    setLoading(true);
+    try {
+      const res = await apiJson<{ data: PersistedDb[]; limit: number }>(
+        `/api/client/servers/${encodeURIComponent(activeServer.uuid)}/databases`
+      );
+      setDatabases(Array.isArray(res?.data) ? res.data : []);
+      if (res?.limit !== undefined) setLimit(res.limit);
+    } catch {
+      setDatabases([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeServer?.uuid]);
+
+  useEffect(() => {
+    loadDatabases();
+  }, [loadDatabases]);
+
+  if (!activeServer) return null;
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      const created = await apiJson<PersistedDb>(
+        `/api/client/servers/${encodeURIComponent(activeServer.uuid)}/databases`,
+        { method: 'POST', body: JSON.stringify({ database: dbName.trim(), remote: remoteHost.trim() || '%' }) }
+      );
+      setDatabases(prev => [...prev, created]);
+      setShowCreate(false);
+      setDbName('');
+    } catch (err: any) {
+      setError(err?.message || 'Failed creating database.');
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setDatabases(prev => prev.filter(d => d.id !== id));
+  const handleRotatePassword = async (id: number) => {
+    try {
+      const updated = await apiJson<PersistedDb>(
+        `/api/client/servers/${encodeURIComponent(activeServer.uuid)}/databases/${id}/rotate-password`,
+        { method: 'POST' }
+      );
+      setDatabases(prev => prev.map(d => (d.id === id ? updated : d)));
+    } catch {}
   };
 
-  const copyCreds = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Delete this database and revoke its credentials?')) return;
+    try {
+      await apiFetch(`/api/client/servers/${encodeURIComponent(activeServer.uuid)}/databases/${id}`, {
+        method: 'DELETE',
+      });
+      setDatabases(prev => prev.filter(d => d.id !== id));
+    } catch {}
   };
 
-  const maxAllowed = activeServer?.feature_limits?.databases ?? 3;
+  const copyText = (key: string, val: string) => {
+    navigator.clipboard.writeText(val).catch(() => {});
+    setCopiedId(key);
+    setTimeout(() => setCopiedId(null), 1500);
+  };
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Database className="w-5 h-5 text-sky-400" /> Managed Databases
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Dedicated MariaDB/MySQL instances provisioned for plugins and cluster state.
-          </p>
+      <GlassCard className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400">
+            <Database className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-white">Server Databases</h3>
+            <p className="text-xs text-slate-400">
+              Using <span className="text-white font-semibold">{databases.length}</span> of {limit} allocated databases.
+            </p>
+          </div>
         </div>
 
         <GlassButton
-          variant="accent"
+          variant="primary"
           size="sm"
-          disabled={databases.length >= maxAllowed}
-          onClick={() => setShowCreateModal(true)}
-          leftIcon={<Plus className="w-4 h-4" />}
+          disabled={limit > 0 && databases.length >= limit}
+          onClick={() => setShowCreate(true)}
         >
-          New Database ({databases.length}/{maxAllowed})
+          <Plus className="w-4 h-4 mr-1.5" /> New Database
         </GlassButton>
-      </div>
+      </GlassCard>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {databases.map(db => (
-          <GlassCard key={db.id} className="p-5 flex flex-col justify-between">
-            <div>
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-400/20">
-                    <Database className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white font-mono">{db.name}</h3>
-                    <p className="text-[11px] text-slate-400">Created {db.created_at}</p>
-                  </div>
+      {databases.length === 0 ? (
+        <GlassCard className="p-10 text-center text-sm text-slate-400">
+          {loading ? 'Loading databases...' : 'No databases provisioned for this server yet.'}
+        </GlassCard>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {databases.map(db => (
+            <GlassCard key={db.id} className="p-5 flex flex-col gap-3">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div>
+                  <h4 className="text-sm font-bold text-white font-mono">{db.name}</h4>
+                  <p className="text-xs text-slate-400 font-mono">
+                    {db.host}:{db.port} (Allowed: {db.remote})
+                  </p>
                 </div>
-
-                <button
-                  onClick={() => handleDelete(db.id)}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-2 text-xs font-mono p-3 rounded-xl bg-slate-950/50 border border-white/5 my-3">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Host:</span>
-                  <span className="text-slate-200">{db.host.address}:{db.host.port}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">User:</span>
-                  <span className="text-slate-200">{db.username}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Connections:</span>
-                  <span className="text-emerald-400">{db.connections_count || 0} / {db.max_connections} active</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleRotatePassword(db.id)}
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 cursor-pointer"
+                    title="Rotate Password"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(db.id)}
+                    className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
+                    title="Delete Database"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-center justify-between pt-2 border-t border-white/5 text-xs">
-              <button
-                onClick={() => copyCreds(`jdbc:mysql://${db.host.address}:${db.host.port}/${db.name}`, db.id)}
-                className="text-sky-400 hover:text-sky-300 font-semibold flex items-center gap-1 cursor-pointer"
-              >
-                {copiedId === db.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                Copy JDBC String
-              </button>
-              <GlassButton size="sm" variant="ghost" leftIcon={<Key className="w-3 h-3 text-amber-400" />}>
-                Rotate Password
-              </GlassButton>
-            </div>
-          </GlassCard>
-        ))}
-      </div>
+              <div className="grid grid-cols-1 gap-2 text-xs font-mono">
+                <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#111318] border border-white/5">
+                  <span className="text-slate-400">Username: <strong className="text-slate-200">{db.username}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => copyText(`u-${db.id}`, db.username)}
+                    className="text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    {copiedId === `u-${db.id}` ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
 
-      <GlassModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Create Server Database"
-        maxWidth="sm"
-      >
-        <div className="flex flex-col gap-4 py-2">
-          <GlassInput
-            label="Database Name Suffix"
-            placeholder="e.g. discordsrv"
-            value={newDbName}
-            onChange={e => setNewDbName(e.target.value)}
-            helperText="The name will automatically be prefixed with your server identifier."
-          />
-          <div className="flex justify-end gap-2 pt-2">
-            <GlassButton variant="ghost" size="sm" onClick={() => setShowCreateModal(false)}>
-              Cancel
-            </GlassButton>
-            <GlassButton variant="accent" size="sm" onClick={handleCreate}>
-              Provision Database
-            </GlassButton>
-          </div>
+                <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#111318] border border-white/5">
+                  <span className="text-slate-400 truncate pr-2">
+                    Password:{' '}
+                    <strong className="text-slate-200">
+                      {visiblePasswords[db.id] ? db.password : '••••••••••••••••'}
+                    </strong>
+                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setVisiblePasswords(p => ({ ...p, [db.id]: !p[db.id] }))}
+                      className="text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      {visiblePasswords[db.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => copyText(`p-${db.id}`, db.password)}
+                      className="text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      {copiedId === `p-${db.id}` ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+          ))}
         </div>
+      )}
+
+      <GlassModal isOpen={showCreate} onClose={() => setShowCreate(false)} title="Create Server Database" maxWidth="sm">
+        <form onSubmit={handleCreate} className="flex flex-col gap-4 py-2">
+          <GlassInput
+            label="Database Name"
+            placeholder="e.g. luckperms"
+            value={dbName}
+            onChange={e => setDbName(e.target.value)}
+            required
+          />
+          <GlassInput
+            label="Connections From (Host Mask)"
+            placeholder="%"
+            value={remoteHost}
+            onChange={e => setRemoteHost(e.target.value)}
+          />
+          {error && <div className="text-xs text-rose-400">{error}</div>}
+          <div className="flex justify-end gap-2">
+            <GlassButton type="button" variant="secondary" onClick={() => setShowCreate(false)}>Cancel</GlassButton>
+            <GlassButton type="submit" variant="primary">Create Database</GlassButton>
+          </div>
+        </form>
       </GlassModal>
     </div>
   );

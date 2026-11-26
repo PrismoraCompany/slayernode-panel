@@ -1,55 +1,107 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  Play,
-  RotateCcw,
-  Square,
-  Skull,
-  Download,
-  Trash2,
-  Send,
-  Cpu,
-  Activity,
-  HardDrive,
-  Wifi,
   Terminal as TerminalIcon,
-  Filter,
-  CheckCircle,
-  Copy,
+  Send,
+  Trash2,
+  Download,
+  Lock,
+  Unlock,
+  Search,
+  Cpu,
+  MemoryStick,
+  HardDrive,
+  Network,
+  Clock,
 } from 'lucide-react';
-import { useServer } from '../../context/ServerContext';
+import { useServers } from '../../context/ServerContext';
 import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
-import { GlassBadge } from '../ui/GlassBadge';
 import { StatGraph } from '../ui/StatGraph';
 
-function cleanAnsi(str: string): string {
-  return str.replace(/[\u001b\x1b]\[[0-9;]*[a-zA-Z]/g, '');
+function formatBytesDisplay(bytes: number): string {
+  if (!bytes || bytes <= 0) return '0 MB';
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
+  if (mb >= 1) return `${mb.toFixed(1)} MB`;
+  return `${Math.round(bytes / 1024)} KB`;
 }
 
-function renderTerminalLine(raw: string) {
-  const line = cleanAnsi(raw).trim();
-  if (!line) return null;
+function formatUptime(ms: number): string {
+  if (!ms || ms <= 0) return 'Offline';
+  const secs = Math.floor(ms / 1000);
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return `${h > 0 ? `${h}h ` : ''}${m}m ${s}s`;
+}
 
-  if (line.startsWith('>')) {
-    return (
-      <span className="flex items-center gap-1.5 font-bold text-sky-400">
-        <span>&gt;</span>
-        <span className="text-white">{line.slice(1).trim()}</span>
-      </span>
-    );
-  }
+function renderSafeAnsiLine(raw: string): React.ReactNode {
+  const sanitized = String(raw || '')
+    .replace(/\r/g, '')
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-9;?>=< ]*[A-LN-Za-ln-z~]/g, '')
+    .replace(/\x1b\([A-Za-z0-9]/g, '')
+    .replace(/\x1b[=>]/g, '');
 
-  if (line.includes('[WARN]') || line.includes('WARN]:')) {
-    return <span className="text-amber-300/90">{line}</span>;
+  const stripCtl = (text: string) => text.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
+
+  const parts: React.ReactNode[] = [];
+  const regex = /\x1b\[([0-9;]*)m/g;
+  let lastIndex = 0;
+  let currentStyle: React.CSSProperties = {};
+  let match: RegExpExecArray | null;
+  let segmentIdx = 0;
+  let matchedAnsi = false;
+
+  while ((match = regex.exec(sanitized)) !== null) {
+    matchedAnsi = true;
+    if (match.index > lastIndex) {
+      const cleanChunk = stripCtl(sanitized.slice(lastIndex, match.index));
+      if (cleanChunk) {
+        parts.push(
+          <span key={segmentIdx++} style={currentStyle}>
+            {cleanChunk}
+          </span>
+        );
+      }
+    }
+    const codes = match[1].split(';').map(Number);
+    if (codes[0] === 0 || match[1] === '') {
+      currentStyle = {};
+    } else if (codes[0] === 38 && codes[1] === 2 && codes.length >= 5) {
+      currentStyle = { ...currentStyle, color: `rgb(${codes[2]}, ${codes[3]}, ${codes[4]})` };
+    } else if (codes[0] === 38 && codes[1] === 5 && codes.length >= 3) {
+      const map256: Record<number, string> = { 9: '#f87171', 10: '#34d399', 11: '#fbbf24', 12: '#60a5fa', 13: '#c084fc', 14: '#22d3ee' };
+      if (map256[codes[2]]) currentStyle = { ...currentStyle, color: map256[codes[2]] };
+    } else {
+      const code = codes[0];
+      const map: Record<number, string> = {
+        31: '#f87171',
+        32: '#34d399',
+        33: '#fbbf24',
+        34: '#60a5fa',
+        35: '#c084fc',
+        36: '#22d3ee',
+        37: '#e2e8f0',
+        90: '#94a3b8',
+      };
+      if (map[code]) currentStyle = { ...currentStyle, color: map[code] };
+      if (code === 1) currentStyle = { ...currentStyle, fontWeight: 700 };
+    }
+    lastIndex = regex.lastIndex;
   }
-  if (line.includes('[ERROR]') || line.includes('ERROR]:') || line.includes('Exception')) {
-    return <span className="text-rose-400 font-semibold">{line}</span>;
+  if (lastIndex < sanitized.length) {
+    const cleanTail = stripCtl(sanitized.slice(lastIndex));
+    if (cleanTail) {
+      parts.push(
+        <span key={segmentIdx++} style={currentStyle}>
+          {cleanTail}
+        </span>
+      );
+    }
   }
-  if (line.includes('[INFO]') || line.includes('INFO]:')) {
-    return <span className="text-slate-300">{line}</span>;
-  }
-  return <span className="text-slate-400">{line}</span>;
+  if (parts.length > 0) return parts;
+  return matchedAnsi ? '' : stripCtl(sanitized);
 }
 
 export const ConsoleTerminal: React.FC = () => {
@@ -58,322 +110,273 @@ export const ConsoleTerminal: React.FC = () => {
     stats,
     historyStats,
     consoleLogs,
-    sendPowerAction,
+    wsStatus,
     sendCommand,
     clearConsole,
-  } = useServer();
+  } = useServers();
 
-  const [inputCommand, setInputCommand] = useState('');
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState<number>(-1);
-  const [logFilter, setLogFilter] = useState<'ALL' | 'ERROR' | 'WARN' | 'INFO'>('ALL');
-  const [copiedHost, setCopiedHost] = useState(false);
-  const terminalEndRef = useRef<HTMLDivElement | null>(null);
+  const [cmdInput, setCmdInput] = useState('');
+  const [cmdHistory, setCmdHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [searchFilter, setSearchFilter] = useState('');
 
-  // Auto-scroll terminal on new log lines immediately (auto without lag)
+  const logContainerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    terminalEndRef.current?.scrollIntoView({ behavior: 'auto' });
-  }, [consoleLogs]);
+    if (autoScroll && logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [consoleLogs, autoScroll]);
 
-  // Handle command submission
-  const handleSubmit = (e: React.FormEvent) => {
+  if (!activeServer) return null;
+
+  const isRunning = activeServer.status === 'running' || stats.state === 'running';
+  const cpuPct = Math.round((stats.cpu_absolute || 0) * 10) / 10;
+  const memMb = Math.round((stats.memory_bytes || 0) / (1024 * 1024));
+  const memLimitMb = activeServer.limits?.memory || 1024;
+  const diskStr = formatBytesDisplay(stats.disk_bytes || 0);
+  const diskLimitGb = ((activeServer.limits?.disk || 10240) / 1024).toFixed(1);
+
+  const visibleLogs = consoleLogs
+    .filter(l => !/^\s*(?:\x1b\[[0-9;]*m)+\s*$/.test(l))
+    .filter(l => !searchFilter.trim() || l.toLowerCase().includes(searchFilter.toLowerCase()));
+
+  const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputCommand.trim()) return;
-
-    sendCommand(inputCommand);
-    setHistory(prev => [inputCommand, ...prev]);
+    const trimmed = cmdInput.trim();
+    if (!trimmed) return;
+    sendCommand(trimmed);
+    setCmdHistory(prev => [trimmed, ...prev.slice(0, 49)]);
     setHistoryIndex(-1);
-    setInputCommand('');
+    setCmdInput('');
   };
 
-  // Keyboard navigation for command history (Up/Down arrow)
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (history.length > 0 && historyIndex < history.length - 1) {
-        const nextIdx = historyIndex + 1;
+      const nextIdx = Math.min(cmdHistory.length - 1, historyIndex + 1);
+      if (cmdHistory[nextIdx] !== undefined) {
         setHistoryIndex(nextIdx);
-        setInputCommand(history[nextIdx]);
+        setCmdInput(cmdHistory[nextIdx]);
       }
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (historyIndex > 0) {
+      if (historyIndex <= 0) {
+        setHistoryIndex(-1);
+        setCmdInput('');
+      } else {
         const nextIdx = historyIndex - 1;
         setHistoryIndex(nextIdx);
-        setInputCommand(history[nextIdx]);
-      } else if (historyIndex === 0) {
-        setHistoryIndex(-1);
-        setInputCommand('');
+        setCmdInput(cmdHistory[nextIdx] || '');
       }
     }
   };
 
-  // 1-Click Log Export
   const handleExportLogs = () => {
-    const rawText = consoleLogs
-      .map(line => line.replace(/\x1b\[[0-9;]*m/g, ''))
-      .join('\n');
-    const blob = new Blob([rawText], { type: 'text/plain' });
+    const clean = consoleLogs.map(l => l.replace(/\x1b\[[0-9;]*m/g, '')).join('\n');
+    const blob = new Blob([clean], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${activeServer?.identifier || 'server'}-console-${new Date().toISOString().slice(0, 19)}.log`;
+    a.download = `${activeServer.identifier}-console.log`;
     a.click();
-    URL.revokeObjectURL(a);
+    URL.revokeObjectURL(url);
   };
-
-  // Copy connection address
-  const copyAddress = () => {
-    if (!activeServer) return;
-    const addr = activeServer?.allocation?.alias || (activeServer?.allocation ? `${activeServer.allocation.ip}:${activeServer.allocation.port}` : '127.0.0.1:25565');
-    navigator.clipboard.writeText(addr);
-    setCopiedHost(true);
-    setTimeout(() => setCopiedHost(false), 2000);
-  };
-
-  // Filter logs
-  const filteredLogs = consoleLogs.filter(line => {
-    if (logFilter === 'ALL') return true;
-    return line.toUpperCase().includes(logFilter);
-  });
-
-  // Calculate live formatted stats
-  const cpuVal = stats.cpu_absolute;
-  const ramMb = Math.round(stats.memory_bytes / 1024 / 1024);
-  const ramLimitMb = Math.round(stats.memory_limit_bytes / 1024 / 1024);
-  const diskGb = (stats.disk_bytes / 1024 / 1024 / 1024).toFixed(1);
-  const diskLimitGb = (activeServer?.limits?.disk || 40960) / 1024;
-  const netRxMb = (stats.network.rx_bytes / 1024 / 1024).toFixed(1);
-  const netTxMb = (stats.network.tx_bytes / 1024 / 1024).toFixed(1);
-
-  const cpuData = historyStats.map(h => h.cpu);
-  const ramData = historyStats.map(h => h.ram);
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Top Server Header Bar */}
-      <GlassCard className="p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-400/20 to-indigo-500/20 border border-white/15 flex items-center justify-center text-sky-400">
-            <TerminalIcon className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-extrabold text-white tracking-tight">
-                {activeServer?.name}
-              </h2>
-              <GlassBadge status={activeServer?.status}>
-                {activeServer?.status?.toUpperCase() || 'OFFLINE'}
-              </GlassBadge>
+      {/* Live Resource Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <GlassCard className="p-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-slate-400 font-medium flex items-center gap-1.5 whitespace-nowrap">
+              <Cpu className="w-3.5 h-3.5 text-red-400 shrink-0" /> CPU Usage
             </div>
-            <div className="flex items-center gap-3 text-xs text-slate-400 mt-1 font-mono">
-              <span
-                onClick={copyAddress}
-                className="cursor-pointer hover:text-sky-300 flex items-center gap-1 bg-white/5 px-2 py-0.5 rounded border border-white/5 transition-colors"
-              >
-                {activeServer?.allocation?.alias || (activeServer?.allocation ? `${activeServer.allocation.ip}:${activeServer.allocation.port}` : '127.0.0.1:25565')}
-                {copiedHost ? <CheckCircle className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-              </span>
-              <span>•</span>
-              <span className="text-slate-400">{activeServer?.node}</span>
-              <span>•</span>
-              <span className="text-slate-400">{activeServer?.egg_name}</span>
+            <div className="text-xl font-bold text-white tabular-metrics mt-1 whitespace-nowrap">
+              {isRunning ? `${cpuPct}%` : '0%'}
             </div>
+            <div className="text-[11px] text-slate-500 whitespace-nowrap">Limit {activeServer.limits.cpu}%</div>
           </div>
-        </div>
-
-        {/* Power Action Buttons */}
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          {activeServer?.status === 'offline' ? (
-            <GlassButton
-              variant="success"
-              onClick={() => sendPowerAction('start')}
-              leftIcon={<Play className="w-4 h-4 fill-current" />}
-            >
-              Start Server
-            </GlassButton>
-          ) : (
-            <>
-              <GlassButton
-                variant="glass"
-                onClick={() => sendPowerAction('restart')}
-                leftIcon={<RotateCcw className="w-3.5 h-3.5" />}
-              >
-                Restart
-              </GlassButton>
-              <GlassButton
-                variant="danger"
-                onClick={() => sendPowerAction('stop')}
-                leftIcon={<Square className="w-3.5 h-3.5 fill-current" />}
-              >
-                Stop
-              </GlassButton>
-              <GlassButton
-                variant="ghost"
-                onClick={() => sendPowerAction('kill')}
-                title="Kill (SIGKILL)"
-                className="text-rose-400 hover:bg-rose-500/20 p-2.5"
-              >
-                <Skull className="w-4 h-4" />
-              </GlassButton>
-            </>
-          )}
-        </div>
-      </GlassCard>
-
-      {/* Real-time Telemetry Area Graphs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {/* CPU Chart */}
-        <GlassCard className="p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-            <span className="flex items-center gap-1.5 font-medium">
-              <Cpu className="w-4 h-4 text-sky-400" /> CPU Load
-            </span>
-            <span className="text-slate-200 font-bold tabular-metrics">{cpuVal}%</span>
+          <div className="w-20 shrink-0">
+            <StatGraph
+              data={historyStats.length ? historyStats.map(h => h.cpu) : [0]}
+              color="#DC2626"
+              height={42}
+              limit={activeServer.limits.cpu || 100}
+            />
           </div>
-          <StatGraph data={cpuData} color="#38bdf8" height={60} limit={activeServer?.limits?.cpu || 400} />
-          <span className="text-[10px] text-slate-500 mt-2">Allocated limit: {activeServer?.limits?.cpu || 100}%</span>
         </GlassCard>
 
-        {/* RAM Chart */}
-        <GlassCard className="p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-            <span className="flex items-center gap-1.5 font-medium">
-              <Activity className="w-4 h-4 text-emerald-400" /> RAM Memory
-            </span>
-            <span className="text-slate-200 font-bold tabular-metrics">{ramMb} MB</span>
+        <GlassCard className="p-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-slate-400 font-medium flex items-center gap-1.5 whitespace-nowrap">
+              <MemoryStick className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> Memory Usage
+            </div>
+            <div className="text-xl font-bold text-white tabular-metrics mt-1 whitespace-nowrap">
+              {isRunning ? `${memMb} MB` : '0 MB'}
+            </div>
+            <div className="text-[11px] text-slate-500 whitespace-nowrap">of {memLimitMb} MB</div>
           </div>
-          <StatGraph data={ramData} color="#10b981" height={60} limit={ramLimitMb} />
-          <span className="text-[10px] text-slate-500 mt-2">Capacity: {ramLimitMb} MB</span>
+          <div className="w-20 shrink-0">
+            <StatGraph
+              data={historyStats.length ? historyStats.map(h => h.ram) : [0]}
+              color="#10B981"
+              height={42}
+              limit={100}
+            />
+          </div>
         </GlassCard>
 
-        {/* Disk Card */}
-        <GlassCard className="p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-            <span className="flex items-center gap-1.5 font-medium">
-              <HardDrive className="w-4 h-4 text-amber-400" /> Disk Usage
-            </span>
-            <span className="text-slate-200 font-bold tabular-metrics">{diskGb} GB</span>
-          </div>
-          <div className="my-auto py-2">
-            <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
-              <div
-                style={{ width: `${Math.min(100, (parseFloat(diskGb) / diskLimitGb) * 100)}%` }}
-                className="h-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-full"
-              />
+        <GlassCard className="p-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-slate-400 font-medium flex items-center gap-1.5 whitespace-nowrap">
+              <HardDrive className="w-3.5 h-3.5 text-amber-400 shrink-0" /> Disk Space
             </div>
-            <div className="flex justify-between text-[10px] text-slate-400 mt-1.5">
-              <span>{Math.round((parseFloat(diskGb) / diskLimitGb) * 100)}% used</span>
-              <span>{diskLimitGb} GB Cap</span>
-            </div>
+            <div className="text-xl font-bold text-white tabular-metrics mt-1 whitespace-nowrap">{diskStr}</div>
+            <div className="text-[11px] text-slate-500 whitespace-nowrap">of {diskLimitGb} GB</div>
           </div>
-          <span className="text-[10px] text-slate-500">Fast NVMe I/O Capped (500)</span>
+          <div className="w-20 shrink-0">
+            <StatGraph
+              data={historyStats.length ? historyStats.map(h => h.disk) : [0]}
+              color="#F59E0B"
+              height={42}
+              limit={100}
+            />
+          </div>
         </GlassCard>
 
-        {/* Network I/O */}
-        <GlassCard className="p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-            <span className="flex items-center gap-1.5 font-medium">
-              <Wifi className="w-4 h-4 text-indigo-400" /> Network I/O
+        <GlassCard className="p-4 flex flex-col justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
+              <Network className="w-3.5 h-3.5 text-cyan-400 shrink-0" /> Network I/O
             </span>
-            <span className="text-slate-200 font-bold tabular-metrics">1 Gbps</span>
+            <span className="font-mono text-slate-300 whitespace-nowrap">
+              {formatBytesDisplay(stats.network?.rx_bytes || 0)} / {formatBytesDisplay(stats.network?.tx_bytes || 0)}
+            </span>
           </div>
-          <div className="my-auto py-1 flex flex-col gap-1.5 text-xs">
-            <div className="flex justify-between font-mono text-[11px]">
-              <span className="text-sky-300">▲ Inbound (Rx):</span>
-              <span className="font-semibold text-white">{netRxMb} MB</span>
-            </div>
-            <div className="flex justify-between font-mono text-[11px]">
-              <span className="text-indigo-300">▼ Outbound (Tx):</span>
-              <span className="font-semibold text-white">{netTxMb} MB</span>
-            </div>
+          <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-white/5">
+            <span className="flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-slate-400" /> Uptime
+            </span>
+            <span className="font-mono text-white font-semibold">
+              {isRunning ? formatUptime(stats.uptime_ms || 0) : 'Offline'}
+            </span>
           </div>
-          <span className="text-[10px] text-emerald-400 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> WebSocket Connected
-          </span>
         </GlassCard>
       </div>
 
-      {/* Terminal Console Box */}
-      <GlassCard className="p-4 sm:p-5 flex flex-col shadow-2xl">
-        {/* Terminal Header Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-3 border-b border-white/10">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 mr-2">
-              <span className="w-3 h-3 rounded-full bg-rose-500/80 border border-rose-400/50" />
-              <span className="w-3 h-3 rounded-full bg-amber-500/80 border border-amber-400/50" />
-              <span className="w-3 h-3 rounded-full bg-emerald-500/80 border border-emerald-400/50" />
-            </div>
-            <span className="text-xs font-mono font-bold text-slate-300">
-              wings@{activeServer?.identifier}:~#
+      {/* Console Window */}
+      <GlassCard className="p-0 overflow-hidden flex flex-col">
+        {/* Console Toolbar */}
+        <div className="px-4 py-3 bg-[#151821] border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <TerminalIcon className="w-4 h-4 text-red-400" />
+            <span className="text-xs font-bold text-white uppercase tracking-wider">
+              Live Container Terminal
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-mono border ${
+                wsStatus === 'connected'
+                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                  : wsStatus === 'connecting'
+                  ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                  : 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+              }`}
+            >
+              {wsStatus === 'connected'
+                ? 'Stream: Active'
+                : wsStatus === 'connecting'
+                ? 'Stream: Connecting'
+                : 'Stream: Disconnected'}
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Filter Pill */}
-            <div className="flex items-center bg-slate-900/60 rounded-lg p-0.5 border border-white/10 text-xs">
-              {(['ALL', 'ERROR', 'WARN', 'INFO'] as const).map(f => (
-                <button
-                  key={f}
-                  onClick={() => setLogFilter(f)}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
-                    logFilter === f
-                      ? 'bg-white/15 text-white shadow-xs'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {f}
-                </button>
-              ))}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchFilter}
+                onChange={e => setSearchFilter(e.target.value)}
+                placeholder="Filter output..."
+                className="pl-8 pr-3 py-1.5 rounded-lg bg-[#0E1015] border border-white/10 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-red-500/40 w-44"
+              />
             </div>
 
-            {/* Export Log */}
             <button
+              type="button"
+              onClick={() => setAutoScroll(v => !v)}
+              className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 cursor-pointer transition-colors ${
+                autoScroll
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : 'bg-white/5 border-white/10 text-slate-400'
+              }`}
+              title="Toggle Auto-Scroll"
+            >
+              {autoScroll ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+            </button>
+
+            <button
+              type="button"
               onClick={handleExportLogs}
-              title="Download console logs"
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer border border-white/5"
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 cursor-pointer"
+              title="Download Console Log"
             >
               <Download className="w-3.5 h-3.5" />
             </button>
 
-            {/* Clear Terminal */}
             <button
+              type="button"
               onClick={clearConsole}
-              title="Clear terminal buffer"
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer border border-white/5"
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 border border-white/10 text-slate-300 hover:text-rose-300 cursor-pointer"
+              title="Clear Buffer"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
-        {/* ANSI Terminal Screen */}
-        <div className="h-96 w-full overflow-y-auto bg-slate-950/80 rounded-xl p-4 font-mono text-xs border border-white/5 shadow-inner">
-          {filteredLogs.map((log, idx) => (
-            <div key={idx} className="terminal-line py-0.5 hover:bg-white/5 transition-colors">
-              {renderTerminalLine(log)}
+        {/* Log Output Buffer */}
+        <div
+          ref={logContainerRef}
+          className="bg-[#0B0D12] p-4 h-[420px] overflow-y-auto font-mono text-xs leading-relaxed text-slate-200 select-text"
+        >
+          {visibleLogs.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-slate-500 text-xs">
+              {isRunning
+                ? 'Connected to container stdout/stderr. Waiting for log lines...'
+                : 'Server is offline. Click Start above to boot this container.'}
             </div>
-          ))}
-          <div ref={terminalEndRef} />
+          ) : (
+            visibleLogs.map((line, i) => (
+              <div key={i} className="whitespace-pre-wrap break-words py-0.5 hover:bg-white/[0.03] px-1 rounded">
+                {renderSafeAnsiLine(line)}
+              </div>
+            ))
+          )}
         </div>
 
-        {/* Command Input Bar with Auto-complete / History */}
-        <form onSubmit={handleSubmit} className="mt-3 flex items-center gap-2">
-          <div className="relative flex-1">
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sky-400 font-mono text-sm font-bold">
-              &gt;
-            </span>
-            <input
-              type="text"
-              value={inputCommand}
-              onChange={e => setInputCommand(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a server command (e.g. 'help', 'tps', 'op user', 'whitelist add')... ↑/↓ for history"
-              className="glass-input w-full pl-8 pr-4 py-2.5 text-xs font-mono text-slate-100 placeholder:text-slate-500"
-            />
-          </div>
-          <GlassButton type="submit" variant="accent" size="sm" rightIcon={<Send className="w-3.5 h-3.5" />}>
-            Execute
+        {/* Command Input Prompt */}
+        <form
+          onSubmit={handleSend}
+          className="px-4 py-3 bg-[#151821] border-t border-white/10 flex items-center gap-3"
+        >
+          <span className="font-mono text-sm font-bold text-red-400 select-none">&gt;_</span>
+          <input
+            type="text"
+            value={cmdInput}
+            onChange={e => setCmdInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              isRunning
+                ? 'Type a console command (e.g. help, version, list, status)...'
+                : 'Container offline — commands require an active process'
+            }
+            className="flex-1 bg-transparent text-sm font-mono text-white placeholder:text-slate-500 focus:outline-none"
+          />
+          <GlassButton type="submit" variant="primary" size="sm" disabled={!cmdInput.trim()}>
+            <Send className="w-3.5 h-3.5 mr-1.5" /> Send
           </GlassButton>
         </form>
       </GlassCard>

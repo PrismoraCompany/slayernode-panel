@@ -1,301 +1,401 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Server, ServerStats, ServerStatus } from '../types';
+import React, { createContext, useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Server, ServerStats } from '../types';
 import { useAuth } from './AuthContext';
+import { apiFetch, apiJson } from '../lib/api';
 
-export const INITIAL_SERVERS: Server[] = [];
+interface HistoryPoint {
+  time: string;
+  cpu: number;
+  ram: number;
+  disk: number;
+  netRx: number;
+  netTx: number;
+}
+
+export type WsConnectionStatus = 'connected' | 'connecting' | 'disconnected';
 
 interface ServerContextType {
   servers: Server[];
   visibleServers: Server[];
   activeServer: Server | null;
   stats: ServerStats;
-  historyStats: { time: string; cpu: number; ram: number; disk: number; netRx: number; netTx: number }[];
+  serverStatsMap: Record<string, ServerStats>;
+  historyStats: HistoryPoint[];
   consoleLogs: string[];
+  wsStatus: WsConnectionStatus;
   selectServer: (id: string) => boolean;
-  sendPowerAction: (action: 'start' | 'stop' | 'restart' | 'kill', targetServerId?: string) => void;
-  sendCommand: (command: string) => void;
+  sendPowerAction: (action: 'start' | 'stop' | 'restart' | 'kill', targetServerId?: string) => Promise<{ ok: boolean; error?: string }>;
+  sendCommand: (command: string) => Promise<void>;
   togglePinServer: (id: string) => void;
   clearConsole: () => void;
-  refreshServers: () => Promise<void>;
+  refreshServers: () => Promise<Server[]>;
   accessDeniedError: string | null;
+  clearAccessDeniedError: () => void;
+}
+
+function emptyStatsForServer(srv?: Server | null): ServerStats {
+  const memMb = srv?.limits?.memory || 1024;
+  return {
+    memory_bytes: 0,
+    memory_limit_bytes: memMb * 1024 * 1024,
+    cpu_absolute: 0,
+    network: { rx_bytes: 0, tx_bytes: 0 },
+    disk_bytes: 0,
+    uptime_ms: 0,
+    state: srv?.status || 'offline',
+  };
+}
+
+function findServerMatch(list: Server[], key: string): Server | null {
+  if (!key) return null;
+  return (
+    list.find(s => String(s.uuid) === String(key)) ||
+    list.find(s => String(s.identifier) === String(key)) ||
+    list.find(s => String(s.id) === String(key)) ||
+    null
+  );
 }
 
 const ServerContext = createContext<ServerContextType | undefined>(undefined);
 
 export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, isAdmin } = useAuth();
-  const [servers, setServers] = useState<Server[]>(INITIAL_SERVERS);
+  const { user, isAuthenticated } = useAuth();
+  const [servers, setServers] = useState<Server[]>([]);
   const [activeServerId, setActiveServerId] = useState<string>('');
   const [accessDeniedError, setAccessDeniedError] = useState<string | null>(null);
-
-  const fetchServers = async () => {
+  const [stats, setStats] = useState<ServerStats>(() => emptyStatsForServer(null));
+  const [serverStatsMap, setServerStatsMap] = useState<Record<string, ServerStats>>({});
+  const [historyStats, setHistoryStats] = useState<HistoryPoint[]>([]);
+  const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
+  const [wsStatus, setWsStatus] = useState<WsConnectionStatus>('disconnected');
+  const [pinnedIds, setPinnedIds] = useState<string[]>(() => {
     try {
-      const res = await fetch('/api/client/servers');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.data)) {
-          const mapped = data.data.map((d: any) => d.attributes || d);
-          setServers(mapped);
-          if (mapped.length > 0) {
-            setActiveServerId(prev => (prev && mapped.some((m: any) => m.id === prev || m.uuid === prev) ? prev : (mapped[0].id || mapped[0].uuid)));
+      const saved = localStorage.getItem('slayernode_pinned_servers');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const activeUuidRef = useRef<string>('');
+
+  const fetchServers = useCallback(async (): Promise<Server[]> => {
+    if (!isAuthenticated) {
+      setServers([]);
+      setServerStatsMap({});
+      return [];
+    }
+    try {
+      const data = await apiJson<{ data: Server[] }>('/api/client/servers');
+      const list = Array.isArray(data?.data) ? data.data : [];
+      const merged = list.map(s => ({
+        ...s,
+        pinned: pinnedIds.includes(String(s.uuid)) || pinnedIds.includes(String(s.id)),
+      }));
+      setServers(merged);
+
+      // Update per-server live telemetry map strictly keyed by server UUID
+      setServerStatsMap(prev => {
+        const next: Record<string, ServerStats> = { ...prev };
+        for (const srv of merged) {
+          if (srv.telemetry) {
+            next[srv.uuid] = {
+              ...srv.telemetry,
+              memory_limit_bytes: srv.telemetry.memory_limit_bytes || (srv.limits?.memory || 1024) * 1024 * 1024,
+            };
+          } else if (!next[srv.uuid]) {
+            next[srv.uuid] = emptyStatsForServer(srv);
+          } else {
+            next[srv.uuid] = { ...next[srv.uuid], state: srv.status };
           }
         }
-      }
-    } catch {}
-  };
-
-  useEffect(() => {
-    fetchServers();
-  }, []);
-
-  // Tenant Boundary Isolation: Non-admin users ONLY see servers they own!
-  const visibleServers = servers.filter(s => {
-    if (isAdmin) return true;
-    return s.owner_id === user?.id;
-  });
-
-  const activeServer = visibleServers.find(s =>
-    (activeServerId && (s.uuid === activeServerId || String(s.id) === String(activeServerId) || s.identifier === activeServerId))
-  ) || visibleServers[0] || null;
-
-  const [stats, setStats] = useState<ServerStats>({
-    memory_bytes: 0,
-    memory_limit_bytes: 1,
-    cpu_absolute: 0,
-    network: {
-      rx_bytes: 0,
-      tx_bytes: 0,
-    },
-    disk_bytes: 0,
-    uptime_ms: 0,
-    state: 'offline',
-  });
-
-  const [historyStats, setHistoryStats] = useState<{ time: string; cpu: number; ram: number; disk: number; netRx: number; netTx: number }[]>(() => {
-    const points = [];
-    const now = Date.now();
-    for (let i = 20; i >= 0; i--) {
-      const d = new Date(now - i * 3000);
-      points.push({
-        time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        cpu: Math.floor(20 + Math.sin(i * 0.5) * 12 + Math.random() * 6),
-        ram: Math.floor(4100 + Math.random() * 200),
-        disk: 17.1,
-        netRx: Math.floor(120 + Math.random() * 80),
-        netTx: Math.floor(240 + Math.random() * 110),
+        return next;
       });
+      return merged;
+    } catch {
+      return [];
     }
-    return points;
-  });
+  }, [isAuthenticated, pinnedIds]);
 
-  const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
-  const wsRef = React.useRef<WebSocket | null>(null);
-
-  // Connect to real Wings Daemon WebSocket on port 8443 or panel websocket bridge
+  // Clear state when auth session changes and re-fetch servers for the signed-in user
   useEffect(() => {
-    if (!activeServer) return;
+    if (!isAuthenticated) {
+      if (wsRef.current) {
+        try { wsRef.current.close(); } catch {}
+        wsRef.current = null;
+      }
+      setServers([]);
+      setActiveServerId('');
+      activeUuidRef.current = '';
+      setConsoleLogs([]);
+      setHistoryStats([]);
+      setStats(emptyStatsForServer(null));
+      setServerStatsMap({});
+      setWsStatus('disconnected');
+      return;
+    }
 
-    // Immediately flush previous logs on server switch
-    setConsoleLogs([]);
+    fetchServers();
+    const poll = setInterval(() => {
+      fetchServers();
+    }, 4000);
+    return () => clearInterval(poll);
+  }, [isAuthenticated, user?.id, fetchServers]);
 
-    let isSubscribed = true;
-    let reconnectTimeout: any = null;
-    let socket: WebSocket | null = null;
+  const visibleServers = useMemo(() => servers, [servers]);
 
-    // 1. Fetch persistent log buffer from daemon
-    fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/logs`)
-      .then(res => res.json())
-      .then(data => {
-        if (!isSubscribed) return;
-        if (data && Array.isArray(data.data) && data.data.length > 0) {
-          const lines = data.data.map((l: string) => (typeof l === 'string' && l.endsWith('\n') ? l.slice(0, -1) : String(l)));
-          setConsoleLogs(lines);
+  // Strictly resolve activeServer without falling back to visibleServers[0]
+  const activeServer = useMemo(() => {
+    if (!activeServerId) return null;
+    return findServerMatch(visibleServers, activeServerId);
+  }, [visibleServers, activeServerId]);
+
+  const selectServer = useCallback((id: string): boolean => {
+    setAccessDeniedError(null);
+    if (!id) {
+      setActiveServerId('');
+      activeUuidRef.current = '';
+      return true;
+    }
+    const found = findServerMatch(servers, id);
+    if (servers.length > 0 && !found) {
+      // Allow deferred resolution right after creation by refreshing list once
+      fetchServers().then(updated => {
+        const refound = findServerMatch(updated, id);
+        if (refound) {
+          setActiveServerId(refound.uuid);
         } else {
-          setConsoleLogs([]);
+          setAccessDeniedError(`Access denied or server "${id}" was not found inside your tenant scope.`);
+        }
+      });
+      return false;
+    }
+    setActiveServerId(found ? found.uuid : id);
+    return true;
+  }, [servers, fetchServers]);
+
+  // Strict per-server WebSocket & Telemetry lifecycle tied ONLY to activeServer.uuid
+  useEffect(() => {
+    const targetUuid = activeServer?.uuid || '';
+    activeUuidRef.current = targetUuid;
+
+    if (wsRef.current) {
+      try { wsRef.current.close(); } catch {}
+      wsRef.current = null;
+    }
+
+    if (!targetUuid || !isAuthenticated) {
+      setConsoleLogs([]);
+      setHistoryStats([]);
+      setStats(emptyStatsForServer(null));
+      setWsStatus('disconnected');
+      return;
+    }
+
+    // Immediately wipe previous server telemetry & console buffer to prevent cross-server bleed
+    const initialStats = serverStatsMap[targetUuid] || emptyStatsForServer(activeServer);
+    setStats(initialStats);
+    setHistoryStats([]);
+    setConsoleLogs([]);
+    setWsStatus('connecting');
+
+    let cancelled = false;
+    let gotWsBacklog = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let statsPollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const recordStatPoint = (incoming: ServerStats) => {
+      const memLimit = incoming.memory_limit_bytes || (activeServer?.limits?.memory || 1024) * 1024 * 1024;
+      const ramPct = memLimit > 0 ? Math.min(100, Math.round((incoming.memory_bytes / memLimit) * 1000) / 10) : 0;
+      const diskLimitBytes = (activeServer?.limits?.disk || 10240) * 1024 * 1024;
+      const diskPct = diskLimitBytes > 0 ? Math.min(100, Math.round((incoming.disk_bytes / diskLimitBytes) * 1000) / 10) : 0;
+      const nowLabel = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      setStats({ ...incoming, memory_limit_bytes: memLimit });
+      setServerStatsMap(prev => ({
+        ...prev,
+        [targetUuid]: { ...incoming, memory_limit_bytes: memLimit },
+      }));
+      setServers(prev =>
+        prev.map(s => (s.uuid === targetUuid && s.status !== incoming.state ? { ...s, status: incoming.state } : s))
+      );
+      setHistoryStats(prev => [
+        ...prev.slice(-29),
+        {
+          time: nowLabel,
+          cpu: Math.round((incoming.cpu_absolute || 0) * 10) / 10,
+          ram: ramPct,
+          disk: diskPct,
+          netRx: Math.round((incoming.network?.rx_bytes || 0) / 1024),
+          netTx: Math.round((incoming.network?.tx_bytes || 0) / 1024),
+        },
+      ]);
+    };
+
+    // Load historical log backlog & live resources for THIS server only
+    apiJson<{ logs: string[] }>(`/api/client/servers/${encodeURIComponent(targetUuid)}/logs`)
+      .then(data => {
+        if (!cancelled && !gotWsBacklog && activeUuidRef.current === targetUuid && Array.isArray(data?.logs)) {
+          setConsoleLogs(data.logs.map(l => String(l)));
         }
       })
       .catch(() => {});
 
-    // 2. Establish live WebSocket connection with auto-reconnect
-    const connectWs = () => {
-      if (!isSubscribed) return;
+    apiJson<ServerStats>(`/api/client/servers/${encodeURIComponent(targetUuid)}/resources`)
+      .then(data => {
+        if (!cancelled && activeUuidRef.current === targetUuid && data) {
+          recordStatPoint(data);
+        }
+      })
+      .catch(() => {});
 
-      const isSecure = window.location.protocol === 'https:';
-      const wsProto = isSecure ? 'wss:' : 'ws:';
-      const host = window.location.hostname || 'localhost';
+    // Backup HTTP resource polling every 3s for guaranteed chart & metric updates
+    statsPollTimer = setInterval(() => {
+      if (cancelled || activeUuidRef.current !== targetUuid) return;
+      apiJson<ServerStats>(`/api/client/servers/${encodeURIComponent(targetUuid)}/resources`)
+        .then(data => {
+          if (!cancelled && activeUuidRef.current === targetUuid && data) {
+            recordStatPoint(data);
+          }
+        })
+        .catch(() => {});
+    }, 3000);
 
-      let wsUrl: string;
-      if (window.location.port === '3000' || window.location.port === '3001') {
-        wsUrl = `${wsProto}//${host}:8443`;
-      } else {
-        const portPart = window.location.port ? `:${window.location.port}` : '';
-        wsUrl = `${wsProto}//${host}${portPart}/api/client/servers/${activeServer.uuid || activeServer.id}/ws`;
-      }
-
+    const openSocket = async () => {
+      if (cancelled || activeUuidRef.current !== targetUuid) return;
       try {
-        socket = new WebSocket(wsUrl);
-        wsRef.current = socket;
+        const wsMeta = await apiJson<{ data: { token: string; socket: string } }>(
+          `/api/client/servers/${encodeURIComponent(targetUuid)}/websocket`
+        );
+        if (cancelled || activeUuidRef.current !== targetUuid) return;
 
-        socket.onopen = () => {
-          console.log('[SlayerWings] Live telemetry and stdin bridge connected');
-          socket?.send(JSON.stringify({
-            event: 'auth',
-            args: [`jwt_slayernode_${Date.now()}`],
-            server: activeServer.uuid || activeServer.id,
-          }));
+        const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProto}//${window.location.host}${wsMeta.data.socket}?token=${encodeURIComponent(wsMeta.data.token)}`;
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          if (!cancelled && activeUuidRef.current === targetUuid) {
+            setWsStatus('connected');
+          }
         };
 
-        socket.onmessage = (event) => {
+        ws.onmessage = evt => {
+          if (cancelled || activeUuidRef.current !== targetUuid) return;
           try {
-            const msg = JSON.parse(event.data);
-            if (msg.event === 'console_output') {
-              const target = msg.server;
-              const matches = !target || target === 'all' ||
-                target === activeServer.uuid ||
-                target === activeServer.id ||
-                (activeServer.uuid && target.startsWith(activeServer.uuid.slice(0, 8))) ||
-                (activeServer.identifier && target.startsWith(activeServer.identifier));
+            const msg = JSON.parse(evt.data);
+            // Strict server isolation barrier on client side
+            if (msg.server && msg.server !== targetUuid) return;
 
-              if (matches) {
-                const line = msg.line || msg.data || msg.args?.[0] || '';
-                const cleanStr = typeof line === 'string' ? line : String(line);
-                const splitLines = cleanStr.split(/\r?\n/).filter(Boolean);
-                if (splitLines.length > 0) {
-                  setConsoleLogs(prev => [...prev.slice(-300 + splitLines.length), ...splitLines]);
-                }
+            if (msg.event === 'console_backlog' && Array.isArray(msg.lines)) {
+              if (msg.lines.length > 0) {
+                gotWsBacklog = true;
+                setConsoleLogs(msg.lines.map((l: any) => String(l)));
+              }
+            } else if (msg.event === 'console_output' || msg.event === 'console output') {
+              gotWsBacklog = true;
+              const text = msg.line ?? msg.args?.[0] ?? msg.data ?? '';
+              if (text) {
+                const lines = String(text).replace(/\n$/, '').split('\n');
+                setConsoleLogs(prev => [...prev.slice(-399), ...lines]);
               }
             } else if (msg.event === 'stats' && msg.data) {
-              setStats(prev => ({
-                ...prev,
-                cpu_absolute: msg.data.cpu_absolute ?? prev.cpu_absolute,
-                memory_bytes: msg.data.memory_bytes ?? prev.memory_bytes,
-                memory_limit_bytes: msg.data.memory_limit_bytes ?? prev.memory_limit_bytes,
-                network: msg.data.network ?? prev.network,
-                state: msg.data.state || (activeServer.status as any),
-              }));
-
-              const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-              setHistoryStats(prev => [
-                ...prev.slice(-20),
-                {
-                  time: timeStr,
-                  cpu: msg.data.cpu_absolute || 0,
-                  ram: Math.round((msg.data.memory_bytes || 0) / 1024 / 1024),
-                  disk: 17.1,
-                  netRx: Math.round(((msg.data.network?.rx_bytes || 0) % 1000000) / 1024),
-                  netTx: Math.round(((msg.data.network?.tx_bytes || 0) % 1000000) / 1024),
-                }
-              ]);
+              recordStatPoint(msg.data);
+            } else if (msg.event === 'status') {
+              const newState = msg.args?.[0] || msg.data || 'offline';
+              setStats(prev => ({ ...prev, state: newState }));
+              setServers(prev => prev.map(s => (s.uuid === targetUuid ? { ...s, status: newState } : s)));
             }
           } catch {}
         };
 
-        socket.onclose = () => {
-          if (isSubscribed) {
-            reconnectTimeout = setTimeout(connectWs, 1500);
+        ws.onerror = () => {
+          if (!cancelled) setWsStatus('disconnected');
+        };
+
+        ws.onclose = () => {
+          if (!cancelled && activeUuidRef.current === targetUuid) {
+            setWsStatus('disconnected');
+            reconnectTimer = setTimeout(() => {
+              if (!cancelled && activeUuidRef.current === targetUuid) {
+                setWsStatus('connecting');
+                openSocket();
+              }
+            }, 3000);
           }
         };
-
-        socket.onerror = () => {
-          try { socket?.close(); } catch {}
-        };
-      } catch (err) {
-        if (isSubscribed) {
-          reconnectTimeout = setTimeout(connectWs, 2000);
-        }
+      } catch {
+        if (!cancelled) setWsStatus('disconnected');
       }
     };
 
-    connectWs();
+    openSocket();
 
     return () => {
-      isSubscribed = false;
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      if (socket) {
-        try { socket.close(); } catch {}
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (statsPollTimer) clearInterval(statsPollTimer);
+      if (wsRef.current) {
+        try { wsRef.current.close(); } catch {}
+        wsRef.current = null;
       }
-      wsRef.current = null;
     };
-  }, [activeServer?.uuid, activeServer?.id]);
+  }, [activeServer?.uuid, isAuthenticated]);
 
-  // Tenant Boundary URL validation
-  const selectServer = (id: string): boolean => {
-    const target = servers.find(s => String(s.id) === String(id) || s.identifier === id || s.uuid === id);
-    if (!target) {
-      setAccessDeniedError('Server container not found.');
-      return false;
-    }
+  const sendPowerAction = async (
+    action: 'start' | 'stop' | 'restart' | 'kill',
+    targetServerId?: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const target = targetServerId ? findServerMatch(servers, targetServerId) : activeServer;
+    if (!target) return { ok: false, error: 'Target server not found.' };
 
-    // Permission check: Must be admin OR server owner
-    if (!isAdmin && target.owner_id !== user?.id) {
-      setAccessDeniedError(`403 Forbidden: You do not have permission to view or manage instance "${target.name}".`);
-      return false;
-    }
+    const optimisticStatus = action === 'start' || action === 'restart' ? 'starting' : 'stopping';
+    setServers(prev => prev.map(s => (s.uuid === target.uuid ? { ...s, status: optimisticStatus } : s)));
 
-    setAccessDeniedError(null);
-    setActiveServerId(target.uuid || target.id);
-    return true;
-  };
-
-  const sendPowerAction = (action: 'start' | 'stop' | 'restart' | 'kill', targetServerId?: string) => {
-    const target = servers.find(s => s.id === targetServerId || s.uuid === targetServerId) || activeServer;
-    if (!target) return;
-
-    setServers(prev =>
-      prev.map(s => {
-        if (s.id !== target.id && s.uuid !== target.uuid) return s;
-        let newStatus: ServerStatus = 'offline';
-        if (action === 'start' || action === 'restart') newStatus = 'running';
-        if (action === 'stop') newStatus = 'stopping';
-        return { ...s, status: newStatus };
-      })
-    );
-
-    // Call REST endpoint
-    fetch(`/api/client/servers/${target.uuid || target.id}/power`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ signal: action }),
-    }).catch(() => {});
-
-    const timestamp = new Date().toLocaleTimeString();
-    setConsoleLogs(prev => [
-      ...prev,
-      `\x1b[38;2;0;210;255m[SlayerWings]\x1b[0m [${timestamp}] Power signal dispatched: ${action.toUpperCase()}`,
-    ]);
-  };
-
-  const sendCommand = (cmd: string) => {
-    if (!cmd.trim() || !activeServer) return;
-
-    // Echo operator command in console immediately (0ms user feedback)
-    setConsoleLogs(prev => [
-      ...prev,
-      `> ${cmd}`,
-    ]);
-
-    // Send via live WebSocket to daemon process stdin
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        event: 'send command',
-        args: [cmd],
-        command: cmd,
-        server: activeServer.uuid || activeServer.id,
-      }));
-    } else {
-      // Send via REST endpoint as fallback only when WebSocket is disconnected
-      fetch(`/api/client/servers/${activeServer.uuid || activeServer.id}/command`, {
+    try {
+      const res = await apiJson<{ status: Server['status'] }>(`/api/client/servers/${encodeURIComponent(target.uuid)}/power`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: cmd }),
-      }).catch(() => {});
+        body: JSON.stringify({ action }),
+      });
+      const finalState = res?.status || (action === 'start' || action === 'restart' ? 'running' : 'offline');
+      setServers(prev => prev.map(s => (s.uuid === target.uuid ? { ...s, status: finalState } : s)));
+      if (activeServer?.uuid === target.uuid) {
+        setStats(prev => ({ ...prev, state: finalState }));
+      }
+      return { ok: true };
+    } catch (err: any) {
+      await fetchServers();
+      return { ok: false, error: err?.message || 'Power action failed.' };
+    }
+  };
+
+  const sendCommand = async (command: string) => {
+    if (!activeServer || !command.trim()) return;
+    const clean = command.trim();
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({ event: 'send command', args: [clean], server: activeServer.uuid })
+      );
+      return;
+    }
+    try {
+      await apiJson(`/api/client/servers/${encodeURIComponent(activeServer.uuid)}/command`, {
+        method: 'POST',
+        body: JSON.stringify({ command: clean }),
+      });
+    } catch (err: any) {
+      setConsoleLogs(prev => [...prev, `[Error] Command dispatch failed: ${err?.message}`]);
     }
   };
 
   const togglePinServer = (id: string) => {
-    setServers(prev =>
-      prev.map(s => (s.id === id || s.uuid === id ? { ...s, pinned: !s.pinned } : s))
-    );
+    setPinnedIds(prev => {
+      const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
+      localStorage.setItem('slayernode_pinned_servers', JSON.stringify(next));
+      return next;
+    });
+    setServers(prev => prev.map(s => (s.uuid === id || s.id === id ? { ...s, pinned: !s.pinned } : s)));
   };
 
   const clearConsole = () => {
@@ -309,8 +409,10 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         visibleServers,
         activeServer,
         stats,
+        serverStatsMap,
         historyStats,
         consoleLogs,
+        wsStatus,
         selectServer,
         sendPowerAction,
         sendCommand,
@@ -318,6 +420,7 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         clearConsole,
         refreshServers: fetchServers,
         accessDeniedError,
+        clearAccessDeniedError: () => setAccessDeniedError(null),
       }}
     >
       {children}
@@ -325,8 +428,10 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   );
 };
 
-export const useServer = () => {
-  const context = useContext(ServerContext);
-  if (!context) throw new Error('useServer must be used within ServerProvider');
-  return context;
+export const useServers = () => {
+  const ctx = useContext(ServerContext);
+  if (!ctx) throw new Error('useServers must be used within ServerProvider');
+  return ctx;
 };
+
+export const useServer = useServers;

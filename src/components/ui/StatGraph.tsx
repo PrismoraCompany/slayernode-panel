@@ -24,15 +24,16 @@ export const StatGraph: React.FC<StatGraphProps> = ({
   const width = 280;
   const maxVal = Math.max(limit, ...data, 1);
   const minVal = 0;
+  const gradId = `grad-${color.replace(/[^a-zA-Z0-9]/g, '')}`;
 
-  // Build SVG path points
+  // Build SVG path points cleanly even when length === 1
   const points = data.map((val, idx) => {
-    const x = (idx / (data.length - 1)) * width;
+    const x = data.length <= 1 ? width : (idx / (data.length - 1)) * width;
     const y = height - ((val - minVal) / (maxVal - minVal)) * (height - 10) - 5;
     return `${x},${y}`;
   });
 
-  const pathD = `M ${points.join(' L ')}`;
+  const pathD = data.length <= 1 ? `M 0,${points[0].split(',')[1]} L ${points[0]}` : `M ${points.join(' L ')}`;
   const areaD = `${pathD} L ${width},${height} L 0,${height} Z`;
 
   return (
@@ -54,12 +55,11 @@ export const StatGraph: React.FC<StatGraphProps> = ({
           style={{ height: `${height}px` }}
         >
           <defs>
-            <linearGradient id={`grad-${color}`} x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={color} stopOpacity="0.45" />
               <stop offset="100%" stopColor={color} stopOpacity="0.0" />
             </linearGradient>
           </defs>
-          {/* Subtle grid line */}
           <line
             x1="0"
             y1={height / 2}
@@ -68,9 +68,7 @@ export const StatGraph: React.FC<StatGraphProps> = ({
             stroke="rgba(255,255,255,0.06)"
             strokeDasharray="4 4"
           />
-          {/* Filled Area */}
-          <path d={areaD} fill={`url(#grad-${color})`} />
-          {/* Glowing Stroke Line */}
+          <path d={areaD} fill={`url(#${gradId})`} />
           <path
             d={pathD}
             fill="none"

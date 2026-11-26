@@ -22,6 +22,7 @@ import {
   Laptop,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { apiFetch, apiJson, setCsrfToken } from '../../lib/api';
 import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
 import { GlassInput } from '../ui/GlassInput';
@@ -50,7 +51,7 @@ export const AccountSettingsView: React.FC = () => {
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(user?.two_factor_enabled || false);
   const [showTwoFactorModal, setShowTwoFactorModal] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState('');
-  const [twoFactorSecret, setTwoFactorSecret] = useState('JBSWY3DPEHPK3PXP');
+  const [twoFactorSecret, setTwoFactorSecret] = useState('');
   const [twoFactorMsg, setTwoFactorMsg] = useState<string | null>(null);
 
   // API Keys state
@@ -87,37 +88,29 @@ export const AccountSettingsView: React.FC = () => {
 
   const fetchAccountDetails = async () => {
     try {
-      const res = await fetch('/api/client/account');
-      if (res.ok) {
-        const d = await res.json();
-        if (d?.attributes) {
-          setEmailAddress(d.attributes.email || '');
-          setTwoFactorEnabled(!!d.attributes.two_factor_enabled);
-        }
+      const d = await apiJson<any>('/api/client/account');
+      const attrs = d?.attributes || d;
+      if (attrs) {
+        setEmailAddress(attrs.email || '');
+        setTwoFactorEnabled(Boolean(attrs.two_factor_enabled));
       }
     } catch {}
   };
 
   const fetchApiKeys = async () => {
     try {
-      const res = await fetch('/api/client/account/api-keys');
-      if (res.ok) {
-        const d = await res.json();
-        if (Array.isArray(d?.data)) {
-          setApiKeys(d.data.map((x: any) => x.attributes || x));
-        }
+      const d = await apiJson<{ data: any[] }>('/api/client/account/api-keys');
+      if (Array.isArray(d?.data)) {
+        setApiKeys(d.data.map((x: any) => x.attributes || x));
       }
     } catch {}
   };
 
   const fetchSshKeys = async () => {
     try {
-      const res = await fetch('/api/client/account/ssh-keys');
-      if (res.ok) {
-        const d = await res.json();
-        if (Array.isArray(d?.data)) {
-          setSshKeys(d.data.map((x: any) => x.attributes || x));
-        }
+      const d = await apiJson<{ data: any[] }>('/api/client/account/ssh-keys');
+      if (Array.isArray(d?.data)) {
+        setSshKeys(d.data.map((x: any) => x.attributes || x));
       }
     } catch {}
   };
@@ -125,12 +118,9 @@ export const AccountSettingsView: React.FC = () => {
   const fetchActivityLogs = async () => {
     setLogsLoading(true);
     try {
-      const res = await fetch('/api/client/account/activity');
-      if (res.ok) {
-        const d = await res.json();
-        if (Array.isArray(d?.data)) {
-          setActivityLogs(d.data.map((x: any) => x.attributes || x));
-        }
+      const d = await apiJson<{ data: any[] }>('/api/client/account/activity');
+      if (Array.isArray(d?.data)) {
+        setActivityLogs(d.data.map((x: any) => x.attributes || x));
       }
     } catch {}
     finally {
@@ -140,12 +130,9 @@ export const AccountSettingsView: React.FC = () => {
 
   const fetchNodeRegions = async () => {
     try {
-      const res = await fetch('/api/client/regions');
-      if (res.ok) {
-        const d = await res.json();
-        if (Array.isArray(d?.data)) {
-          setRegions(d.data);
-        }
+      const d = await apiJson<{ data: any[] }>('/api/client/regions');
+      if (Array.isArray(d?.data)) {
+        setRegions(d.data);
       }
     } catch {}
   };
@@ -166,27 +153,22 @@ export const AccountSettingsView: React.FC = () => {
 
     setPasswordLoading(true);
     try {
-      const res = await fetch('/api/client/account/password', {
+      const data = await apiJson<any>('/api/client/account/password', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           current_password: currentPassword,
-          new_password: newPassword,
-          new_password_confirmation: confirmPassword,
+          password: newPassword,
+          password_confirmation: confirmPassword,
         }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        setPasswordMsg({ type: 'success', text: 'Password successfully updated.' });
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-        fetchActivityLogs();
-      } else {
-        setPasswordMsg({ type: 'error', text: data.error || 'Failed to update password.' });
-      }
-    } catch {
-      setPasswordMsg({ type: 'error', text: 'Network error while updating password.' });
+      if (data?.csrfToken) setCsrfToken(data.csrfToken);
+      setPasswordMsg({ type: 'success', text: 'Password successfully updated.' });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      fetchActivityLogs();
+    } catch (err: any) {
+      setPasswordMsg({ type: 'error', text: err?.message || 'Failed to update password.' });
     } finally {
       setPasswordLoading(false);
     }
@@ -204,37 +186,59 @@ export const AccountSettingsView: React.FC = () => {
 
     setEmailLoading(true);
     try {
-      const res = await fetch('/api/client/account/email', {
+      await apiJson('/api/client/account/email', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: emailAddress, password: emailConfirmPassword }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        setEmailMsg({ type: 'success', text: 'Email address updated successfully.' });
-        setEmailConfirmPassword('');
-        fetchActivityLogs();
-      } else {
-        setEmailMsg({ type: 'error', text: data.error || 'Failed to update email.' });
-      }
-    } catch {
-      setEmailMsg({ type: 'error', text: 'Network error while updating email.' });
+      setEmailMsg({ type: 'success', text: 'Email address updated successfully.' });
+      setEmailConfirmPassword('');
+      fetchActivityLogs();
+    } catch (err: any) {
+      setEmailMsg({ type: 'error', text: err?.message || 'Failed to update email.' });
     } finally {
       setEmailLoading(false);
     }
   };
 
-  // Handle 2FA Toggle
-  const handleToggle2FA = async () => {
+  // Begin 2FA Setup or Disable 2FA
+  const handleBegin2FASetup = async () => {
+    setTwoFactorMsg(null);
+    setTwoFactorCode('');
     try {
-      const res = await fetch('/api/client/account/two-factor', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        setTwoFactorEnabled(data.two_factor_enabled);
+      const data = await apiJson<{ secret: string }>('/api/client/account/two-factor', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      setTwoFactorSecret(data.secret || '');
+      setShowTwoFactorModal(true);
+    } catch (err: any) {
+      setTwoFactorMsg(err?.message || 'Unable to generate 2FA secret.');
+    }
+  };
+
+  const handleToggle2FA = async () => {
+    setTwoFactorMsg(null);
+    try {
+      if (twoFactorEnabled) {
+        const pw = window.prompt('Enter your current password to disable 2FA:') || '';
+        if (!pw) return;
+        const data = await apiJson<{ enabled: boolean }>('/api/client/account/two-factor', {
+          method: 'DELETE',
+          body: JSON.stringify({ password: pw }),
+        });
+        setTwoFactorEnabled(Boolean(data.enabled));
+      } else {
+        const data = await apiJson<{ enabled: boolean }>('/api/client/account/two-factor', {
+          method: 'POST',
+          body: JSON.stringify({ code: twoFactorCode }),
+        });
+        setTwoFactorEnabled(Boolean(data.enabled));
         setShowTwoFactorModal(false);
-        fetchActivityLogs();
       }
-    } catch {}
+      fetchActivityLogs();
+    } catch (err: any) {
+      setTwoFactorMsg(err?.message || 'Verification failed.');
+    }
   };
 
   // Handle Create Client API Key
@@ -249,23 +253,18 @@ export const AccountSettingsView: React.FC = () => {
 
     setApiLoading(true);
     try {
-      const res = await fetch('/api/client/account/api-keys', {
+      const data = await apiJson<any>('/api/client/account/api-keys', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description: apiDesc.trim(), allowed_ips: apiAllowedIps }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        setApiKeys(prev => [data.attributes, ...prev]);
-        setNewSecretModal(data.meta?.secret_token || 'slayer_cli_' + Math.random().toString(36).substring(2));
-        setApiDesc('');
-        setApiAllowedIps('');
-        fetchActivityLogs();
-      } else {
-        setApiError(data.error || 'Failed to create API key.');
-      }
-    } catch {
-      setApiError('Network error while creating API key.');
+      const created = data.attributes || data;
+      setApiKeys(prev => [created, ...prev]);
+      setNewSecretModal(data.secret_token || data.meta?.secret_token || '');
+      setApiDesc('');
+      setApiAllowedIps('');
+      fetchActivityLogs();
+    } catch (err: any) {
+      setApiError(err?.message || 'Failed to create API key.');
     } finally {
       setApiLoading(false);
     }
@@ -274,7 +273,7 @@ export const AccountSettingsView: React.FC = () => {
   // Handle Revoke API Key
   const handleRevokeApiKey = async (identifier: string) => {
     try {
-      await fetch(`/api/client/account/api-keys/${identifier}`, { method: 'DELETE' });
+      await apiFetch(`/api/client/account/api-keys/${encodeURIComponent(identifier)}`, { method: 'DELETE' });
       setApiKeys(prev => prev.filter(k => k.identifier !== identifier));
       fetchActivityLogs();
     } catch {}
@@ -296,22 +295,17 @@ export const AccountSettingsView: React.FC = () => {
 
     setSshLoading(true);
     try {
-      const res = await fetch('/api/client/account/ssh-keys', {
+      const data = await apiJson<any>('/api/client/account/ssh-keys', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: sshName.trim(), public_key: sshPublicKey.trim() }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        setSshKeys(prev => [data.attributes, ...prev]);
-        setSshName('');
-        setSshPublicKey('');
-        fetchActivityLogs();
-      } else {
-        setSshError(data.error || 'Failed to add SSH key.');
-      }
-    } catch {
-      setSshError('Network error while registering SSH key.');
+      const created = data.attributes || data;
+      setSshKeys(prev => [created, ...prev]);
+      setSshName('');
+      setSshPublicKey('');
+      fetchActivityLogs();
+    } catch (err: any) {
+      setSshError(err?.message || 'Failed to add SSH key.');
     } finally {
       setSshLoading(false);
     }
@@ -320,7 +314,7 @@ export const AccountSettingsView: React.FC = () => {
   // Handle Delete SSH Key
   const handleDeleteSshKey = async (fingerprint: string) => {
     try {
-      await fetch(`/api/client/account/ssh-keys/${encodeURIComponent(fingerprint)}`, { method: 'DELETE' });
+      await apiFetch(`/api/client/account/ssh-keys/${encodeURIComponent(fingerprint)}`, { method: 'DELETE' });
       setSshKeys(prev => prev.filter(k => k.fingerprint !== fingerprint));
       fetchActivityLogs();
     } catch {}
@@ -539,7 +533,7 @@ export const AccountSettingsView: React.FC = () => {
                 if (twoFactorEnabled) {
                   handleToggle2FA();
                 } else {
-                  setShowTwoFactorModal(true);
+                  handleBegin2FASetup();
                 }
               }}
               className={`mt-4 w-full py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
@@ -868,13 +862,21 @@ export const AccountSettingsView: React.FC = () => {
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-white">{r.name}</span>
-                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                        {r.status.toUpperCase()}
+                      <span
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                          r.status === 'online'
+                            ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                            : 'text-rose-400 bg-rose-500/10 border-rose-500/20'
+                        }`}
+                      >
+                        {String(r.status || 'unknown').toUpperCase()}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-2 border-t border-white/5">
-                      <span>Code: <strong className="text-slate-200">{r.short}</strong></span>
-                      <span className="text-emerald-400">{r.ping_ms}ms ping</span>
+                      <span>Code: <strong className="text-slate-200">{r.short || r.location || 'local'}</strong></span>
+                      <span className={r.status === 'online' ? 'text-emerald-400' : 'text-rose-400'}>
+                        {r.ping_ms ?? r.latency_ms ?? 0}ms ping
+                      </span>
                     </div>
                   </div>
                 ))
@@ -961,6 +963,12 @@ export const AccountSettingsView: React.FC = () => {
               className="glass-input w-36 text-center text-lg font-mono tracking-widest text-white mx-auto block py-2"
             />
           </div>
+
+          {twoFactorMsg && (
+            <div className="w-full p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+              {twoFactorMsg}
+            </div>
+          )}
 
           <div className="flex items-center justify-end gap-2 w-full pt-2">
             <button

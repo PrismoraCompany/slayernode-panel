@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Layers, Plus, Trash2, Folder, Check } from 'lucide-react';
+import { apiFetch, apiJson } from '../../lib/api';
 import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
 import { GlassModal } from '../ui/GlassModal';
@@ -8,6 +9,7 @@ import { GlassToggle } from '../ui/GlassToggle';
 
 interface MountItem {
   id: number;
+  uuid: string;
   name: string;
   description: string;
   source: string;
@@ -17,53 +19,67 @@ interface MountItem {
 }
 
 export const MountsManager: React.FC = () => {
-  const [mounts, setMounts] = useState<MountItem[]>([
-    {
-      id: 1,
-      name: 'Shared Fast Maps NVMe Storage',
-      description: 'Pre-rendered high-res world maps shared across SMP survival and lobby instances',
-      source: '/mnt/fast-storage/minecraft/shared-maps',
-      target: '/home/container/shared_maps',
-      read_only: true,
-      user_mountable: false,
-    },
-    {
-      id: 2,
-      name: 'Global BungeeCord Assets & Geyser Translation',
-      description: 'Shared Bedrock language and protocol translation tables',
-      source: '/var/lib/slayerwings/mounts/geyser-packs',
-      target: '/home/container/packs',
-      read_only: true,
-      user_mountable: true,
-    },
-  ]);
-
+  const [mounts, setMounts] = useState<MountItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [source, setSource] = useState('');
   const [target, setTarget] = useState('');
   const [readOnly, setReadOnly] = useState(true);
+  const [userMountable, setUserMountable] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleCreate = () => {
-    if (!name.trim() || !source.trim() || !target.trim()) return;
-    const newM: MountItem = {
-      id: Date.now(),
-      name: name.trim(),
-      description: 'Custom host volume mount',
-      source: source.trim(),
-      target: target.trim(),
-      read_only: readOnly,
-      user_mountable: false,
-    };
-    setMounts(prev => [...prev, newM]);
-    setName('');
-    setSource('');
-    setTarget('');
-    setShowModal(false);
+  const loadMounts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiJson<{ data: MountItem[] }>('/api/application/mounts');
+      setMounts(Array.isArray(res?.data) ? res.data : []);
+    } catch {
+      setMounts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMounts();
+  }, [loadMounts]);
+
+  const handleCreate = async () => {
+    setError(null);
+    if (!name.trim() || !source.trim() || !target.trim()) {
+      setError('Mount name, host source path, and container target path are required.');
+      return;
+    }
+    try {
+      const created = await apiJson<MountItem>('/api/application/mounts', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim() || 'Shared host mount',
+          source: source.trim(),
+          target: target.trim(),
+          read_only: readOnly,
+          user_mountable: userMountable,
+        }),
+      });
+      setMounts(prev => [...prev, created]);
+      setName('');
+      setDescription('');
+      setSource('');
+      setTarget('');
+      setShowModal(false);
+    } catch (err: any) {
+      setError(err?.message || 'Failed creating mount.');
+    }
   };
 
-  const handleDelete = (id: number) => {
-    setMounts(prev => prev.filter(m => m.id !== id));
+  const handleDelete = async (id: number) => {
+    try {
+      await apiFetch(`/api/application/mounts/${id}`, { method: 'DELETE' });
+      setMounts(prev => prev.filter(m => m.id !== id));
+    } catch {}
   };
 
   return (
@@ -71,15 +87,15 @@ export const MountsManager: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Layers className="w-5 h-5 text-teal-400" /> Host Directory Mounts
+            <Layers className="w-5 h-5 text-red-400" /> Host Directory Mounts
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Mount physical host directories into Docker containers across multiple servers and Eggs.
+            Configure host directories exposed selectively into isolated server containers.
           </p>
         </div>
 
         <GlassButton
-          variant="accent"
+          variant="primary"
           size="sm"
           onClick={() => setShowModal(true)}
           leftIcon={<Plus className="w-4 h-4" />}
@@ -88,88 +104,60 @@ export const MountsManager: React.FC = () => {
         </GlassButton>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {mounts.map(mount => (
-          <GlassCard key={mount.id} className="p-5 flex flex-col justify-between">
-            <div>
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2.5 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-400/20">
-                    <Folder className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white">{mount.name}</h3>
-                    <p className="text-xs text-slate-400">{mount.description}</p>
-                  </div>
+      {mounts.length === 0 ? (
+        <GlassCard className="p-10 text-center text-sm text-slate-400">
+          {loading ? 'Loading configured mounts...' : 'No shared directory mounts configured yet.'}
+        </GlassCard>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {mounts.map(m => (
+            <GlassCard key={m.id} className="p-5 flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Folder className="w-4 h-4 text-amber-400" />
+                    {m.name}
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-1">{m.description}</p>
                 </div>
-
                 <button
-                  onClick={() => handleDelete(mount.id)}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  type="button"
+                  onClick={() => handleDelete(m.id)}
+                  className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
-
-              <div className="flex flex-col gap-2 font-mono text-xs p-3 rounded-xl bg-slate-950/40 border border-white/5 my-3">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Host Source:</span>
-                  <span className="text-sky-300 truncate max-w-[200px]">{mount.source}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Container Target:</span>
-                  <span className="text-emerald-300 truncate max-w-[200px]">{mount.target}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Access Mode:</span>
-                  <span className={mount.read_only ? 'text-amber-400' : 'text-emerald-400'}>
-                    {mount.read_only ? 'Read-Only (Protected)' : 'Read-Write'}
-                  </span>
+              <div className="text-xs font-mono bg-[#111318] border border-white/10 rounded-xl p-3 flex flex-col gap-1">
+                <div><span className="text-slate-500">Host Source:</span> <span className="text-slate-200">{m.source}</span></div>
+                <div><span className="text-slate-500">Container Target:</span> <span className="text-emerald-300">{m.target}</span></div>
+                <div className="flex items-center gap-3 pt-1 text-[11px]">
+                  <span className="text-slate-400 flex items-center gap-1"><Check className="w-3 h-3 text-emerald-400" /> {m.read_only ? 'Read-Only' : 'Read/Write'}</span>
                 </div>
               </div>
-            </div>
-          </GlassCard>
-        ))}
-      </div>
+            </GlassCard>
+          ))}
+        </div>
+      )}
 
-      <GlassModal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        title="Create Container Mount"
-        maxWidth="md"
-      >
+      <GlassModal isOpen={showModal} onClose={() => setShowModal(false)} title="Create Host Mount" maxWidth="md">
         <div className="flex flex-col gap-4 py-2">
-          <GlassInput
-            label="Mount Name"
-            placeholder="e.g. Shared Asset Cache"
-            value={name}
-            onChange={e => setName(e.target.value)}
-          />
-          <GlassInput
-            label="Host Source Path"
-            placeholder="/var/lib/slayerwings/mounts/shared"
-            value={source}
-            onChange={e => setSource(e.target.value)}
-          />
-          <GlassInput
-            label="Container Target Path"
-            placeholder="/home/container/shared"
-            value={target}
-            onChange={e => setTarget(e.target.value)}
-          />
-          <GlassToggle
-            label="Read-Only Mount"
-            description="Prevent containers from modifying host files"
-            checked={readOnly}
-            onChange={setReadOnly}
-          />
-          <div className="flex justify-end gap-2 pt-2">
-            <GlassButton variant="ghost" size="sm" onClick={() => setShowModal(false)}>
-              Cancel
-            </GlassButton>
-            <GlassButton variant="accent" size="sm" onClick={handleCreate}>
-              Create Mount
-            </GlassButton>
+          <GlassInput label="Mount Name" placeholder="Shared Worlds" value={name} onChange={e => setName(e.target.value)} />
+          <GlassInput label="Description" placeholder="Optional description" value={description} onChange={e => setDescription(e.target.value)} />
+          <GlassInput label="Host Source Path" placeholder="/var/lib/slayerwings/mounts/shared" value={source} onChange={e => setSource(e.target.value)} />
+          <GlassInput label="Container Target Path" placeholder="/home/container/shared" value={target} onChange={e => setTarget(e.target.value)} />
+          <div className="flex items-center justify-between text-xs text-slate-300">
+            <span>Read-Only Mount</span>
+            <GlassToggle checked={readOnly} onChange={setReadOnly} />
+          </div>
+          <div className="flex items-center justify-between text-xs text-slate-300">
+            <span>User Mountable</span>
+            <GlassToggle checked={userMountable} onChange={setUserMountable} />
+          </div>
+          {error && <div className="text-xs text-rose-400">{error}</div>}
+          <div className="flex justify-end gap-2">
+            <GlassButton variant="secondary" onClick={() => setShowModal(false)}>Cancel</GlassButton>
+            <GlassButton variant="primary" onClick={handleCreate}>Save Mount</GlassButton>
           </div>
         </div>
       </GlassModal>

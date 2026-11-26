@@ -16,6 +16,7 @@ import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
 import { GlassInput } from '../ui/GlassInput';
 import { GlassModal } from '../ui/GlassModal';
+import { apiFetch } from '../../lib/api';
 
 export const NestsEggsManager: React.FC = () => {
   // Navigation: 'nests-list' | 'nest-detail' | 'egg-detail'
@@ -65,7 +66,7 @@ export const NestsEggsManager: React.FC = () => {
   const fetchNests = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/application/nests');
+      const res = await apiFetch('/api/application/nests');
       if (res.ok) {
         const d = await res.json();
         setNests((d.data || []).map((x: any) => x.attributes || x));
@@ -79,7 +80,7 @@ export const NestsEggsManager: React.FC = () => {
 
   const fetchNestDetails = async (nestId: number | string) => {
     try {
-      const res = await fetch(`/api/application/nests/${nestId}`);
+      const res = await apiFetch(`/api/application/nests/${nestId}`);
       if (res.ok) {
         const d = await res.json();
         const n = d.attributes || d;
@@ -144,9 +145,8 @@ export const NestsEggsManager: React.FC = () => {
     e.preventDefault();
     if (!selectedNest) return;
     try {
-      const res = await fetch(`/api/application/nests/${selectedNest.id}`, {
+      const res = await apiFetch(`/api/application/nests/${selectedNest.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: nestName.trim(), description: nestDesc.trim() }),
       });
       if (res.ok) {
@@ -162,7 +162,7 @@ export const NestsEggsManager: React.FC = () => {
     if (!selectedNest) return;
     if (!confirm(`Are you sure you want to delete nest "${selectedNest.name}" and all its eggs?`)) return;
     try {
-      const res = await fetch(`/api/application/nests/${selectedNest.id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/application/nests/${selectedNest.id}`, { method: 'DELETE' });
       if (res.ok) {
         showNotification('Nest deleted.');
         setViewMode('nests-list');
@@ -191,9 +191,8 @@ export const NestsEggsManager: React.FC = () => {
 
     try {
       if (isNewEgg) {
-        const res = await fetch(`/api/application/nests/${eggNestId}/eggs`, {
+        const res = await apiFetch(`/api/application/nests/${eggNestId}/eggs`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
         if (res.ok) {
@@ -202,9 +201,8 @@ export const NestsEggsManager: React.FC = () => {
           setViewMode('nest-detail');
         }
       } else {
-        const res = await fetch(`/api/application/nests/${eggNestId}/eggs/${selectedEgg.id}`, {
+        const res = await apiFetch(`/api/application/nests/${eggNestId}/eggs/${selectedEgg.id}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
         if (res.ok) {
@@ -234,9 +232,8 @@ export const NestsEggsManager: React.FC = () => {
     e.preventDefault();
     if (!newNestName.trim()) return;
     try {
-      const res = await fetch('/api/application/nests', {
+      const res = await apiFetch('/api/application/nests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newNestName.trim(), description: newNestDesc.trim() }),
       });
       if (res.ok) {
@@ -874,7 +871,7 @@ export const NestsEggsManager: React.FC = () => {
               onClick={async () => {
                 try {
                   const targetNest = importNestId || selectedNest?.id || nests[0]?.id || 1;
-                  const res = await fetch(`/api/application/nests/${targetNest}/eggs/import`, {
+                  const res = await apiFetch(`/api/application/nests/${targetNest}/eggs/import`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: importJsonText,

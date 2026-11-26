@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, Loader2 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
-import { useServer } from './context/ServerContext';
+import { useServers } from './context/ServerContext';
 import { LayoutWrapper } from './components/layout/LayoutWrapper';
 import { AdminLayout } from './components/admin/AdminLayout';
 import { ServerDashboard } from './components/server/ServerDashboard';
@@ -16,74 +16,130 @@ import { MountsManager } from './components/admin/MountsManager';
 import { NestsEggsManager } from './components/admin/NestsEggsManager';
 import { UsersManager } from './components/admin/UsersManager';
 import { ActivityLogsManager } from './components/admin/ActivityLogsManager';
-import { AppearanceStudio } from './components/admin/studio/AppearanceStudio';
 import { AdminServersManager } from './components/admin/AdminServersManager';
+import { AppearanceStudio } from './components/admin/studio/AppearanceStudio';
 import { AccountSettingsView } from './components/account/AccountSettingsView';
 import { LoginView } from './components/auth/LoginView';
 import { RegisterView } from './components/auth/RegisterView';
 import { GlassButton } from './components/ui/GlassButton';
 
 export const App: React.FC = () => {
-  const { isAuthenticated, isAdmin } = useAuth();
-  const { accessDeniedError, selectServer, visibleServers } = useServer();
+  const { isAuthenticated, isAdmin, isLoadingAuth } = useAuth();
+  const { accessDeniedError, clearAccessDeniedError, selectServer, servers, refreshServers } = useServers();
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [isAdminView, setIsAdminView] = useState(false);
   const [currentTab, setCurrentTab] = useState('dashboard');
+  const [serverSubTab, setServerSubTab] = useState('console');
+  const [forgotNotice, setForgotNotice] = useState('');
 
-  // Sync /account, /accounts, /admin pathname and URL hash
-  useEffect(() => {
-    const handleUrlRoute = () => {
-      const hash = window.location.hash.replace('#', '');
-      const path = window.location.pathname;
+  const syncFromHash = useCallback(() => {
+    const rawHash = window.location.hash.replace(/^#\/?/, '');
+    const path = window.location.pathname;
 
-      if (path === '/account' || path === '/accounts' || hash === 'account' || hash === 'accounts') {
+    if (path === '/account' || path === '/accounts' || rawHash === 'account' || rawHash === 'accounts') {
+      setIsAdminView(false);
+      setCurrentTab('account');
+      return;
+    }
+
+    if (rawHash.startsWith('server/')) {
+      const parts = rawHash.split('/');
+      const targetId = parts[1];
+      const subTab = parts[2] || 'console';
+      if (targetId) {
         setIsAdminView(false);
-        setCurrentTab('account');
-      } else if (path === '/admin' || path.startsWith('/admin/') || hash.startsWith('admin')) {
-        if (isAdmin) {
-          setIsAdminView(true);
-          const targetTab = hash && hash !== 'admin' ? hash : 'admin-dashboard';
-          setCurrentTab(targetTab);
-        }
-      } else {
-        if (!hash.startsWith('admin')) {
-          setIsAdminView(false);
-          setCurrentTab(hash || 'dashboard');
-        }
+        selectServer(targetId);
+        setServerSubTab(subTab);
+        setCurrentTab('server-detail');
+        return;
       }
-    };
+    }
 
-    handleUrlRoute();
-    window.addEventListener('hashchange', handleUrlRoute);
-    return () => window.removeEventListener('hashchange', handleUrlRoute);
-  }, [isAdmin]);
+    if (path === '/admin' || path.startsWith('/admin/') || rawHash.startsWith('admin')) {
+      if (isAdmin) {
+        setIsAdminView(true);
+        let targetTab = rawHash && rawHash !== 'admin' ? rawHash : 'admin-dashboard';
+        if (targetTab === 'admin-activity') targetTab = 'admin-audit';
+        setCurrentTab(targetTab);
+      } else {
+        setIsAdminView(false);
+        setCurrentTab('dashboard');
+      }
+      return;
+    }
 
-  // If not authenticated, render pure Auth Gateway
+    setIsAdminView(false);
+    setCurrentTab(rawHash || 'dashboard');
+  }, [isAdmin, selectServer]);
+
+  useEffect(() => {
+    syncFromHash();
+    window.addEventListener('hashchange', syncFromHash);
+    return () => window.removeEventListener('hashchange', syncFromHash);
+  }, [syncFromHash]);
+
+  // Re-resolve #server/<id> once server list finishes hydrating
+  useEffect(() => {
+    const rawHash = window.location.hash.replace(/^#\/?/, '');
+    if (rawHash.startsWith('server/') && servers.length > 0) {
+      const targetId = rawHash.split('/')[1];
+      if (targetId) selectServer(targetId);
+    }
+  }, [servers.length, selectServer]);
+
+  const navigateToServer = async (serverId: string, subTab = 'console') => {
+    clearAccessDeniedError();
+    if (servers.length === 0) {
+      await refreshServers();
+    }
+    selectServer(serverId);
+    setIsAdminView(false);
+    setServerSubTab(subTab);
+    setCurrentTab('server-detail');
+    window.location.hash = `server/${serverId}/${subTab}`;
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  };
+
+  if (isLoadingAuth) {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#111216] text-white/70 gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-rose-500" />
+        <p className="text-xs font-mono tracking-wider uppercase text-white/40">Initializing SlayerNode Session...</p>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     if (authMode === 'register') {
-      return <RegisterView onNavigateLogin={() => setAuthMode('login')} />;
+      return <RegisterView onNavigateLogin={() => { setForgotNotice(''); setAuthMode('login'); }} />;
     }
     return (
-      <LoginView
-        onNavigateRegister={() => setAuthMode('register')}
-        onNavigateForgot={() => alert('Password reset verification token sent to your registered email.')}
-      />
+      <div>
+        {forgotNotice && (
+          <div className="fixed top-4 right-4 z-50 px-4 py-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs">
+            {forgotNotice}
+          </div>
+        )}
+        <LoginView
+          onNavigateRegister={() => { setForgotNotice(''); setAuthMode('register'); }}
+          onNavigateForgot={() => setForgotNotice('Contact your panel administrator or sign in with 2FA recovery.')}
+        />
+      </div>
     );
   }
 
   const handleTabChange = (tab: string) => {
-    if (tab.startsWith('admin-')) {
-      if (!isAdmin) {
-        alert('403 Forbidden: Administrator permissions required.');
-        return;
-      }
+    const normalized = tab === 'admin-activity' ? 'admin-audit' : tab;
+    if (normalized.startsWith('admin-')) {
+      if (!isAdmin) return;
       setIsAdminView(true);
-      window.location.hash = tab;
+      window.location.hash = normalized;
     } else {
       setIsAdminView(false);
-      window.location.hash = tab === 'dashboard' ? '' : tab;
+      window.location.hash = normalized === 'dashboard' ? '' : normalized;
     }
-    setCurrentTab(tab);
+    setCurrentTab(normalized);
+    window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
   const handleToggleAdmin = () => {
@@ -99,7 +155,6 @@ export const App: React.FC = () => {
     }
   };
 
-  // If user attempted to access a server container outside their tenant boundary
   if (accessDeniedError) {
     return (
       <LayoutWrapper
@@ -113,21 +168,17 @@ export const App: React.FC = () => {
             <div className="p-3 rounded-2xl bg-rose-500/20 text-rose-400">
               <ShieldAlert className="w-8 h-8" />
             </div>
-            <h2 className="text-xl font-bold text-white">403 Access Denied</h2>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              {accessDeniedError}
-            </p>
+            <h2 className="text-xl font-bold text-white">Access Denied</h2>
+            <p className="text-sm text-white/60 leading-relaxed">{accessDeniedError}</p>
             <GlassButton
-              variant="accent"
-              size="sm"
+              variant="primary"
               onClick={() => {
-                if (visibleServers.length > 0) {
-                  selectServer(visibleServers[0].id);
-                }
+                clearAccessDeniedError();
                 setCurrentTab('dashboard');
+                window.location.hash = '';
               }}
             >
-              Return to My Servers
+              Return to Server Fleet
             </GlassButton>
           </div>
         </div>
@@ -135,31 +186,14 @@ export const App: React.FC = () => {
     );
   }
 
-  // ========================================================
-  // 1. DEDICATED APPEARANCE STUDIO FULL-SCREEN PAGE
-  // ========================================================
-  if (isAdmin && currentTab === 'admin-studio') {
-    return (
-      <AppearanceStudio
-        onExit={() => {
-          setCurrentTab('admin-dashboard');
-          window.location.hash = 'admin-dashboard';
-        }}
-      />
-    );
-  }
-
-  // ========================================================
-  // 2. DEDICATED ADMIN MANAGEMENT SUITE PAGE
-  // ========================================================
-  if (isAdmin && isAdminView) {
+  if (isAdminView && isAdmin) {
     return (
       <motion.div
         key="admin-workspace-view"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.18 }}
+        transition={{ duration: 0.16 }}
         className="w-full min-h-screen"
       >
         <AdminLayout
@@ -171,58 +205,37 @@ export const App: React.FC = () => {
             window.location.hash = '';
           }}
         >
-          {currentTab === 'admin-dashboard' && (
-            <AdminDashboard onNavigateTab={handleTabChange} />
-          )}
-
+          {currentTab === 'admin-dashboard' && <AdminDashboard onNavigateTab={handleTabChange} />}
           {currentTab === 'admin-settings' && <AdminSettings />}
-
           {currentTab === 'admin-api' && <AdminApiKeys />}
-
           {currentTab === 'admin-audit' && <ActivityLogsManager />}
-
           {currentTab === 'admin-locations' && <LocationsManager />}
-
           {currentTab === 'admin-nodes' && (
-            <NodesManager
-              onNavigateServer={serverId => {
-                selectServer(serverId);
-                setIsAdminView(false);
-                setCurrentTab('server-detail');
-              }}
-            />
+            <NodesManager onNavigateServer={serverId => navigateToServer(serverId, 'console')} />
           )}
-
           {currentTab === 'admin-servers' && (
             <AdminServersManager
-              onSelectServerDetail={serverId => {
-                selectServer(serverId);
-                setIsAdminView(false);
-                setCurrentTab('server-detail');
-              }}
+              onSelectServerDetail={(serverId, subTab) => navigateToServer(serverId, subTab || 'console')}
             />
           )}
-
           {currentTab === 'admin-mounts' && <MountsManager />}
-
           {currentTab === 'admin-nests' && <NestsEggsManager />}
-
           {currentTab === 'admin-users' && <UsersManager />}
+          {currentTab === 'admin-studio' && (
+            <AppearanceStudio onExit={() => handleTabChange('admin-dashboard')} />
+          )}
         </AdminLayout>
       </motion.div>
     );
   }
 
-  // ========================================================
-  // 3. CLIENT GAME SERVER FLEET & DASHBOARD
-  // ========================================================
   return (
     <motion.div
       key="client-workspace-view"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.18 }}
+      transition={{ duration: 0.16 }}
       className="w-full min-h-screen"
     >
       <LayoutWrapper
@@ -233,7 +246,7 @@ export const App: React.FC = () => {
       >
         {currentTab === 'dashboard' && (
           <ServerDashboard
-            onSelectServerDetail={() => setCurrentTab('server-detail')}
+            onSelectServerDetail={serverId => navigateToServer(serverId, 'console')}
             onNavigateAdminServer={() => {
               setIsAdminView(true);
               setCurrentTab('admin-servers');
@@ -244,14 +257,27 @@ export const App: React.FC = () => {
 
         {currentTab === 'server-detail' && (
           <ServerDetailView
-            onBackToDashboard={() => setCurrentTab('dashboard')}
+            initialSubTab={serverSubTab}
+            onSubTabChange={tab => {
+              setServerSubTab(tab);
+              const rawHash = window.location.hash.replace(/^#\/?/, '');
+              if (rawHash.startsWith('server/')) {
+                const srvId = rawHash.split('/')[1];
+                if (srvId) window.location.hash = `server/${srvId}/${tab}`;
+              }
+            }}
+            onBackToDashboard={() => {
+              selectServer('');
+              setCurrentTab('dashboard');
+              window.location.hash = '';
+            }}
           />
         )}
 
-        {(currentTab === 'account' || currentTab === 'accounts') && (
-          <AccountSettingsView />
-        )}
+        {(currentTab === 'account' || currentTab === 'accounts') && <AccountSettingsView />}
       </LayoutWrapper>
     </motion.div>
   );
 };
+
+export default App;

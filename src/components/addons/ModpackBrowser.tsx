@@ -1,328 +1,177 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import {
-  Package,
-  Search,
-  Download,
-  Check,
-  RefreshCw,
-  ExternalLink,
-  Trash2,
-  Filter,
-  Sparkles,
-} from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Package, Search, Download, Check, ExternalLink } from 'lucide-react';
+import { useServers } from '../../context/ServerContext';
+import { apiJson } from '../../lib/api';
 import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
 import { GlassInput } from '../ui/GlassInput';
-import { GlassBadge } from '../ui/GlassBadge';
-import { ModItem } from '../../types';
 
-const SAMPLE_MODS: ModItem[] = [
-  {
-    id: 'lithium',
-    slug: 'lithium',
-    title: 'Lithium',
-    description: 'General-purpose optimization mod for Fabric/NeoForge that improves tick rates and chunk physics.',
-    icon_url: 'https://cdn.modrinth.com/data/gvQqBUqZ/icon.png',
-    author: 'CaffeineMC',
-    downloads: 14200000,
-    follows: 45000,
-    source: 'modrinth',
-    categories: ['optimization', 'performance'],
-    loaders: ['fabric', 'neoforge', 'purpur'],
-    game_versions: ['1.21.4', '1.21.1', '1.20.4'],
-    installed: true,
-    installed_version: '0.25.3',
-    latest_version: '0.25.3',
-  },
-  {
-    id: 'viaversion',
-    slug: 'viaversion',
-    title: 'ViaVersion',
-    description: 'Allows newer Minecraft client versions to connect to an older server version seamlessly.',
-    icon_url: 'https://cdn.modrinth.com/data/P1OZGk5p/icon.png',
-    author: 'ViaVersion Team',
-    downloads: 21500000,
-    follows: 62000,
-    source: 'hangar',
-    categories: ['utility', 'protocol'],
-    loaders: ['paper', 'purpur', 'velocity', 'fabric'],
-    game_versions: ['1.21.4', '1.21.1', '1.20.x'],
-    installed: true,
-    installed_version: '5.2.0',
-    latest_version: '5.2.1', // update available!
-  },
-  {
-    id: 'essentialsx',
-    slug: 'essentialsx',
-    title: 'EssentialsX',
-    description: 'The essential plugin suite for Bukkit/Spigot/Paper servers, providing teleports, economy, and kits.',
-    icon_url: 'https://cdn.modrinth.com/data/507DE70U/icon.png',
-    author: 'EssentialsX Team',
-    downloads: 38000000,
-    follows: 98000,
-    source: 'spigot',
-    categories: ['economy', 'admin', 'management'],
-    loaders: ['paper', 'purpur', 'spigot'],
-    game_versions: ['1.21.4', '1.21.1'],
-    installed: false,
-    latest_version: '2.20.1',
-  },
-  {
-    id: 'spark',
-    slug: 'spark',
-    title: 'spark',
-    description: 'Performance profiler for Minecraft clients, servers, and proxies with CPU and memory flame graphs.',
-    icon_url: 'https://cdn.modrinth.com/data/l6YH9Als/icon.png',
-    author: 'lucko',
-    downloads: 18900000,
-    follows: 51000,
-    source: 'modrinth',
-    categories: ['optimization', 'profiling'],
-    loaders: ['paper', 'purpur', 'fabric', 'forge', 'velocity'],
-    game_versions: ['1.21.4', '1.21.x'],
-    installed: true,
-    installed_version: '1.10.53',
-    latest_version: '1.10.53',
-  },
-  {
-    id: 'chunky',
-    slug: 'chunky',
-    title: 'Chunky',
-    description: 'Pre-generates chunks rapidly to eliminate exploration lag and stutter on multi-user servers.',
-    icon_url: 'https://cdn.modrinth.com/data/fALzjamp/icon.png',
-    author: 'pop4959',
-    downloads: 9400000,
-    follows: 29000,
-    source: 'curseforge',
-    categories: ['world-generation', 'performance'],
-    loaders: ['paper', 'purpur', 'fabric', 'forge'],
-    game_versions: ['1.21.4', '1.21.1'],
-    installed: false,
-    latest_version: '1.4.16',
-  },
-  {
-    id: 'simple-voice-chat',
-    slug: 'simple-voice-chat',
-    title: 'Simple Voice Chat',
-    description: 'Proximity voice chat in Minecraft with opus audio codec, 3D positional audio, and group channels.',
-    icon_url: 'https://cdn.modrinth.com/data/9eGKb6K1/icon.png',
-    author: 'henkelmax',
-    downloads: 24000000,
-    follows: 88000,
-    source: 'modrinth',
-    categories: ['voice', 'chat', 'social'],
-    loaders: ['paper', 'purpur', 'fabric', 'forge', 'velocity'],
-    game_versions: ['1.21.4', '1.21.1'],
-    installed: false,
-    latest_version: '2.5.25',
-  },
-];
+interface ModrinthHit {
+  project_id: string;
+  slug: string;
+  title: string;
+  description: string;
+  icon_url: string;
+  author: string;
+  downloads: number;
+  categories?: string[];
+  project_type: string;
+}
 
 export const ModpackBrowser: React.FC = () => {
-  const [mods, setMods] = useState<ModItem[]>(SAMPLE_MODS);
-  const [activeTab, setActiveTab] = useState<'browse' | 'installed'>('browse');
-  const [search, setSearch] = useState('');
-  const [selectedLoader, setSelectedLoader] = useState<string>('all');
-  const [selectedSource, setSelectedSource] = useState<string>('all');
+  const { activeServer } = useServers();
+  const [query, setQuery] = useState('');
+  const [projectType, setProjectType] = useState<'plugin' | 'mod'>('plugin');
+  const [hits, setHits] = useState<ModrinthHit[]>([]);
+  const [loading, setLoading] = useState(false);
   const [installingId, setInstallingId] = useState<string | null>(null);
+  const [installedMap, setInstalledMap] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
 
-  const handleInstall = (modId: string) => {
-    setInstallingId(modId);
-    setTimeout(() => {
-      setMods(prev =>
-        prev.map(m =>
-          m.id === modId
-            ? { ...m, installed: true, installed_version: m.latest_version }
-            : m
-        )
+  const searchModrinth = useCallback(async (q = query, type = projectType) => {
+    if (!activeServer) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiJson<{ hits: ModrinthHit[] }>(
+        `/api/client/servers/${encodeURIComponent(activeServer.uuid)}/addons/mods/search?q=${encodeURIComponent(q)}&type=${type}`
       );
+      setHits(Array.isArray(res?.hits) ? res.hits : []);
+    } catch (err: any) {
+      setError(err?.message || 'Unable to query Modrinth catalog.');
+      setHits([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeServer?.uuid, query, projectType]);
+
+  useEffect(() => {
+    setInstalledMap({});
+    searchModrinth('', projectType);
+  }, [activeServer?.uuid, projectType]);
+
+  if (!activeServer) return null;
+
+  const handleInstall = async (item: ModrinthHit) => {
+    setInstallingId(item.project_id);
+    setError(null);
+    try {
+      const targetDir = projectType === 'mod' ? '/mods' : '/plugins';
+      const res = await apiJson<{ filename: string }>(
+        `/api/client/servers/${encodeURIComponent(activeServer.uuid)}/addons/mods/install`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ project_id: item.project_id, directory: targetDir }),
+        }
+      );
+      setInstalledMap(prev => ({ ...prev, [item.project_id]: res?.filename || 'Installed' }));
+    } catch (err: any) {
+      setError(err?.message || `Failed installing ${item.title}.`);
+    } finally {
       setInstallingId(null);
-    }, 1200);
+    }
   };
-
-  const handleUninstall = (modId: string) => {
-    setMods(prev =>
-      prev.map(m => (m.id === modId ? { ...m, installed: false } : m))
-    );
-  };
-
-  const filteredMods = mods.filter(m => {
-    if (activeTab === 'installed' && !m.installed) return false;
-    const matchSearch =
-      m.title.toLowerCase().includes(search.toLowerCase()) ||
-      m.description.toLowerCase().includes(search.toLowerCase());
-    const matchLoader = selectedLoader === 'all' || m.loaders.includes(selectedLoader);
-    const matchSource = selectedSource === 'all' || m.source === selectedSource;
-    return matchSearch && matchLoader && matchSource;
-  });
-
-  const installedCount = mods.filter(m => m.installed).length;
-  const updatesCount = mods.filter(m => m.installed && m.installed_version !== m.latest_version).length;
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Package className="w-5 h-5 text-sky-400" /> Unified Plugin & Modpack Installer
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Browse and 1-click install from Modrinth, CurseForge, Hangar, and SpigotMC with dependency auto-resolve.
-          </p>
+      <GlassCard className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400">
+            <Package className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-white">Live Modrinth Plugins &amp; Mods</h3>
+            <p className="text-xs text-slate-400">
+              Downloads directly into <code className="text-slate-300">{projectType === 'mod' ? '/mods' : '/plugins'}</code> inside this container.
+            </p>
+          </div>
         </div>
 
-        {/* View Switcher Pill */}
-        <div className="flex items-center gap-1.5 p-1 rounded-full bg-slate-900/80 border border-white/10">
-          <button
-            onClick={() => setActiveTab('browse')}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-colors ${
-              activeTab === 'browse' ? 'bg-sky-500/20 text-sky-300 border border-sky-400/30' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Explore Catalog
-          </button>
-          <button
-            onClick={() => setActiveTab('installed')}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5 ${
-              activeTab === 'installed' ? 'bg-sky-500/20 text-sky-300 border border-sky-400/30' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <span>Installed ({installedCount})</span>
-            {updatesCount > 0 && (
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Updates Available" />
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Filter / Search Bar */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex-1 min-w-[200px]">
-          <GlassInput
-            placeholder="Search plugins and mods..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            leftIcon={<Search className="w-4 h-4" />}
-          />
-        </div>
-
-        <select
-          value={selectedLoader}
-          onChange={e => setSelectedLoader(e.target.value)}
-          className="glass-input text-xs px-3 py-2.5 bg-slate-900/90 text-slate-200 cursor-pointer"
+        <form
+          onSubmit={e => {
+            e.preventDefault();
+            searchModrinth(query, projectType);
+          }}
+          className="flex items-center gap-2 flex-wrap"
         >
-          <option value="all">All Loaders</option>
-          <option value="paper">Paper / Purpur</option>
-          <option value="fabric">Fabric</option>
-          <option value="forge">Forge</option>
-          <option value="neoforge">NeoForge</option>
-          <option value="velocity">Velocity</option>
-        </select>
+          <select
+            value={projectType}
+            onChange={e => setProjectType(e.target.value as any)}
+            className="glass-input px-3 py-2 text-xs text-white"
+          >
+            <option value="plugin">Plugins (/plugins)</option>
+            <option value="mod">Mods (/mods)</option>
+          </select>
+          <div className="w-60">
+            <GlassInput
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search EssentialsX, LuckPerms, Lithium..."
+              leftIcon={<Search className="w-4 h-4" />}
+            />
+          </div>
+          <GlassButton type="submit" variant="primary" size="sm" disabled={loading}>
+            {loading ? 'Searching...' : 'Search'}
+          </GlassButton>
+        </form>
+      </GlassCard>
 
-        <select
-          value={selectedSource}
-          onChange={e => setSelectedSource(e.target.value)}
-          className="glass-input text-xs px-3 py-2.5 bg-slate-900/90 text-slate-200 cursor-pointer"
-        >
-          <option value="all">All Sources</option>
-          <option value="modrinth">Modrinth</option>
-          <option value="curseforge">CurseForge</option>
-          <option value="hangar">Hangar</option>
-          <option value="spigot">SpigotMC</option>
-        </select>
-      </div>
+      {error && (
+        <div className="px-4 py-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-300">
+          {error}
+        </div>
+      )}
 
-      {/* Mod Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredMods.map(mod => {
-          const hasUpdate = mod.installed && mod.installed_version !== mod.latest_version;
-          const isBusy = installingId === mod.id;
-
-          return (
-            <GlassCard key={mod.id} className="p-5 flex flex-col justify-between">
-              <div>
-                <div className="flex items-start gap-3.5 mb-3">
-                  <img
-                    src={mod.icon_url}
-                    alt={mod.title}
-                    className="w-12 h-12 rounded-xl object-cover bg-slate-800 border border-white/10 shrink-0"
-                  />
-                  <div className="truncate flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <h3 className="text-sm font-bold text-white truncate">{mod.title}</h3>
-                      <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 rounded bg-white/10 text-slate-300">
-                        {mod.source}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-0.5">by {mod.author}</p>
-                  </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {hits.map(item => (
+          <GlassCard key={item.project_id} className="p-4 flex flex-col gap-3">
+            <div className="flex items-start gap-3">
+              {item.icon_url ? (
+                <img src={item.icon_url} alt={item.title} className="w-10 h-10 rounded-xl object-cover bg-slate-900 shrink-0" />
+              ) : (
+                <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
+                  <Package className="w-5 h-5 text-slate-400" />
                 </div>
-
-                <p className="text-xs text-slate-300 line-clamp-2 mb-3">
-                  {mod.description}
-                </p>
-
-                <div className="flex flex-wrap items-center gap-1.5 mb-4">
-                  {mod.loaders.map(loader => (
-                    <span
-                      key={loader}
-                      className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/5 text-slate-400 font-mono"
-                    >
-                      {loader}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Card Footer: Install / Update / Remove */}
-              <div className="flex items-center justify-between pt-3 border-t border-white/10 mt-auto">
-                <span className="text-[11px] text-slate-400 font-mono">
-                  {mod.installed ? `v${mod.installed_version}` : `v${mod.latest_version}`}
-                </span>
-
-                {mod.installed ? (
-                  <div className="flex items-center gap-2">
-                    {hasUpdate ? (
-                      <GlassButton
-                        size="sm"
-                        variant="accent"
-                        isLoading={isBusy}
-                        onClick={() => handleInstall(mod.id)}
-                        leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
-                      >
-                        Update to {mod.latest_version}
-                      </GlassButton>
-                    ) : (
-                      <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
-                        <Check className="w-3.5 h-3.5" /> Installed
-                      </span>
-                    )}
-
-                    <button
-                      onClick={() => handleUninstall(mod.id)}
-                      title="Uninstall plugin jar"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <GlassButton
-                    size="sm"
-                    variant="glass"
-                    isLoading={isBusy}
-                    onClick={() => handleInstall(mod.id)}
-                    leftIcon={<Download className="w-3.5 h-3.5 text-sky-400" />}
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-sm font-bold text-white truncate">{item.title}</h4>
+                  <a
+                    href={`https://modrinth.com/${item.project_type}/${item.slug}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-slate-400 hover:text-white shrink-0"
                   >
-                    1-Click Install
-                  </GlassButton>
-                )}
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+                <p className="text-[11px] text-slate-400 font-mono">
+                  by {item.author} • {item.downloads.toLocaleString()} DLs
+                </p>
               </div>
-            </GlassCard>
-          );
-        })}
+            </div>
+
+            <p className="text-xs text-slate-300 line-clamp-2 flex-1">{item.description}</p>
+
+            <div className="pt-2 border-t border-white/5 flex justify-end">
+              {installedMap[item.project_id] ? (
+                <span className="text-xs text-emerald-400 font-mono flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5" /> {installedMap[item.project_id]}
+                </span>
+              ) : (
+                <GlassButton
+                  variant="primary"
+                  size="sm"
+                  disabled={installingId === item.project_id}
+                  onClick={() => handleInstall(item)}
+                >
+                  <Download className="w-3.5 h-3.5 mr-1.5" />
+                  {installingId === item.project_id ? 'Downloading...' : 'Install'}
+                </GlassButton>
+              )}
+            </div>
+          </GlassCard>
+        ))}
       </div>
     </div>
   );

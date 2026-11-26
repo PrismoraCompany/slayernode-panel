@@ -14,6 +14,7 @@ export interface ServerStats {
     tx_bytes: number;
   };
   disk_bytes: number;
+  disk_limit_bytes?: number;
   uptime_ms: number;
   state: ServerStatus;
 }
@@ -73,9 +74,12 @@ export interface Server {
   egg_id: number;
   egg_name: string;
   nest_id: number;
+  node_name?: string;
   docker_image: string;
   startup: string;
   variables: ServerEggVariable[];
+  telemetry?: ServerStats | null;
+  sftp_details?: { ip: string; port: number };
   pinned?: boolean;
   created_at: string;
   updated_at: string;
@@ -201,6 +205,9 @@ export interface Node {
   is_online: boolean;
   daemon_version: string;
   allow_auto_allocation?: boolean;
+  ping_ms?: number | null;
+  latency_ms?: number | null;
+  system_info?: any;
 }
 
 export interface NodeAllocation {
@@ -230,6 +237,8 @@ export interface Location {
   id: number;
   short: string;
   long: string;
+  short_code?: string;
+  description?: string;
   nodes_count: number;
   servers_count: number;
 }
@@ -350,9 +359,9 @@ export interface SubServerSplit {
 // ==========================================
 
 export type NavigationLayoutType = 'floating_top' | 'collapsible_sidebar' | 'dock_bar';
-export type ButtonShapeType = 'pill' | 'squircle' | 'rounded';
+export type ButtonShapeType = 'pill' | 'squircle' | 'rounded' | 'square';
 export type ButtonStyleType = 'liquid_glass' | 'solid_accent' | 'soft_tinted';
-export type AuthBackgroundType = 'aurora_mesh' | 'particle_grid' | 'wallpaper' | 'video' | 'image';
+export type AuthBackgroundType = 'aurora_mesh' | 'particle_grid' | 'wallpaper' | 'video' | 'image' | 'solid';
 export type AuthCardPositionType = 'center' | 'split_left' | 'split_right';
 
 export interface CustomNavLink {
@@ -477,3 +486,5 @@ export interface UserActivityLog {
   ip: string;
   timestamp: string;
 }
+
+export type AuthAuditLog = UserActivityLog;

@@ -3,6 +3,7 @@ import { motion, HTMLMotionProps } from 'framer-motion';
 
 interface GlassCardProps extends HTMLMotionProps<'div'> {
   interactive?: boolean;
+  hoverable?: boolean;
   specularHeader?: boolean;
   children: React.ReactNode;
   className?: string;
@@ -10,14 +11,16 @@ interface GlassCardProps extends HTMLMotionProps<'div'> {
 
 export const GlassCard: React.FC<GlassCardProps> = ({
   interactive = false,
+  hoverable = false,
   specularHeader = true,
   children,
   className = '',
   ...props
 }) => {
+  const isHover = interactive || hoverable;
   return (
     <motion.div
-      whileHover={interactive ? { y: -3, scale: 1.008 } : undefined}
+      whileHover={isHover ? { y: -3, scale: 1.008 } : undefined}
       transition={{ type: 'spring', stiffness: 380, damping: 28 }}
       className={`glass-card relative overflow-hidden ${interactive ? 'cursor-pointer' : ''} ${className}`}
       {...props}

@@ -20,6 +20,7 @@ import { GlassModal } from '../ui/GlassModal';
 import { GlassInput } from '../ui/GlassInput';
 import { GlassBadge } from '../ui/GlassBadge';
 import { GlassToggle } from '../ui/GlassToggle';
+import { apiFetch } from '../../lib/api';
 import { User } from '../../types';
 
 export const UsersManager: React.FC = () => {
@@ -53,32 +54,20 @@ export const UsersManager: React.FC = () => {
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/application/users');
+      const res = await apiFetch('/api/application/users');
       if (res.ok) {
         const json = await res.json();
-        setUsers(json.data.map((d: any) => ({
-          ...d.attributes,
-          is_admin: d.attributes.root_admin,
-        })));
-        return;
+        setUsers(
+          (json.data || []).map((d: any) => {
+            const a = d.attributes || d;
+            return { ...a, is_admin: Boolean(a.root_admin ?? a.is_admin) };
+          })
+        );
       }
     } catch {}
-    // Fallback if backend unreachable: Only the 1 protected root admin account
-    setUsers([
-      {
-        id: 1,
-        uuid: 'c82736b4-21c8-4720-a6ff-84ad1f21136b',
-        username: 'admin',
-        email: 'admin@slayernode.xyz',
-        name_first: 'System',
-        name_last: 'Administrator',
-        language: 'en',
-        is_admin: true,
-        two_factor_enabled: true,
-        created_at: '2026-11-01',
-      },
-    ]);
-    setIsLoading(false);
+    finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -95,9 +84,8 @@ export const UsersManager: React.FC = () => {
     }
 
     try {
-      const res = await fetch('/api/application/users', {
+      const res = await apiFetch('/api/application/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: newUsername.trim(),
           email: newEmail.trim(),
@@ -151,9 +139,8 @@ export const UsersManager: React.FC = () => {
     }
 
     try {
-      const res = await fetch(`/api/application/users/${editingUser.id}`, {
+      const res = await apiFetch(`/api/application/users/${editingUser.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name_first: editFirstName.trim(),
           name_last: editLastName.trim(),
@@ -179,7 +166,6 @@ export const UsersManager: React.FC = () => {
   };
 
   const handleDeleteUser = async (user: User) => {
-    // SECURITY CHECK: Strictly Disallow Deleting Main Admin ID 1
     if (user.id === 1) {
       alert('Security Policy: The primary system administrator account (ID 1) is permanent and cannot be deleted.');
       return;
@@ -190,7 +176,7 @@ export const UsersManager: React.FC = () => {
     }
 
     try {
-      const res = await fetch(`/api/application/users/${user.id}`, {
+      const res = await apiFetch(`/api/application/users/${user.id}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
@@ -239,7 +225,8 @@ export const UsersManager: React.FC = () => {
 
       {/* Users Table */}
       <GlassCard className="overflow-hidden">
-        <table className="w-full text-left border-collapse text-xs">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
           <thead>
             <tr className="border-b border-white/10 bg-white/5 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
               <th className="p-3.5">User</th>
@@ -273,15 +260,15 @@ export const UsersManager: React.FC = () => {
                     </div>
                   </td>
 
-                  <td className="p-3.5 text-slate-300 font-mono hidden sm:table-cell">{u.email}</td>
+                  <td className="p-3.5 text-slate-300 font-mono hidden sm:table-cell whitespace-nowrap">{u.email}</td>
 
-                  <td className="p-3.5">
+                  <td className="p-3.5 whitespace-nowrap">
                     <GlassBadge status={u.is_admin ? 'running' : 'default'}>
-                      {u.is_admin ? 'ROOT ADMINISTRATOR' : 'CLIENT USER'}
+                      {u.is_admin ? 'ROOT ADMIN' : 'CLIENT USER'}
                     </GlassBadge>
                   </td>
 
-                  <td className="p-3.5 hidden md:table-cell">
+                  <td className="p-3.5 hidden md:table-cell whitespace-nowrap">
                     {u.two_factor_enabled ? (
                       <span className="text-emerald-400 text-[11px] font-semibold flex items-center gap-1">
                         <ShieldCheck className="w-3.5 h-3.5" /> 2FA Active
@@ -291,11 +278,11 @@ export const UsersManager: React.FC = () => {
                     )}
                   </td>
 
-                  <td className="p-3.5 text-slate-400 text-[11px] hidden lg:table-cell">
+                  <td className="p-3.5 text-slate-400 text-[11px] hidden lg:table-cell whitespace-nowrap">
                     {u.created_at?.slice(0, 10)}
                   </td>
 
-                  <td className="p-3.5 text-right">
+                  <td className="p-3.5 text-right whitespace-nowrap">
                     <div className="flex items-center justify-end gap-1.5">
                       {/* Edit Button */}
                       <button
@@ -329,7 +316,8 @@ export const UsersManager: React.FC = () => {
               );
             })}
           </tbody>
-        </table>
+          </table>
+        </div>
       </GlassCard>
 
       {/* CREATE USER MODAL */}

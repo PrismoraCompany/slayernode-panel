@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ThemeStudioSettings } from '../types';
+import { apiFetch } from '../lib/api';
 
 export const DEFAULT_THEME: ThemeStudioSettings = {
   id: 'default',
@@ -176,6 +177,21 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [previewTheme, setPreviewTheme] = useState<ThemeStudioSettings>(theme);
   const [isDirty, setIsDirty] = useState(false);
 
+  // Hydrate live theme, wallpaper, and addon settings from backend on boot
+  useEffect(() => {
+    fetch('/api/studio/theme', { credentials: 'same-origin' })
+      .then(res => (res.ok ? res.json() : null))
+      .then(serverTheme => {
+        if (serverTheme && typeof serverTheme === 'object') {
+          const merged = { ...DEFAULT_THEME, ...serverTheme };
+          setTheme(merged);
+          setPreviewTheme(merged);
+          localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(merged));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Apply CSS Variables to Document Root dynamically
   useEffect(() => {
     const active = previewTheme;
@@ -201,14 +217,13 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       root.style.setProperty('--font-family', `'${active.font_family}', -apple-system, sans-serif`);
     }
 
-    // Custom CSS Element injection
     let customStyleTag = document.getElementById('slayernode-custom-css');
     if (!customStyleTag) {
       customStyleTag = document.createElement('style');
       customStyleTag.id = 'slayernode-custom-css';
       document.head.appendChild(customStyleTag);
     }
-    customStyleTag.innerHTML = active.custom_css || '';
+    customStyleTag.textContent = active.custom_css || '';
   }, [previewTheme]);
 
   const updatePreview = (partial: Partial<ThemeStudioSettings>) => {
@@ -223,9 +238,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setTheme(previewTheme);
     localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(previewTheme));
     setIsDirty(false);
-    fetch('/api/studio/theme', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    apiFetch('/api/studio/theme', {
+      method: 'PUT',
       body: JSON.stringify(previewTheme),
     }).catch(() => {});
   };
@@ -237,7 +251,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.removeItem('slayernode_theme_settings');
     localStorage.removeItem('slayer_theme_v1');
     setIsDirty(false);
-    fetch('/api/studio/theme/reset', { method: 'POST' }).catch(() => {});
+    apiFetch('/api/studio/theme/reset', { method: 'POST' }).catch(() => {});
   };
 
   const applyPreset = (presetName: string) => {

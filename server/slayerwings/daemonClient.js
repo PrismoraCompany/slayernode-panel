@@ -1,10 +1,10 @@
 /**
  * SlayerWings Engine Daemon REST API Client
- * Handles high-speed HTTP/WebSocket requests to the SlayerWings daemon (default port 8443)
+ * Handles authenticated HTTP requests to the SlayerWings daemon (default port 8443)
  */
 
 export class SlayerWingsClient {
-  constructor(nodeFqdn, daemonPort = 8443, token, scheme = 'https') {
+  constructor(nodeFqdn, daemonPort = 8443, token, scheme = 'http') {
     this.baseUrl = `${scheme}://${nodeFqdn}:${daemonPort}`;
     this.token = token;
   }
@@ -18,55 +18,87 @@ export class SlayerWingsClient {
       ...options.headers,
     };
 
-    try {
-      const res = await fetch(url, { ...options, headers });
-      if (!res.ok) {
-        throw new Error(`SlayerWings HTTP ${res.status}: ${res.statusText}`);
-      }
-      if (res.status === 204) return null;
-      return await res.json();
-    } catch (err) {
-      console.warn(`[SlayerWingsClient] Request failed for ${endpoint}:`, err.message);
-      // Return simulated success response when running in demo/offline mode
-      return { success: true, simulated: true, error: err.message };
+    const res = await fetch(url, { ...options, headers });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`SlayerWings HTTP ${res.status}: ${text}`);
     }
+    if (res.status === 204) return null;
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      return await res.json();
+    }
+    return await res.text();
   }
 
-  // Server Power Actions: start, stop, restart, kill
-  async sendPower(serverUuid, action) {
-    return this.request(`/api/servers/${serverUuid}/power`, {
+  async sendPower(serverUuid, action, extraPayload = {}) {
+    return this.request(`/api/servers/${encodeURIComponent(serverUuid)}/power`, {
       method: 'POST',
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, ...extraPayload }),
     });
   }
 
-  // Stdin command injection
   async sendCommand(serverUuid, command) {
-    return this.request(`/api/servers/${serverUuid}/commands`, {
+    return this.request(`/api/servers/${encodeURIComponent(serverUuid)}/commands`, {
       method: 'POST',
       body: JSON.stringify({ commands: [command] }),
     });
   }
 
-  // File operations
   async listFiles(serverUuid, dir = '/') {
-    return this.request(`/api/servers/${serverUuid}/files/list-directory?directory=${encodeURIComponent(dir)}`);
+    return this.request(`/api/servers/${encodeURIComponent(serverUuid)}/files/list?directory=${encodeURIComponent(dir)}`);
   }
 
   async readFile(serverUuid, filePath) {
-    return this.request(`/api/servers/${serverUuid}/files/contents?file=${encodeURIComponent(filePath)}`);
+    return this.request(`/api/servers/${encodeURIComponent(serverUuid)}/files/contents?file=${encodeURIComponent(filePath)}`);
   }
 
-  async writeFile(serverUuid, filePath, content) {
-    return this.request(`/api/servers/${serverUuid}/files/write?file=${encodeURIComponent(filePath)}`, {
+  async writeFile(serverUuid, filePath, content, encoding = 'utf8') {
+    return this.request(`/api/servers/${encodeURIComponent(serverUuid)}/files/write`, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: content,
+      body: JSON.stringify({ file: filePath, content, encoding }),
     });
   }
 
-  // Generate ephemeral WebSocket token for live terminal streaming
-  async getWebSocketToken(serverUuid) {
-    return this.request(`/api/servers/${serverUuid}/ws`);
+  async pullFile(serverUuid, url, directory = '/', filename = '') {
+    return this.request(`/api/servers/${encodeURIComponent(serverUuid)}/files/pull`, {
+      method: 'POST',
+      body: JSON.stringify({ url, directory, filename }),
+    });
+  }
+
+  async deleteFiles(serverUuid, files) {
+    return this.request(`/api/servers/${encodeURIComponent(serverUuid)}/files/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ files }),
+    });
+  }
+
+  async createFolder(serverUuid, root, name) {
+    return this.request(`/api/servers/${encodeURIComponent(serverUuid)}/files/create-folder`, {
+      method: 'POST',
+      body: JSON.stringify({ root, name }),
+    });
+  }
+
+  async renameFiles(serverUuid, root, files) {
+    return this.request(`/api/servers/${encodeURIComponent(serverUuid)}/files/rename`, {
+      method: 'POST',
+      body: JSON.stringify({ root, files }),
+    });
+  }
+
+  async compressFiles(serverUuid, root, files, name) {
+    return this.request(`/api/servers/${encodeURIComponent(serverUuid)}/files/compress`, {
+      method: 'POST',
+      body: JSON.stringify({ root, files, name }),
+    });
+  }
+
+  async decompressFile(serverUuid, root, file) {
+    return this.request(`/api/servers/${encodeURIComponent(serverUuid)}/files/decompress`, {
+      method: 'POST',
+      body: JSON.stringify({ root, file }),
+    });
   }
 }

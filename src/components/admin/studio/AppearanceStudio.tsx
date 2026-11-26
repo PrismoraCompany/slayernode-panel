@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Palette,
@@ -26,6 +26,7 @@ import {
   X,
 } from 'lucide-react';
 import { useTheme, PRESET_THEMES } from '../../../context/ThemeContext';
+import { useServers } from '../../../context/ServerContext';
 import { BlueprintExtension } from '../../../types';
 import { GlassCard } from '../../ui/GlassCard';
 import { GlassButton } from '../../ui/GlassButton';
@@ -35,6 +36,7 @@ import { GlassModal } from '../../ui/GlassModal';
 import { ServerDashboard } from '../../server/ServerDashboard';
 import { LoginView } from '../../auth/LoginView';
 import { ConsoleTerminal } from '../../server/ConsoleTerminal';
+import { apiFetch } from '../../../lib/api';
 
 interface AppearanceStudioProps {
   onExit?: () => void;
@@ -88,11 +90,12 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
     let isMounted = true;
     const loadBlueprint = async () => {
       try {
-        const res = await fetch('/api/blueprint/extensions');
+        const res = await apiFetch('/api/blueprint/extensions');
         if (res.ok) {
           const d = await res.json();
-          if (isMounted && Array.isArray(d?.extensions)) {
-            setBlueprintExtensions(d.extensions);
+          const list = d?.data || d?.extensions;
+          if (isMounted && Array.isArray(list)) {
+            setBlueprintExtensions(list);
           }
         }
       } catch {}
@@ -103,9 +106,8 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
 
   const toggleBlueprintExtension = async (id: string, current: boolean) => {
     try {
-      await fetch('/api/blueprint/extensions/toggle', {
+      await apiFetch('/api/blueprint/extensions/toggle', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, enabled: !current }),
       });
       setBlueprintExtensions(prev => prev.map(e => (e.id === id ? { ...e, enabled: !current } : e)));
@@ -139,9 +141,8 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
           } catch {}
         }
 
-        const res = await fetch('/api/blueprint/upload', {
+        const res = await apiFetch('/api/blueprint/upload', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filename: file.name, manifest }),
         });
         if (res.ok) {
@@ -157,11 +158,42 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
     reader.readAsText(file);
   };
 
+  const { servers, activeServer, selectServer } = useServers();
   const [previewMode, setPreviewMode] = useState<'dashboard' | 'login' | 'console'>('dashboard');
+
+  useEffect(() => {
+    if (previewMode === 'console' && !activeServer && servers.length > 0) {
+      selectServer(servers[0].uuid);
+    }
+  }, [previewMode, activeServer, servers, selectServer]);
   const [devicePreview, setDevicePreview] = useState<'desktop' | 'mobile'>('desktop');
   const [showJsonModal, setShowJsonModal] = useState(false);
   const [jsonText, setJsonText] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);
+  const previewBoxRef = useRef<HTMLDivElement>(null);
+  const [previewBoxWidth, setPreviewBoxWidth] = useState(740);
+
+  useEffect(() => {
+    const el = previewBoxRef.current;
+    if (!el) return;
+    const updateWidth = () => {
+      const w = el.clientWidth;
+      if (w > 0) setPreviewBoxWidth(w);
+    };
+    updateWidth();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(updateWidth);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
+
+  const desktopZoom =
+    devicePreview === 'desktop' && previewBoxWidth > 120 && previewBoxWidth < 1180
+      ? Math.max(0.28, Number(((previewBoxWidth - 4) / 1180).toFixed(3)))
+      : 1;
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, callback: (url: string) => void) => {
     const file = e.target.files?.[0];
@@ -242,12 +274,12 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
       {/* ========================================================
           1. TOP APP BAR (Dedicated Full-Screen Toolbar)
           ======================================================== */}
-      <header className="px-4 sm:px-6 py-3.5 bg-[#181A20]/95 backdrop-blur-md border-b border-white/10 sticky top-0 z-50 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <header className="px-4 sm:px-6 py-3 bg-[#181A20]/95 backdrop-blur-md border-b border-white/10 sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           {onExit && (
             <button
               onClick={onExit}
-              className="p-2 rounded-lg bg-[#21242C] hover:bg-[#2A2E38] text-white border border-white/10 transition-colors cursor-pointer flex items-center gap-2 text-xs font-bold"
+              className="p-2 rounded-lg bg-[#21242C] hover:bg-[#2A2E38] text-white border border-white/10 transition-colors cursor-pointer flex items-center gap-2 text-xs font-bold whitespace-nowrap shrink-0"
               title="Exit to Admin Area"
             >
               <ArrowLeft className="w-4 h-4 text-[#DC2626]" />
@@ -255,22 +287,22 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
             </button>
           )}
 
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-[#DC2626]/20 border border-[#DC2626]/30 text-[#DC2626]">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 rounded-lg bg-[#DC2626]/20 border border-[#DC2626]/30 text-[#DC2626] shrink-0">
               <Palette className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-sm sm:text-base font-black text-white tracking-wide">
+                <h1 className="text-sm sm:text-base font-black text-white tracking-wide whitespace-nowrap">
                   Appearance & Theme Studio
                 </h1>
                 {isDirty && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 whitespace-nowrap">
                     UNSAVED
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-slate-400 hidden sm:block">
+              <p className="text-[11px] text-slate-400 hidden 2xl:block truncate">
                 Real-time visual editor. Change colors, solid canvas, wallpapers & UI layout.
               </p>
             </div>
@@ -278,9 +310,9 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
         </div>
 
         {/* Global Toolbar Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
           {/* Preset Fast Selector */}
-          <div className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[#21242C] border border-white/10 text-xs">
+          <div className="hidden xl:flex items-center gap-1 px-2 py-1 rounded-lg bg-[#21242C] border border-white/10 text-xs whitespace-nowrap">
             <span className="text-slate-400 text-[11px] font-semibold flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-[#DC2626]" /> Preset:
             </span>
@@ -288,7 +320,7 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
               <button
                 key={presetName}
                 onClick={() => applyPreset(presetName)}
-                className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap ${
                   previewTheme.preset_name === presetName
                     ? 'bg-[#DC2626] text-white'
                     : 'text-slate-400 hover:text-white'
@@ -336,7 +368,7 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
           ======================================================== */}
       <div className="flex-1 flex flex-col md:flex-row relative z-10 overflow-hidden">
         {/* Left Sidebar Menu (Category Selector) */}
-        <aside className="w-full md:w-64 bg-[#181A20] border-r border-white/10 shrink-0 p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto">
+        <aside className="w-full md:w-52 bg-[#181A20] border-r border-white/10 shrink-0 p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto">
           <span className="hidden md:block text-[10px] font-bold uppercase tracking-wider text-slate-500 px-3 py-2">
             Studio Sections
           </span>
@@ -366,7 +398,7 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
         </aside>
 
         {/* Center Panel: Controls for Active Section */}
-        <div className="w-full md:w-[460px] lg:w-[500px] shrink-0 p-4 sm:p-6 overflow-y-auto border-r border-white/10 bg-[#14161B]/90">
+        <div className="w-full md:w-[330px] lg:w-[350px] xl:w-[365px] shrink-0 p-3 sm:p-4 overflow-y-auto border-r border-white/10 bg-[#14161B]/90">
           {/* SECTION: Canvas & Wallpaper */}
           {activeSection === 'canvas' && (
             <GlassCard className="p-5 flex flex-col gap-5">
@@ -1073,7 +1105,7 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
         </div>
 
         {/* Right Panel: Live Interactive Preview Sandbox */}
-        <div className="flex-1 p-4 sm:p-6 flex flex-col gap-4 overflow-y-auto">
+        <div className="flex-1 min-w-0 p-3 sm:p-4 flex flex-col gap-3 overflow-y-auto">
           {/* Sandbox Top Controller Toolbar */}
           <div className="flex items-center justify-between bg-[#181A20] p-2.5 rounded-lg border border-white/10">
             <div className="flex items-center gap-1">
@@ -1127,7 +1159,8 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
 
           {/* Interactive Screen Sandbox Container */}
           <div
-            className={`transition-all duration-300 mx-auto w-full rounded-xl overflow-hidden border border-white/20 shadow-2xl relative min-h-[640px] max-h-[840px] overflow-y-auto ${
+            ref={previewBoxRef}
+            className={`transition-all duration-300 mx-auto w-full rounded-xl overflow-hidden border border-white/20 shadow-2xl relative min-h-[640px] max-h-[840px] overflow-y-auto overflow-x-hidden ${
               devicePreview === 'mobile' ? 'max-w-sm' : 'max-w-full'
             }`}
             style={{ backgroundColor: previewTheme.bg_canvas || '#111216' }}
@@ -1145,12 +1178,25 @@ export const AppearanceStudio: React.FC<AppearanceStudioProps> = ({ onExit }) =>
             )}
 
             {/* Live Interactive Component */}
-            <div className="p-4 relative z-10">
+            <div
+              className="p-5 relative z-10"
+              style={
+                devicePreview === 'desktop' && desktopZoom < 1
+                  ? ({ zoom: desktopZoom, width: '1180px' } as React.CSSProperties)
+                  : undefined
+              }
+            >
               {previewMode === 'dashboard' && (
                 <ServerDashboard onSelectServerDetail={() => setPreviewMode('console')} />
               )}
               {previewMode === 'console' && (
-                <ConsoleTerminal />
+                activeServer ? (
+                  <ConsoleTerminal />
+                ) : (
+                  <GlassCard className="p-8 text-center text-xs text-slate-400">
+                    Deploy at least one server instance to preview the live Console Terminal here.
+                  </GlassCard>
+                )
               )}
               {previewMode === 'login' && (
                 <div className="relative min-h-[580px] flex items-center justify-center">

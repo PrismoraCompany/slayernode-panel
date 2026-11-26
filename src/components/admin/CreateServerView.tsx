@@ -17,6 +17,7 @@ import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
 import { GlassInput } from '../ui/GlassInput';
 import { GlassBadge } from '../ui/GlassBadge';
+import { apiFetch } from '../../lib/api';
 import { Node, User, Nest, Egg } from '../../types';
 
 interface CreateServerViewProps {
@@ -87,14 +88,14 @@ export const CreateServerView: React.FC<CreateServerViewProps> = ({ onBack, onSe
     const fetchData = async () => {
       try {
         const [nodesRes, usersRes, nestsRes] = await Promise.all([
-          fetch('/api/application/nodes'),
-          fetch('/api/application/users'),
-          fetch('/api/application/nests'),
+          apiFetch('/api/application/nodes'),
+          apiFetch('/api/application/users'),
+          apiFetch('/api/application/nests'),
         ]);
 
         if (nodesRes.ok) {
           const d = await nodesRes.json();
-          const loadedNodes = d.data.map((x: any) => x.attributes);
+          const loadedNodes = (d.data || []).map((x: any) => x.attributes || x);
           setNodes(loadedNodes);
           if (loadedNodes.length > 0) {
             setSelectedNodeId(String(loadedNodes[0].id));
@@ -103,7 +104,7 @@ export const CreateServerView: React.FC<CreateServerViewProps> = ({ onBack, onSe
 
         if (usersRes.ok) {
           const d = await usersRes.json();
-          const loadedUsers = d.data.map((x: any) => x.attributes);
+          const loadedUsers = (d.data || []).map((x: any) => x.attributes || x);
           setUsers(loadedUsers);
           if (loadedUsers.length > 0) {
             setSelectedOwnerId(String(loadedUsers[0].id));
@@ -112,7 +113,7 @@ export const CreateServerView: React.FC<CreateServerViewProps> = ({ onBack, onSe
 
         if (nestsRes.ok) {
           const d = await nestsRes.json();
-          const loadedNests = d.data.map((x: any) => x.attributes);
+          const loadedNests = (d.data || []).map((x: any) => x.attributes || x);
           setNests(loadedNests);
           if (loadedNests.length > 0) {
             setSelectedNestId(String(loadedNests[0].id));
@@ -130,10 +131,10 @@ export const CreateServerView: React.FC<CreateServerViewProps> = ({ onBack, onSe
     if (!selectedNestId) return;
     const fetchEggs = async () => {
       try {
-        const res = await fetch(`/api/application/nests/${selectedNestId}/eggs`);
+        const res = await apiFetch(`/api/application/nests/${selectedNestId}/eggs`);
         if (res.ok) {
           const d = await res.json();
-          const loadedEggs = d.data.map((x: any) => x.attributes);
+          const loadedEggs = (d.data || []).map((x: any) => x.attributes || x);
           setEggs(loadedEggs);
           if (loadedEggs.length > 0) {
             setSelectedEggId(String(loadedEggs[0].id));
@@ -152,10 +153,10 @@ export const CreateServerView: React.FC<CreateServerViewProps> = ({ onBack, onSe
     if (!selectedNodeId) return;
     const fetchAllocations = async () => {
       try {
-        const res = await fetch(`/api/application/nodes/${selectedNodeId}/allocations`);
+        const res = await apiFetch(`/api/application/nodes/${selectedNodeId}/allocations`);
         if (res.ok) {
           const d = await res.json();
-          const loadedAllocs = d.data.map((x: any) => x.attributes);
+          const loadedAllocs = (d.data || []).map((x: any) => x.attributes || x);
           setAllocations(loadedAllocs);
           const unassigned = loadedAllocs.filter((a: any) => !a.server_id);
           if (unassigned.length > 0) {
@@ -214,6 +215,11 @@ export const CreateServerView: React.FC<CreateServerViewProps> = ({ onBack, onSe
     setCreationStep('Allocating server volume and configuring container daemon...');
 
     try {
+      const chosenEgg = eggs.find(eg => String(eg.id) === String(selectedEggId));
+      const baseEnv: Record<string, string> = {};
+      for (const v of (chosenEgg?.variables || [])) {
+        baseEnv[v.env_variable] = String(v.server_value || v.default_value || '');
+      }
       const payload = {
         name: serverName.trim(),
         description: serverDesc.trim(),
@@ -227,10 +233,11 @@ export const CreateServerView: React.FC<CreateServerViewProps> = ({ onBack, onSe
         disk: parseInt(diskLimit) || 10240,
         cpu: parseInt(cpuLimit) || 100,
         io: parseInt(blockIoWeight) || 500,
-        start_on_deploy: startOnDeploy,
+        start_on_completion: startOnDeploy,
         docker_image: customDockerImage.trim() || dockerImage,
         startup: startupCommand,
         environment: {
+          ...baseEnv,
           MINECRAFT_VERSION: minecraftVersion,
           SERVER_JARFILE: serverJarFile,
           DL_PATH: downloadPath,
@@ -238,9 +245,8 @@ export const CreateServerView: React.FC<CreateServerViewProps> = ({ onBack, onSe
         },
       };
 
-      const res = await fetch('/api/application/servers', {
+      const res = await apiFetch('/api/application/servers', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -421,7 +427,7 @@ export const CreateServerView: React.FC<CreateServerViewProps> = ({ onBack, onSe
                 ) : (
                   allocations.map(a => (
                     <option key={a.id} value={a.id} className="bg-slate-900 text-white">
-                      {a.ip}:{a.port} {a.alias ? `(${a.alias})` : ''} {a.server_id ? '[Assigned]' : '[Available]'}
+                      {a.ip}:{a.port} {a.server_id ? '(In Use)' : '(Free)'}
                     </option>
                   ))
                 )}
@@ -896,26 +902,26 @@ export const CreateServerView: React.FC<CreateServerViewProps> = ({ onBack, onSe
         </div>
 
         {/* BOTTOM ACTION BAR */}
-        <div className="p-4 rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur-md flex items-center justify-between">
+        <div className="p-4 rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition-colors text-sm font-medium border border-white/10"
+            className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition-colors text-sm font-medium border border-white/10 whitespace-nowrap shrink-0 cursor-pointer"
           >
             Cancel
           </button>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap justify-end">
             {creationStep && (
               <span className="text-xs text-cyan-300 flex items-center gap-2 font-mono">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
                 {creationStep}
               </span>
             )}
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-7 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-white font-semibold text-sm shadow-lg shadow-emerald-500/20 disabled:opacity-50 transition-all flex items-center gap-2"
+              className="px-7 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-white font-semibold text-sm shadow-lg shadow-emerald-500/20 disabled:opacity-50 transition-all flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
             >
               {isSubmitting ? (
                 <>

@@ -32,6 +32,7 @@ import { GlassModal } from '../ui/GlassModal';
 import { GlassInput } from '../ui/GlassInput';
 import { Node, NodeAllocation, Server as ServerType } from '../../types';
 import { useServer } from '../../context/ServerContext';
+import { apiFetch } from '../../lib/api';
 import { CreateNodeView } from './nodes/CreateNodeView';
 
 export const INITIAL_NODES: Node[] = [];
@@ -85,7 +86,7 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
 
   const fetchNodes = async () => {
     try {
-      const res = await fetch('/api/application/nodes');
+      const res = await apiFetch('/api/application/nodes');
       if (res.ok) {
         const json = await res.json();
         if (Array.isArray(json.data)) {
@@ -126,7 +127,7 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
 
   const loadAllocations = async (nodeId: number) => {
     try {
-      const res = await fetch(`/api/application/nodes/${nodeId}/allocations`);
+      const res = await apiFetch(`/api/application/nodes/${nodeId}/allocations`);
       if (res.ok) {
         const json = await res.json();
         if (Array.isArray(json.data)) {
@@ -163,9 +164,8 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
     };
 
     try {
-      await fetch(`/api/application/nodes/${selectedNode.id}`, {
+      await apiFetch(`/api/application/nodes/${selectedNode.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedNode),
       });
     } catch {}
@@ -190,9 +190,8 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
     setAllocError(null);
 
     try {
-      const res = await fetch(`/api/application/nodes/${selectedNode.id}/allocations`, {
+      const res = await apiFetch(`/api/application/nodes/${selectedNode.id}/allocations`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ip: allocIp.trim(), ports: allocPorts.trim(), alias: allocAlias.trim() }),
       });
       if (res.ok) {
@@ -211,7 +210,7 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
   const handleDeleteAllocation = async (allocId: number) => {
     if (!selectedNode) return;
     try {
-      await fetch(`/api/application/nodes/${selectedNode.id}/allocations/${allocId}`, {
+      await apiFetch(`/api/application/nodes/${selectedNode.id}/allocations/${allocId}`, {
         method: 'DELETE',
       });
       setNodeAllocations(prev => prev.filter(a => a.id !== allocId));
@@ -228,14 +227,15 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
     setPingStatus(prev => ({ ...prev, [nodeId]: 'testing' }));
     const t0 = Date.now();
     try {
-      const res = await fetch(`/api/application/nodes/${nodeId}`);
+      const res = await apiFetch(`/api/application/nodes/${nodeId}`);
       if (res.ok) {
         const d = await res.json();
         const attr = d.attributes || d;
         if (attr.is_online) {
-          const latency = attr.ping_ms || Math.max(1, Date.now() - t0);
+          const latency = attr.latency_ms || attr.ping_ms || Math.max(1, Date.now() - t0);
           setPingStatus(prev => ({ ...prev, [nodeId]: `${latency}ms (OK)` }));
-          setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, is_online: true, ping_ms: latency } : n));
+          setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, is_online: true, system_info: attr.system_info, ping_ms: latency } : n));
+          if (selectedNode?.id === nodeId) setSelectedNode(attr);
         } else {
           setPingStatus(prev => ({ ...prev, [nodeId]: 'offline' }));
           setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, is_online: false, ping_ms: null } : n));
@@ -261,7 +261,7 @@ export const NodesManager: React.FC<NodesManagerProps> = ({ onNavigateServer }) 
     if (!confirmDelete) return;
 
     try {
-      const res = await fetch(`/api/application/nodes/${nodeToDelete.id}`, {
+      const res = await apiFetch(`/api/application/nodes/${nodeToDelete.id}`, {
         method: 'DELETE',
       });
       if (res.ok) {
@@ -381,7 +381,7 @@ docker:
               className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 transition-colors flex items-center gap-1.5 cursor-pointer border border-white/10"
             >
               <Wifi className="w-3.5 h-3.5 text-red-500" />
-              {pingStatus[selectedNode.id] === 'testing' ? 'Testing...' : pingStatus[selectedNode.id] === 'online' ? 'Ping: 1.1ms (OK)' : 'Ping Daemon'}
+              {pingStatus[selectedNode.id] || 'Ping Daemon'}
             </button>
 
             <button
@@ -466,19 +466,29 @@ docker:
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
                 <div className="flex justify-between p-3 rounded-xl bg-slate-900/60 border border-white/5">
                   <span className="text-slate-400 font-sans">Operating System / Kernel:</span>
-                  <span className="text-white">Linux 6.8.0-45-generic (x86_64)</span>
+                  <span className="text-white">
+                    {(selectedNode as any).system_info?.os
+                      ? `${(selectedNode as any).system_info.os} ${(selectedNode as any).system_info.kernel} (${(selectedNode as any).system_info.architecture})`
+                      : 'Linux Host (SlayerWings)'}
+                  </span>
                 </div>
                 <div className="flex justify-between p-3 rounded-xl bg-slate-900/60 border border-white/5">
                   <span className="text-slate-400 font-sans">Daemon Engine:</span>
                   <span className="text-red-500">Wings {selectedNode.daemon_version}</span>
                 </div>
                 <div className="flex justify-between p-3 rounded-xl bg-slate-900/60 border border-white/5">
-                  <span className="text-slate-400 font-sans">Docker Daemon Runtime:</span>
-                  <span className="text-white">v27.3.1 (API 1.47, cgroups v2)</span>
+                  <span className="text-slate-400 font-sans">Isolation Runtime:</span>
+                  <span className="text-white">
+                    {(selectedNode as any).system_info?.isolation_engine || (selectedNode as any).system_info?.docker_version || 'cgroups-v2'}
+                  </span>
                 </div>
                 <div className="flex justify-between p-3 rounded-xl bg-slate-900/60 border border-white/5">
-                  <span className="text-slate-400 font-sans">Total Physical CPU Threads:</span>
-                  <span className="text-white">AMD EPYC 9654 (96 Cores, 192 Threads)</span>
+                  <span className="text-slate-400 font-sans">Host CPU:</span>
+                  <span className="text-white">
+                    {(selectedNode as any).system_info?.cpu_model
+                      ? `${(selectedNode as any).system_info.cpu_model} (${(selectedNode as any).system_info.cpu_count} Threads)`
+                      : 'Host CPU'}
+                  </span>
                 </div>
               </div>
             </GlassCard>
@@ -899,7 +909,7 @@ docker:
                       a.href = url;
                       a.download = `config-${selectedNode.uuid.slice(0, 8)}.yml`;
                       a.click();
-                      URL.revokeObjectURL(a);
+                      URL.revokeObjectURL(url);
                     }}
                     leftIcon={<Download className="w-3.5 h-3.5" />}
                   >
@@ -1345,9 +1355,8 @@ docker:
                   daemon_version: 'v1.0.0-slayerwings',
                 };
                 try {
-                  await fetch('/api/application/nodes', {
+                  await apiFetch('/api/application/nodes', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newNode),
                   });
                 } catch {}

@@ -38,7 +38,7 @@ export const LayoutWrapper: React.FC<LayoutWrapperProps> = ({
         <div
           className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center transition-all duration-300"
           style={{
-            backgroundImage: `url(${previewTheme.custom_wallpaper_url})`,
+            backgroundImage: `url("${previewTheme.custom_wallpaper_url.replace(/"/g, '\\"')}")`,
             filter: `blur(${previewTheme.wallpaper_blur || 0}px)`,
             opacity: (previewTheme.wallpaper_opacity ?? 100) / 100,
           }}
@@ -224,7 +224,7 @@ export const LayoutWrapper: React.FC<LayoutWrapperProps> = ({
       {/* ========================================================
           3. MAIN CONTENT WORKSPACE (Right Side on Desktop)
           ======================================================== */}
-      <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+      <main className="relative z-10 flex-1 min-w-0 p-4 sm:p-6 lg:p-8">
         <AnnouncementBanner />
         {children}
       </main>

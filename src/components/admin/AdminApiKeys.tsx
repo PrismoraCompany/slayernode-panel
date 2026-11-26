@@ -4,6 +4,7 @@ import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
 import { GlassModal } from '../ui/GlassModal';
 import { GlassInput } from '../ui/GlassInput';
+import { apiFetch } from '../../lib/api';
 
 interface ApiKeyItem {
   identifier: string;
@@ -21,11 +22,11 @@ export const AdminApiKeys: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   React.useEffect(() => {
-    fetch('/api/application/api-keys')
+    apiFetch('/api/application/api-keys')
       .then(res => res.json())
       .then(d => {
         if (d && Array.isArray(d.data)) {
-          setKeys(d.data.map((x: any) => x.attributes || x));
+          setKeys(d.data.map((x: any) => ({ ...x, description: x.description || x.memo || '' })));
         }
       })
       .catch(() => {});
@@ -38,16 +39,15 @@ export const AdminApiKeys: React.FC = () => {
     }
     setError(null);
     try {
-      const res = await fetch('/api/application/api-keys', {
+      const res = await apiFetch('/api/application/api-keys', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: description.trim() }),
+        body: JSON.stringify({ memo: description.trim(), description: description.trim() }),
       });
       if (res.ok) {
         const d = await res.json();
         const created = d.attributes || d;
-        setKeys(prev => [created, ...prev]);
-        setNewlyCreatedKey(d.secret || 'slayer_sec_generated');
+        setKeys(prev => [{ ...created, description: created.description || created.memo || description.trim() }, ...prev]);
+        setNewlyCreatedKey(d.secret_token || d.secret || '');
         setDescription('');
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -60,11 +60,11 @@ export const AdminApiKeys: React.FC = () => {
 
   const handleRevoke = async (identifier: string) => {
     try {
-      await fetch(`/api/application/api-keys/${identifier}`, { method: 'DELETE' });
-      setKeys(prev => prev.filter(k => k.identifier !== identifier));
-    } catch {
-      setKeys(prev => prev.filter(k => k.identifier !== identifier));
-    }
+      const res = await apiFetch(`/api/application/api-keys/${encodeURIComponent(identifier)}`, { method: 'DELETE' });
+      if (res.ok) {
+        setKeys(prev => prev.filter(k => k.identifier !== identifier));
+      }
+    } catch {}
   };
 
   return (

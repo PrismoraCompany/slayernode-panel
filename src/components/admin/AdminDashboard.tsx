@@ -13,6 +13,7 @@ import {
   Cpu,
 } from 'lucide-react';
 import { useServer } from '../../context/ServerContext';
+import { apiFetch } from '../../lib/api';
 import { Node, User } from '../../types';
 
 interface AdminDashboardProps {
@@ -29,8 +30,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab })
     const fetchData = async () => {
       try {
         const [nodesRes, usersRes] = await Promise.all([
-          fetch('/api/application/nodes'),
-          fetch('/api/application/users'),
+          apiFetch('/api/application/nodes'),
+          apiFetch('/api/application/users'),
         ]);
 
         if (nodesRes.ok) {
@@ -77,18 +78,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab })
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <button
             onClick={() => onNavigateTab('admin-studio')}
-            className="px-4 py-2 rounded-lg bg-[#181A20] hover:bg-[#22252D] text-white text-xs font-semibold border border-white/10 transition-colors flex items-center gap-2 cursor-pointer"
+            className="px-4 py-2 rounded-lg bg-[#181A20] hover:bg-[#22252D] text-white text-xs font-semibold border border-white/10 transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer"
           >
-            <Zap className="w-4 h-4 text-red-500" /> Appearance Studio
+            <Zap className="w-4 h-4 text-red-500 shrink-0" /> Appearance Studio
           </button>
           <button
             onClick={() => onNavigateTab('admin-nodes')}
-            className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-[0_0_16px_rgba(220,38,38,0.3)] flex items-center gap-2 cursor-pointer"
+            className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-[0_0_16px_rgba(220,38,38,0.3)] flex items-center gap-2 whitespace-nowrap cursor-pointer"
           >
-            <HardDrive className="w-4 h-4" /> Manage Nodes
+            <HardDrive className="w-4 h-4 shrink-0" /> Manage Nodes
           </button>
         </div>
       </div>
@@ -127,15 +128,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab })
             <span className="font-semibold flex items-center gap-1.5 text-slate-300">
               <HardDrive className="w-4 h-4 text-red-500" /> Active Nodes
             </span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-lg bg-red-600/10 text-red-400 border border-red-600/20 font-bold">
-              {onlineNodes.length}/{nodes.length} ONLINE
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-lg bg-red-600/10 text-red-400 border border-red-600/20 font-bold whitespace-nowrap shrink-0">
+              {loading ? '...' : `${onlineNodes.length}/${nodes.length} ONLINE`}
             </span>
           </div>
           <span className="text-2xl font-black text-white font-mono tabular-nums my-2">
-            {nodes.length} {nodes.length === 1 ? 'Node' : 'Nodes'}
+            {loading ? 'Syncing...' : `${nodes.length} ${nodes.length === 1 ? 'Node' : 'Nodes'}`}
           </span>
           <span className="text-[11px] text-slate-400 font-mono">
-            {nodes.length === 0 ? 'No daemons connected' : `${onlineNodes.length} SlayerWings synced`}
+            {loading ? 'Probing daemons...' : nodes.length === 0 ? 'No daemons connected' : `${onlineNodes.length} SlayerWings synced`}
           </span>
         </div>
 
@@ -182,11 +183,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab })
               <Users className="w-4 h-4 text-red-500" /> User Accounts
             </span>
             <span className="text-slate-300 font-bold font-mono text-[11px]">
-              {users.length} {users.length === 1 ? 'Account' : 'Accounts'}
+              {loading ? '...' : `${users.length} ${users.length === 1 ? 'Account' : 'Accounts'}`}
             </span>
           </div>
           <span className="text-2xl font-black text-white font-mono tabular-nums my-2">
-            {users.length} {users.length === 1 ? 'User' : 'Users'}
+            {loading ? 'Syncing...' : `${users.length} ${users.length === 1 ? 'User' : 'Users'}`}
           </span>
           <span className="text-[11px] text-slate-400 font-mono">
             1 Protected Root Admin
@@ -236,7 +237,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab })
         </button>
 
         <button
-          onClick={() => onNavigateTab('admin-activity')}
+          onClick={() => onNavigateTab('admin-audit')}
           className="p-3.5 rounded-lg bg-[#181A20] hover:bg-[#22252D] border border-white/10 transition-colors text-left flex items-center justify-between group cursor-pointer"
         >
           <div>
@@ -258,7 +259,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab })
           <span className="text-xs text-slate-400 font-mono">Ports: 8443 (API) • 2202 (SFTP)</span>
         </div>
 
-        {nodes.length === 0 ? (
+        {loading ? (
+          <div className="p-8 rounded-lg bg-[#181A20] border border-white/10 text-center text-xs font-mono text-slate-400">
+            Probing SlayerWings daemon health across nodes...
+          </div>
+        ) : nodes.length === 0 ? (
           <div className="p-8 rounded-lg bg-[#181A20] border border-white/10 text-center flex flex-col items-center justify-center">
             <div className="p-3 rounded-lg bg-red-600/10 text-red-500 mb-3 border border-red-600/20">
               <HardDrive className="w-8 h-8" />
@@ -276,7 +281,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab })
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {nodes.map(node => (
+            {nodes.map(node => {
+              const nodeServers = servers.filter(s => String(s.node_id) === String(node.id));
+              const usedRam = nodeServers.reduce((a, s) => a + (s.limits?.memory || 0), 0);
+              const usedDisk = nodeServers.reduce((a, s) => a + (s.limits?.disk || 0), 0);
+              const ramPct = node.memory > 0 ? Math.min(100, Math.round((usedRam / node.memory) * 100)) : 0;
+              const diskPct = node.disk > 0 ? Math.min(100, Math.round((usedDisk / node.disk) * 100)) : 0;
+              return (
               <div
                 key={node.id}
                 className="p-5 rounded-lg bg-[#181A20] border border-white/10 flex flex-col justify-between shadow-xl"
@@ -295,21 +306,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab })
                   <div className="flex flex-col gap-3 text-xs font-mono">
                     <div>
                       <div className="flex justify-between text-slate-400 mb-1">
-                        <span className="font-sans">Memory Limit: {node.memory.toLocaleString()} MB</span>
-                        <span className="font-bold text-white">{node.memory_overallocate}% Overalloc</span>
+                        <span className="font-sans">Memory Allocated: {usedRam.toLocaleString()} / {node.memory.toLocaleString()} MB</span>
+                        <span className="font-bold text-white">{ramPct}%</span>
                       </div>
                       <div className="h-1.5 w-full bg-[#111216] rounded-lg overflow-hidden">
-                        <div className="h-full bg-red-600 rounded-lg" style={{ width: '10%' }} />
+                        <div className="h-full bg-red-600 rounded-lg transition-all duration-500" style={{ width: `${ramPct}%` }} />
                       </div>
                     </div>
 
                     <div>
                       <div className="flex justify-between text-slate-400 mb-1">
-                        <span className="font-sans">Disk Capacity: {node.disk.toLocaleString()} MB</span>
-                        <span className="font-bold text-white">{node.disk_overallocate}% Overalloc</span>
+                        <span className="font-sans">Disk Allocated: {usedDisk.toLocaleString()} / {node.disk.toLocaleString()} MB</span>
+                        <span className="font-bold text-white">{diskPct}%</span>
                       </div>
                       <div className="h-1.5 w-full bg-[#111216] rounded-lg overflow-hidden">
-                        <div className="h-full bg-white/40 rounded-lg" style={{ width: '10%' }} />
+                        <div className="h-full bg-white/60 rounded-lg transition-all duration-500" style={{ width: `${diskPct}%` }} />
                       </div>
                     </div>
                   </div>
@@ -325,7 +336,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab })
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

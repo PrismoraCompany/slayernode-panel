@@ -23,6 +23,7 @@ import { GlassCard } from '../../ui/GlassCard';
 import { GlassButton } from '../../ui/GlassButton';
 import { GlassInput } from '../../ui/GlassInput';
 import { GlassBadge } from '../../ui/GlassBadge';
+import { apiFetch } from '../../../lib/api';
 import { Server as ServerType } from '../../../types';
 
 interface AdminServerDetailViewProps {
@@ -85,7 +86,7 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
   const fetchServerDetails = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/application/servers/${serverId}`);
+      const res = await apiFetch(`/api/application/servers/${serverId}`);
       if (res.ok) {
         const data = await res.json();
         const s = data.attributes || data;
@@ -99,17 +100,17 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
         setCpuLimit(String(s.limits?.cpu || '100'));
         setCpuPinning(s.cpu_pinning || '');
         setMemoryMb(String(s.limits?.memory || '2048'));
-        setSwapMb(String(s.limits?.swap || '512'));
+        setSwapMb(String(s.limits?.swap || '0'));
         setDiskMb(String(s.limits?.disk || '10240'));
         setIoWeight(String(s.limits?.io || '500'));
         setOomKiller(!!s.oom_killer);
 
         setDatabaseLimit(String(s.feature_limits?.databases ?? '0'));
         setAllocationLimit(String(s.feature_limits?.allocations ?? '1'));
-        setBackupLimit(String(s.feature_limits?.backups ?? '999'));
+        setBackupLimit(String(s.feature_limits?.backups ?? '3'));
 
-        setStartupCmd(s.startup_command || 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar --nogui');
-        setDefaultStartupCmd('java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar --nogui');
+        setStartupCmd(s.startup || s.startup_command || 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar --nogui');
+        setDefaultStartupCmd(s.startup || 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar --nogui');
         setSelectedNestId(String(s.nest_id || '1'));
         setSelectedEggId(String(s.egg_id || '1'));
         setGitAddress(s.git_address || '');
@@ -125,8 +126,8 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
     fetchServerDetails();
 
     Promise.all([
-      fetch('/api/application/users'),
-      fetch('/api/application/nests'),
+      apiFetch('/api/application/users'),
+      apiFetch('/api/application/nests'),
     ])
       .then(async ([uRes, nRes]) => {
         if (uRes.ok) {
@@ -143,7 +144,7 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
 
   useEffect(() => {
     if (selectedNestId) {
-      fetch(`/api/application/nests/${selectedNestId}/eggs`)
+      apiFetch(`/api/application/nests/${selectedNestId}/eggs`)
         .then(res => res.json())
         .then(d => {
           setEggs((d.data || []).map((x: any) => x.attributes || x));
@@ -160,9 +161,8 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
   const handleSaveDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch(`/api/application/servers/${serverId}/details`, {
+      const res = await apiFetch(`/api/application/servers/${serverId}/details`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
           external_id: externalId.trim(),
@@ -185,9 +185,8 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
   const handleSaveBuild = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch(`/api/application/servers/${serverId}/build`, {
+      const res = await apiFetch(`/api/application/servers/${serverId}/build`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cpu: parseInt(cpuLimit, 10),
           cpu_pinning: cpuPinning.trim() || null,
@@ -216,9 +215,8 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
   const handleSaveStartup = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch(`/api/application/servers/${serverId}/startup`, {
+      const res = await apiFetch(`/api/application/servers/${serverId}/startup`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           startup_command: startupCmd.trim(),
           egg_id: parseInt(selectedEggId, 10),
@@ -242,9 +240,8 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
     e.preventDefault();
     if (!newDbName.trim()) return;
     try {
-      const res = await fetch(`/api/application/servers/${serverId}/databases`, {
+      const res = await apiFetch(`/api/application/servers/${serverId}/databases`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           database: newDbName.trim(),
           connections: newDbConnections.trim() || '%',
@@ -261,7 +258,7 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
 
   const handleDeleteDatabase = async (dbId: number) => {
     try {
-      await fetch(`/api/application/servers/${serverId}/databases/${dbId}`, { method: 'DELETE' });
+      await apiFetch(`/api/application/servers/${serverId}/databases/${dbId}`, { method: 'DELETE' });
       showNotification('Database detached.');
       fetchServerDetails();
     } catch {}
@@ -269,7 +266,7 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
 
   const handleServerAction = async (action: string) => {
     try {
-      const res = await fetch(`/api/application/servers/${serverId}/manage/${action}`, {
+      const res = await apiFetch(`/api/application/servers/${serverId}/manage/${action}`, {
         method: 'POST',
       });
       if (res.ok) {
@@ -284,7 +281,7 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
       return;
     }
     try {
-      const res = await fetch(`/api/application/servers/${serverId}?force=${force}`, {
+      const res = await apiFetch(`/api/application/servers/${serverId}?force=${force}`, {
         method: 'DELETE',
       });
       if (res.ok) {
@@ -293,15 +290,6 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
       }
     } catch {}
   };
-
-  if (isLoading || !server) {
-    return (
-      <div className="p-8 text-center text-slate-400">
-        <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-red-500" />
-        <p className="font-semibold text-white">Loading Server Management View...</p>
-      </div>
-    );
-  }
 
   const subtabs = [
     { id: 'about', label: 'About' },
@@ -349,6 +337,11 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
             Admin &gt; Servers &gt; <span className="text-red-400 font-semibold">{server.name}</span> &gt;{' '}
             <span className="capitalize text-white">{activeTab}</span>
           </div>
+          {onOpenConsole && (
+            <GlassButton variant="primary" size="sm" onClick={() => onOpenConsole(server.uuid || server.id)}>
+              <Terminal className="w-3.5 h-3.5 mr-1.5" /> Open Console
+            </GlassButton>
+          )}
         </div>
       </div>
 
@@ -484,8 +477,8 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
                 <User className="w-5 h-5 text-red-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-bold text-white truncate">{server.owner?.username || server.owner_username}</h4>
-                <p className="text-xs text-slate-400 truncate">{server.owner?.email || 'Registered Tenant'}</p>
+                <h4 className="text-sm font-bold text-white truncate">{server.relationships?.user?.username || server.owner?.username || server.owner_username || 'admin'}</h4>
+                <p className="text-xs text-slate-400 truncate">{server.relationships?.user?.email || server.owner?.email || 'Registered Tenant'}</p>
               </div>
             </GlassCard>
 
@@ -495,8 +488,8 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
                 <HardDrive className="w-5 h-5 text-blue-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-bold text-white truncate">{server.node}</h4>
-                <p className="text-xs text-slate-400 font-mono truncate">{server.allocation?.ip}:8443</p>
+                <h4 className="text-sm font-bold text-white truncate">{server.relationships?.node?.name || server.node_name || server.node || 'Local-Node-01'}</h4>
+                <p className="text-xs text-slate-400 font-mono truncate">{server.allocation?.ip || '127.0.0.1'}:{server.relationships?.node?.daemon_listen || 8443}</p>
               </div>
             </GlassCard>
 
@@ -917,7 +910,11 @@ export const AdminServerDetailView: React.FC<AdminServerDetailViewProps> = ({
               <tr>
                 <td className="py-3 font-mono text-slate-400">1</td>
                 <td className="py-3 font-semibold text-white">Default Volume Root</td>
-                <td className="py-3 font-mono text-slate-300">/home/xan/.slayerwings/volumes/{server.uuid}</td>
+                <td className="py-3 font-mono text-slate-300">
+                  {server.relationships?.node?.daemon_base
+                    ? `${server.relationships.node.daemon_base}/${server.uuid}`
+                    : `/var/lib/slayerwings/volumes/${server.uuid}`}
+                </td>
                 <td className="py-3 font-mono text-slate-300">/data</td>
                 <td className="py-3">
                   <GlassBadge status="running">MOUNTED</GlassBadge>

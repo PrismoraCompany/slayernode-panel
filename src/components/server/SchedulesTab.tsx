@@ -1,185 +1,234 @@
-import React, { useState } from 'react';
-import { Calendar, Plus, Clock, Play, Trash2, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Clock, Plus, Play, Trash2, CheckCircle2, PauseCircle } from 'lucide-react';
+import { useServers } from '../../context/ServerContext';
+import { apiFetch, apiJson } from '../../lib/api';
+import { Schedule } from '../../types';
 import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
-import { GlassBadge } from '../ui/GlassBadge';
-import { GlassModal } from '../ui/GlassModal';
 import { GlassInput } from '../ui/GlassInput';
-import { Schedule } from '../../types';
+import { GlassModal } from '../ui/GlassModal';
 
 export const SchedulesTab: React.FC = () => {
-  const [schedules, setSchedules] = useState<Schedule[]>([
-    {
-      id: 1,
-      name: 'Automated Daily Restart & Backup',
-      cron: { minute: '0', hour: '4', day_of_month: '*', month: '*', day_of_week: '*' },
-      is_active: true,
-      is_processing: false,
-      last_run_at: '2026-11-23 04:00:00',
-      next_run_at: '2026-11-24 04:00:00',
-      tasks: [
-        { id: 1, sequence_id: 1, action: 'command', payload: 'say [Server] Restarting in 60 seconds for daily cleanup...', time_offset: 0, continue_on_failure: true },
-        { id: 2, sequence_id: 2, action: 'backup', payload: 'Daily Automated Backup', time_offset: 60, continue_on_failure: true },
-        { id: 3, sequence_id: 3, action: 'power', payload: 'restart', time_offset: 90, continue_on_failure: false },
-      ],
-    },
-    {
-      id: 2,
-      name: 'World Autosave & Chunk Flush',
-      cron: { minute: '*/30', hour: '*', day_of_month: '*', month: '*', day_of_week: '*' },
-      is_active: true,
-      is_processing: false,
-      last_run_at: '2026-11-23 14:00:00',
-      next_run_at: '2026-11-23 14:30:00',
-      tasks: [
-        { id: 4, sequence_id: 1, action: 'command', payload: 'save-all', time_offset: 0, continue_on_failure: true },
-      ],
-    },
-  ]);
+  const { activeServer } = useServers();
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
 
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newScheduleName, setNewScheduleName] = useState('');
-  const [cronMinute, setCronMinute] = useState('0');
-  const [cronHour, setCronHour] = useState('*/6');
+  const [name, setName] = useState('');
+  const [minute, setMinute] = useState('0');
+  const [hour, setHour] = useState('4');
+  const [dayOfMonth, setDayOfMonth] = useState('*');
+  const [dayOfWeek, setDayOfWeek] = useState('*');
+  const [taskAction, setTaskAction] = useState<'command' | 'power' | 'backup'>('command');
+  const [taskPayload, setTaskPayload] = useState('say Automated maintenance notice');
+  const [error, setError] = useState<string | null>(null);
+  const [runningId, setRunningId] = useState<number | null>(null);
 
-  const handleCreateSchedule = () => {
-    if (!newScheduleName.trim()) return;
-    const sched: Schedule = {
-      id: Date.now(),
-      name: newScheduleName.trim(),
-      cron: { minute: cronMinute, hour: cronHour, day_of_month: '*', month: '*', day_of_week: '*' },
-      is_active: true,
-      is_processing: false,
-      last_run_at: null,
-      next_run_at: 'Pending',
-      tasks: [
-        { id: 10, sequence_id: 1, action: 'command', payload: 'broadcast System check OK', time_offset: 0, continue_on_failure: true },
-      ],
-    };
-    setSchedules(prev => [...prev, sched]);
-    setNewScheduleName('');
-    setShowCreateModal(false);
+  const loadSchedules = useCallback(async () => {
+    if (!activeServer) return;
+    setLoading(true);
+    try {
+      const res = await apiJson<{ data: Schedule[] }>(
+        `/api/client/servers/${encodeURIComponent(activeServer.uuid)}/schedules`
+      );
+      setSchedules(Array.isArray(res?.data) ? res.data : []);
+    } catch {
+      setSchedules([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeServer?.uuid]);
+
+  useEffect(() => {
+    loadSchedules();
+  }, [loadSchedules]);
+
+  if (!activeServer) return null;
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      const created = await apiJson<Schedule>(
+        `/api/client/servers/${encodeURIComponent(activeServer.uuid)}/schedules`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            name: name.trim(),
+            minute: minute.trim() || '*',
+            hour: hour.trim() || '*',
+            day_of_month: dayOfMonth.trim() || '*',
+            day_of_week: dayOfWeek.trim() || '*',
+            is_active: true,
+            tasks: [{ action: taskAction, payload: taskAction === 'backup' ? '' : taskPayload.trim(), time_offset: 0 }],
+          }),
+        }
+      );
+      setSchedules(prev => [...prev, created]);
+      setShowCreate(false);
+      setName('');
+    } catch (err: any) {
+      setError(err?.message || 'Failed creating schedule.');
+    }
+  };
+
+  const handleToggleActive = async (sched: Schedule) => {
+    try {
+      const updated = await apiJson<Schedule>(
+        `/api/client/servers/${encodeURIComponent(activeServer.uuid)}/schedules/${sched.id}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ is_active: !sched.is_active }),
+        }
+      );
+      setSchedules(prev => prev.map(s => (s.id === sched.id ? updated : s)));
+    } catch {}
+  };
+
+  const handleRunNow = async (sched: Schedule) => {
+    setRunningId(sched.id);
+    setError(null);
+    try {
+      const res = await apiJson<{ schedule: Schedule }>(
+        `/api/client/servers/${encodeURIComponent(activeServer.uuid)}/schedules/${sched.id}/execute`,
+        { method: 'POST' }
+      );
+      if (res?.schedule) {
+        setSchedules(prev => prev.map(s => (s.id === sched.id ? res.schedule : s)));
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Schedule execution failed.');
+    } finally {
+      setRunningId(null);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Delete this automated cron schedule?')) return;
+    try {
+      await apiFetch(`/api/client/servers/${encodeURIComponent(activeServer.uuid)}/schedules/${id}`, {
+        method: 'DELETE',
+      });
+      setSchedules(prev => prev.filter(s => s.id !== id));
+    } catch {}
   };
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-sky-400" /> Server Schedules & Crons
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Automate routine maintenance, recurring broadcasts, world saves, and backups.
-          </p>
+      <GlassCard className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400">
+            <Clock className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-white">Cron Task Schedules</h3>
+            <p className="text-xs text-slate-400">Automated per-server commands, restarts, and backups executed on schedule.</p>
+          </div>
         </div>
-
-        <GlassButton
-          variant="accent"
-          size="sm"
-          onClick={() => setShowCreateModal(true)}
-          leftIcon={<Plus className="w-4 h-4" />}
-        >
-          Create Schedule
+        <GlassButton variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+          <Plus className="w-4 h-4 mr-1.5" /> Create Schedule
         </GlassButton>
-      </div>
+      </GlassCard>
 
-      <div className="flex flex-col gap-4">
-        {schedules.map(sched => (
-          <GlassCard key={sched.id} className="p-5 flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-400/20">
-                  <Clock className="w-5 h-5" />
+      {error && (
+        <div className="px-4 py-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-300">
+          {error}
+        </div>
+      )}
+
+      {schedules.length === 0 ? (
+        <GlassCard className="p-10 text-center text-sm text-slate-400">
+          {loading ? 'Loading schedules...' : 'No cron schedules configured for this server yet.'}
+        </GlassCard>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {schedules.map(sched => (
+            <GlassCard key={sched.id} className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h4 className="text-sm font-bold text-white">{sched.name}</h4>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleActive(sched)}
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border cursor-pointer flex items-center gap-1 ${
+                      sched.is_active
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'bg-slate-800 text-slate-400 border-white/10'
+                    }`}
+                  >
+                    {sched.is_active ? <CheckCircle2 className="w-3 h-3" /> : <PauseCircle className="w-3 h-3" />}
+                    {sched.is_active ? 'Active' : 'Paused'}
+                  </button>
+                  <code className="text-xs font-mono px-2 py-0.5 rounded bg-black/40 border border-white/10 text-amber-300">
+                    {sched.cron.minute} {sched.cron.hour} {sched.cron.day_of_month} {sched.cron.month || '*'} {sched.cron.day_of_week}
+                  </code>
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">{sched.name}</h3>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">
-                    Cron: {sched.cron.minute} {sched.cron.hour} {sched.cron.day_of_month} {sched.cron.month} {sched.cron.day_of_week}
-                  </p>
+                <div className="text-xs text-slate-400 font-mono flex items-center gap-3 flex-wrap">
+                  <span>
+                    Task:{' '}
+                    <strong className="text-slate-200">
+                      {sched.tasks?.[0] ? `${sched.tasks[0].action}: ${sched.tasks[0].payload || 'archive volume'}` : 'None'}
+                    </strong>
+                  </span>
+                  <span>
+                    Last Run: {sched.last_run_at ? new Date(sched.last_run_at).toLocaleString() : 'Never'}
+                  </span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <GlassBadge status={sched.is_active ? 'running' : 'offline'}>
-                  {sched.is_active ? 'ENABLED' : 'DISABLED'}
-                </GlassBadge>
-                <GlassButton size="sm" variant="glass" leftIcon={<Play className="w-3 h-3 fill-current" />}>
-                  Run Now
+              <div className="flex items-center gap-2 shrink-0">
+                <GlassButton
+                  variant="secondary"
+                  size="sm"
+                  disabled={runningId === sched.id}
+                  onClick={() => handleRunNow(sched)}
+                >
+                  <Play className="w-3.5 h-3.5 mr-1 text-emerald-400" />
+                  {runningId === sched.id ? 'Running...' : 'Run Now'}
+                </GlassButton>
+                <GlassButton variant="danger" size="sm" onClick={() => handleDelete(sched.id)}>
+                  <Trash2 className="w-3.5 h-3.5" />
                 </GlassButton>
               </div>
-            </div>
-
-            {/* Chained Tasks Pipeline */}
-            <div>
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
-                Chained Task Execution Steps ({sched.tasks.length})
-              </span>
-              <div className="flex flex-wrap items-center gap-2">
-                {sched.tasks.map((task, idx) => (
-                  <React.Fragment key={task.id}>
-                    <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-900/60 border border-white/10 text-xs">
-                      <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center font-bold text-[10px] text-sky-400">
-                        {idx + 1}
-                      </span>
-                      <span className="font-semibold text-slate-200 capitalize">
-                        {task.action}:
-                      </span>
-                      <span className="font-mono text-slate-300 max-w-xs truncate">
-                        "{task.payload}"
-                      </span>
-                      <span className="text-[10px] text-slate-500 ml-1">
-                        (+{task.time_offset}s)
-                      </span>
-                    </div>
-                    {idx < sched.tasks.length - 1 && (
-                      <ArrowRight className="w-3.5 h-3.5 text-slate-600" />
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
-            </div>
-          </GlassCard>
-        ))}
-      </div>
-
-      <GlassModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Create Schedule"
-        maxWidth="md"
-      >
-        <div className="flex flex-col gap-4 py-2">
-          <GlassInput
-            label="Schedule Name"
-            placeholder="e.g. 6-Hour World Backup"
-            value={newScheduleName}
-            onChange={e => setNewScheduleName(e.target.value)}
-          />
-
-          <div className="grid grid-cols-2 gap-3">
-            <GlassInput
-              label="Minute"
-              value={cronMinute}
-              onChange={e => setCronMinute(e.target.value)}
-              placeholder="0"
-            />
-            <GlassInput
-              label="Hour"
-              value={cronHour}
-              onChange={e => setCronHour(e.target.value)}
-              placeholder="*/6"
-            />
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <GlassButton variant="ghost" size="sm" onClick={() => setShowCreateModal(false)}>
-              Cancel
-            </GlassButton>
-            <GlassButton variant="accent" size="sm" onClick={handleCreateSchedule}>
-              Create Schedule
-            </GlassButton>
-          </div>
+            </GlassCard>
+          ))}
         </div>
+      )}
+
+      <GlassModal isOpen={showCreate} onClose={() => setShowCreate(false)} title="Create Cron Schedule" maxWidth="md">
+        <form onSubmit={handleCreate} className="flex flex-col gap-4 py-2">
+          <GlassInput label="Schedule Name" placeholder="e.g. Nightly Backup" value={name} onChange={e => setName(e.target.value)} required />
+          <div className="grid grid-cols-4 gap-2">
+            <GlassInput label="Minute" value={minute} onChange={e => setMinute(e.target.value)} />
+            <GlassInput label="Hour" value={hour} onChange={e => setHour(e.target.value)} />
+            <GlassInput label="Day (Month)" value={dayOfMonth} onChange={e => setDayOfMonth(e.target.value)} />
+            <GlassInput label="Day (Week)" value={dayOfWeek} onChange={e => setDayOfWeek(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1.5">Task Action</label>
+            <select
+              value={taskAction}
+              onChange={e => setTaskAction(e.target.value as any)}
+              className="w-full glass-input px-3 py-2 text-xs text-white"
+            >
+              <option value="command">Send Console Command</option>
+              <option value="power">Send Power Action (start/stop/restart)</option>
+              <option value="backup">Create Server Backup</option>
+            </select>
+          </div>
+          {taskAction !== 'backup' && (
+            <GlassInput
+              label={taskAction === 'power' ? 'Power Action' : 'Console Command'}
+              value={taskPayload}
+              onChange={e => setTaskPayload(e.target.value)}
+              placeholder={taskAction === 'power' ? 'restart' : 'save-all'}
+            />
+          )}
+          <div className="flex justify-end gap-2">
+            <GlassButton type="button" variant="secondary" onClick={() => setShowCreate(false)}>Cancel</GlassButton>
+            <GlassButton type="submit" variant="primary">Save Schedule</GlassButton>
+          </div>
+        </form>
       </GlassModal>
     </div>
   );

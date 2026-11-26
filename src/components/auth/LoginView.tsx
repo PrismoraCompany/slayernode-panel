@@ -72,13 +72,13 @@ export const LoginView: React.FC<LoginViewProps> = ({
         <div
           className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center transition-all duration-300"
           style={{
-            backgroundImage: `url(${bgWallpaper})`,
+            backgroundImage: `url("${bgWallpaper.replace(/"/g, '\\"')}")`,
             filter: `blur(${previewTheme.auth_overlay_blur || previewTheme.wallpaper_blur || 0}px)`,
             opacity: Math.max(0.1, (100 - (previewTheme.auth_overlay_darkness || 60)) / 100),
           }}
         />
       )}
-      <div className="flex-1 flex items-center justify-center w-full my-auto">
+      <div className="relative z-10 flex-1 flex items-center justify-center w-full my-auto">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{

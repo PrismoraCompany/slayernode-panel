@@ -1,25 +1,41 @@
-# Dependencies
+# Dependencies & Build Artifacts
 node_modules/
-.pnp
-.pnp.js
+dist/
+dist-ssr/
+build/
+.vite/
+*.local
 
-# Environment variables & secrets
+# Environment & Secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
+server/.daemon_token
+server/.session_secret
 
-# Logs
+# Runtime Database, State, Test Server Data & Backups
+server/storage_db.json
+server/storage_db.*.tmp
+.slayerwings/
+volumes/
+backups/
+
+# Logs & Runtime Files
+*.log
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-*.log
+pnpm-debug.log*
+*.pid
+*.tmp
+*.bak
 
-# Editor & OS files
+# OS / Editor Metadata
 .DS_Store
+Thumbs.db
 .idea/
-.vscode/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+.vscode/*
+!.vscode/extensions.json

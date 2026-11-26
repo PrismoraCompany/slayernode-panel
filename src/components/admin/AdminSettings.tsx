@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Settings,
   Mail,
@@ -18,20 +18,22 @@ import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
 import { GlassInput } from '../ui/GlassInput';
 import { GlassToggle } from '../ui/GlassToggle';
+import { apiFetch, apiJson } from '../../lib/api';
 
 export const AdminSettings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'mail' | 'security'>('general');
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // General Settings
   const [companyName, setCompanyName] = useState('SlayerNode');
   const [require2FA, setRequire2FA] = useState(false);
 
   // Mail (SMTP) Settings
-  const [smtpHost, setSmtpHost] = useState('smtp.mailgun.org');
+  const [smtpHost, setSmtpHost] = useState('smtp.example.com');
   const [smtpPort, setSmtpPort] = useState('587');
   const [smtpEncryption, setSmtpEncryption] = useState<'tls' | 'ssl' | 'none'>('tls');
-  const [smtpUser, setSmtpUser] = useState('postmaster@slayernode.xyz');
+  const [smtpUser, setSmtpUser] = useState('');
   const [smtpPassword, setSmtpPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [smtpFrom, setSmtpFrom] = useState('noreply@slayernode.xyz');
@@ -51,9 +53,43 @@ export const AdminSettings: React.FC = () => {
   const [sessionTimeout, setSessionTimeout] = useState('120');
   const [maxLoginAttempts, setMaxLoginAttempts] = useState('4');
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  useEffect(() => {
+    apiJson<any>('/api/application/settings')
+      .then(s => {
+        if (!s) return;
+        if (s.panel_name || s.company_name) setCompanyName(s.panel_name || s.company_name);
+        setRequire2FA(Boolean(s.require_2fa_admins));
+        if (s.mail_host) setSmtpHost(s.mail_host);
+        if (s.mail_port) setSmtpPort(String(s.mail_port));
+        if (s.mail_encryption) setSmtpEncryption(s.mail_encryption);
+        if (s.mail_username !== undefined) setSmtpUser(s.mail_username);
+        if (s.mail_from_address) setSmtpFrom(s.mail_from_address);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSave = async () => {
+    setSaveError(null);
+    try {
+      await apiJson('/api/application/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          panel_name: companyName.trim() || 'SlayerNode',
+          company_name: companyName.trim() || 'SlayerNode',
+          require_2fa_admins: require2FA,
+          mail_host: smtpHost.trim(),
+          mail_port: parseInt(smtpPort, 10) || 587,
+          mail_encryption: smtpEncryption,
+          mail_username: smtpUser.trim(),
+          mail_password: smtpPassword || undefined,
+          mail_from_address: smtpFrom.trim(),
+        }),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err: any) {
+      setSaveError(err?.message || 'Failed saving settings.');
+    }
   };
 
   const handleTestSmtp = async () => {
@@ -61,23 +97,16 @@ export const AdminSettings: React.FC = () => {
     setSmtpResult(null);
 
     try {
-      const res = await fetch('/api/admin/mail/test', {
+      const res = await apiFetch('/api/admin/mail/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          host: smtpHost,
-          port: smtpPort,
-          encryption: smtpEncryption,
-          username: smtpUser,
-          password: smtpPassword,
-          from: smtpFrom,
-          to: testRecipient || undefined,
+          email: testRecipient || undefined,
         }),
       });
 
       const data = await res.json();
       setSmtpResult({
-        success: data.success,
+        success: Boolean(res.ok && data.success),
         message: data.message || data.error || 'Unknown response',
         latency_ms: data.latency_ms,
         response: data.response,
